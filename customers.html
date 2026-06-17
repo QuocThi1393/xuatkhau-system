@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Khách hàng · Xuất Khẩu System</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo"><a href="index.html">Xuất Khẩu <span>System</span></a></div>
+  <div class="topbar-nav">
+    <a href="index.html" class="btn btn-sm"><i class="ti ti-package"></i> Lô hàng</a>
+    <div id="admin-indicator" class="admin-indicator" style="display:none">
+      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
+    </div>
+    <button class="btn btn-sm" id="btn-login-toggle">
+      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span id="customer-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" id="btn-add-customer">
+        <i class="ti ti-plus"></i> Thêm khách hàng
+      </button>
+    </div>
+  </div>
+
+  <div id="customer-list">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<!-- MODAL: Thêm / Sửa khách hàng -->
+<div class="modal-backdrop" id="modal-customer">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="customer-modal-title">Thêm khách hàng</span>
+      <span class="modal-close" onclick="closeModalById('modal-customer')">
+        <i class="ti ti-x"></i>
+      </span>
+    </div>
+    <form id="form-customer">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tên khách hàng *</label>
+          <input class="form-input" id="fc-name" placeholder="TOYOTSU, FLEX JAPAN..." required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Người liên hệ (Dear ...)</label>
+          <input class="form-input" id="fc-contact" placeholder="Ms Thao, Mr Tanaka...">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="fc-email" placeholder="booking@example.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Consignee Name</label>
+        <input class="form-input" id="fc-consignee-name" placeholder="MN Inter-Fashion Ltd.">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Consignee Address</label>
+        <textarea class="form-textarea" id="fc-consignee-addr" rows="2" placeholder="23F Akasaka K Tower, 1-2-7 Moto-Akasaka..."></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Description (hàng hóa)</label>
+          <input class="form-input" id="fc-description" placeholder="SHIRTS, PANTS..." value="SHIRTS">
+        </div>
+        <div class="form-group">
+          <label class="form-label">C/O Form mặc định</label>
+          <select class="form-select" id="fc-coform">
+            <option value="">-- Chọn --</option>
+            ${["RCEP","AJ","AI","VK","VJ","EUR.1","CO-D"].map(v => `<option value="${v}">${v}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Note cố định trong email</label>
+        <textarea class="form-textarea" id="fc-note" rows="2" placeholder="Nếu tàu đi từ Cái Mép, chị cho hạ cont ở Đồng Nai Port giúp e!"></textarea>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-customer')">Hủy</button>
+        <button type="submit" class="btn btn-primary" id="fc-submit">
+          <i class="ti ti-check"></i> Lưu
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Đăng nhập -->
+<div class="modal-backdrop" id="modal-login">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">
+      Đăng nhập Admin
+      <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mật khẩu</label>
+      <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu admin">
+    </div>
+    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai mật khẩu!</div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="btn-do-login">
+        <i class="ti ti-login"></i> Đăng nhập
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { db } from "./js/firebase-config.js";
+import { isAdmin, loginAdmin, logoutAdmin } from "./js/auth.js";
+import { showToast, openModal, closeModal } from "./js/utils.js";
+import {
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+window.closeModalById = closeModal;
+
+let allCustomers = [];
+let editingId = null;
+
+function updateAdminUI() {
+  const admin = isAdmin();
+  document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
+  document.getElementById("login-label").textContent = admin ? "Đăng xuất" : "Đăng nhập";
+  document.getElementById("btn-add-customer").style.display = admin ? "flex" : "none";
+  renderList();
+}
+
+document.getElementById("btn-login-toggle").addEventListener("click", () => {
+  if (isAdmin()) { logoutAdmin(); showToast("Đã đăng xuất"); updateAdminUI(); }
+  else openModal("modal-login");
+});
+
+document.getElementById("btn-do-login").addEventListener("click", () => {
+  const pw = document.getElementById("f-admin-pw").value;
+  if (loginAdmin(pw)) {
+    closeModal("modal-login");
+    document.getElementById("f-admin-pw").value = "";
+    document.getElementById("login-error").style.display = "none";
+    showToast("Đăng nhập thành công!");
+    updateAdminUI();
+  } else {
+    document.getElementById("login-error").style.display = "block";
+  }
+});
+
+document.getElementById("btn-add-customer").addEventListener("click", () => {
+  if (!isAdmin()) return;
+  editingId = null;
+  document.getElementById("customer-modal-title").textContent = "Thêm khách hàng";
+  document.getElementById("form-customer").reset();
+  document.getElementById("fc-description").value = "SHIRTS";
+  openModal("modal-customer");
+});
+
+document.getElementById("form-customer").addEventListener("submit", async e => {
+  e.preventDefault();
+  const data = {
+    name:          document.getElementById("fc-name").value.trim(),
+    contactPerson: document.getElementById("fc-contact").value.trim(),
+    email:         document.getElementById("fc-email").value.trim(),
+    consigneeName: document.getElementById("fc-consignee-name").value.trim(),
+    consigneeAddr: document.getElementById("fc-consignee-addr").value.trim(),
+    description:   document.getElementById("fc-description").value.trim(),
+    coForm:        document.getElementById("fc-coform").value,
+    note:          document.getElementById("fc-note").value.trim(),
+  };
+  try {
+    if (editingId) {
+      await updateDoc(doc(db, "customers", editingId), data);
+      showToast("Đã cập nhật khách hàng!");
+    } else {
+      await addDoc(collection(db, "customers"), { ...data, createdAt: serverTimestamp() });
+      showToast("Đã thêm khách hàng!");
+    }
+    closeModal("modal-customer");
+    e.target.reset();
+    editingId = null;
+  } catch(err) {
+    showToast("Lỗi: " + err.message);
+  }
+});
+
+function renderList() {
+  const admin = isAdmin();
+  const container = document.getElementById("customer-list");
+  document.getElementById("customer-count").textContent = allCustomers.length + " khách hàng";
+
+  if (allCustomers.length === 0) {
+    container.innerHTML = `<div class="empty-state"><i class="ti ti-users"></i><p>Chưa có khách hàng nào</p></div>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  allCustomers.forEach(c => {
+    const card = document.createElement("div");
+    card.className = "shipment-card";
+    card.innerHTML = `
+      <div style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:15px;font-weight:500;margin-bottom:4px">${c.name}</div>
+            <div style="font-size:12px;color:var(--text-muted)">Dear ${c.contactPerson || "—"} &nbsp;·&nbsp; ${c.email || "—"}</div>
+          </div>
+          ${admin ? `<div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
+          </div>` : ""}
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-muted);display:grid;grid-template-columns:1fr 1fr;gap:6px">
+          <div><span style="font-weight:500">Consignee:</span> ${c.consigneeName || "—"}</div>
+          <div><span style="font-weight:500">Description:</span> ${c.description || "—"}</div>
+          <div><span style="font-weight:500">C/O Form:</span> ${c.coForm || "—"}</div>
+          <div><span style="font-weight:500">Note:</span> ${c.note || "—"}</div>
+        </div>
+        ${c.consigneeAddr ? `<div style="font-size:11px;color:var(--text-hint);margin-top:4px">${c.consigneeAddr}</div>` : ""}
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+window.editCustomer = function(id) {
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  editingId = id;
+  document.getElementById("customer-modal-title").textContent = "Sửa khách hàng";
+  document.getElementById("fc-name").value          = c.name || "";
+  document.getElementById("fc-contact").value       = c.contactPerson || "";
+  document.getElementById("fc-email").value         = c.email || "";
+  document.getElementById("fc-consignee-name").value= c.consigneeName || "";
+  document.getElementById("fc-consignee-addr").value= c.consigneeAddr || "";
+  document.getElementById("fc-description").value   = c.description || "SHIRTS";
+  document.getElementById("fc-coform").value        = c.coForm || "";
+  document.getElementById("fc-note").value          = c.note || "";
+  openModal("modal-customer");
+};
+
+window.deleteCustomer = async function(id) {
+  if (!confirm("Xóa khách hàng này?")) return;
+  await deleteDoc(doc(db, "customers", id));
+  showToast("Đã xóa khách hàng!");
+};
+
+const q = query(collection(db, "customers"), orderBy("name"));
+onSnapshot(q, snap => {
+  allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  renderList();
+});
+
+updateAdminUI();
+</script>
+</body>
+</html>

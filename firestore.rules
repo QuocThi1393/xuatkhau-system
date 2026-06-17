@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Shipments: ai cũng đọc được, chỉ write khi có session (xử lý ở client)
+    match /shipments/{shipmentId} {
+      allow read: true;
+      allow write: true;
+    }
+    // Customers: ai cũng đọc được
+    match /customers/{customerId} {
+      allow read: true;
+      allow write: true;
+    }
+  }
+}

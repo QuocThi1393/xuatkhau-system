@@ -46,61 +46,73 @@
   </div>
 </div>
 
-<!-- MODAL: Thêm lô hàng -->
+<!-- MODAL: Thêm lô hàng bằng paste Excel -->
 <div class="modal-backdrop" id="modal-add-shipment">
-  <div class="modal">
+  <div class="modal" style="max-width:900px">
     <div class="modal-title">
-      Thêm lô hàng mới
+      Thêm lô hàng — Paste từ Excel
       <span class="modal-close" onclick="closeModalById('modal-add-shipment')">
         <i class="ti ti-x"></i>
       </span>
     </div>
-    <form id="form-add-shipment">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Ngày xuất (Ngày xuất kho)</label>
-          <input type="date" class="form-input" id="f-export-date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Ship Date (Ngày tàu dự kiến) *</label>
-          <input type="date" class="form-input" id="f-ship-date" required>
-        </div>
+
+    <!-- BƯỚC 1: Paste -->
+    <div id="paste-step">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:12px">
+        <b style="color:var(--text)">Hướng dẫn:</b>
+        Trong Excel, bôi đen vùng dữ liệu (gồm cả dòng cuối chứa loại container) → Copy → Click vào ô bên dưới → Ctrl+V
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Nơi giao hàng (Cảng) *</label>
-          <input type="text" class="form-input" id="f-port" placeholder="OSAKA, KOBE, TOKYO..." required>
+      <div style="background:var(--bg-secondary);border:1.5px dashed var(--border-md);border-radius:var(--radius-md);padding:12px;margin-bottom:12px">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;font-weight:500">
+          CỘT EXCEL PHẢI THEO THỨ TỰ:
+          <span style="color:var(--blue-text)">Ngày đóng hàng | ETD | Nơi Giao Hàng | Khách Hàng | Hợp Đồng | Đơn Hàng | Mã Hàng | Số Lượng | Số Thùng</span>
         </div>
-        <div class="form-group">
-          <label class="form-label">Loại container *</label>
-          <select class="form-select" id="f-container" required>
-            <option value="">-- Chọn --</option>
-            <option value="20F×1">20F×1</option>
-            <option value="40F×1">40F×1</option>
-            <option value="20F×2">20F×2</option>
-            <option value="40F×2">40F×2</option>
-            <option value="AIR">AIR</option>
-            <option value="LCL">LCL</option>
-          </select>
-        </div>
+        <textarea id="paste-area"
+          style="width:100%;height:160px;font-family:monospace;font-size:12px;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:8px;background:var(--bg-card);resize:vertical;outline:none"
+          placeholder="Paste dữ liệu Excel vào đây (Ctrl+V)..."></textarea>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Ngày đóng hàng</label>
-          <input type="date" class="form-input" id="f-stuffing-date">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Ngày cắt máng (CY Cut)</label>
-          <input type="date" class="form-input" id="f-cy-cut">
-        </div>
-      </div>
-      <div class="form-footer">
-        <button type="button" class="btn" onclick="closeModalById('modal-add-shipment')">Hủy</button>
-        <button type="submit" class="btn btn-primary">
-          <i class="ti ti-check"></i> Tạo lô hàng
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" onclick="closeModalById('modal-add-shipment')">Hủy</button>
+        <button class="btn btn-primary" id="btn-parse-excel">
+          <i class="ti ti-table-import"></i> Đọc dữ liệu
         </button>
       </div>
-    </form>
+    </div>
+
+    <!-- BƯỚC 2: Xem trước + xác nhận -->
+    <div id="preview-step" style="display:none">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <div style="font-size:13px;font-weight:500">Kiểm tra trước khi lưu:</div>
+        <span id="preview-container-badge" class="badge badge-blue"></span>
+        <span id="preview-port-badge" class="badge badge-gray"></span>
+        <span id="preview-date-badge" class="badge badge-gray"></span>
+      </div>
+      <div style="overflow-x:auto;margin-bottom:14px">
+        <table class="data-table" id="preview-table">
+          <thead><tr>
+            <th style="width:80px">Ngày đóng</th>
+            <th style="width:70px">ETD</th>
+            <th style="width:70px">Cảng</th>
+            <th style="width:80px">Khách hàng</th>
+            <th style="width:75px">Hợp đồng</th>
+            <th style="width:90px">Đơn hàng</th>
+            <th style="width:90px">Mã hàng</th>
+            <th style="width:65px">Số lượng</th>
+            <th style="width:60px">Thùng</th>
+            <th style="width:30px"></th>
+          </tr></thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+      <div id="preview-summary" style="font-size:12px;color:var(--text-muted);margin-bottom:14px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn" id="btn-back-paste"><i class="ti ti-arrow-left"></i> Sửa lại</button>
+        <button class="btn btn-primary" id="btn-confirm-import">
+          <i class="ti ti-check"></i> Lưu lô hàng
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -207,34 +219,159 @@ document.getElementById("f-admin-pw").addEventListener("keydown", e => {
 
 document.getElementById("btn-add-shipment").addEventListener("click", () => {
   if (!isAdmin()) { showToast("Cần đăng nhập Admin!"); return; }
+  // Reset modal về bước 1
+  document.getElementById("paste-step").style.display = "";
+  document.getElementById("preview-step").style.display = "none";
+  document.getElementById("paste-area").value = "";
   openModal("modal-add-shipment");
 });
 
-document.getElementById("form-add-shipment").addEventListener("submit", async e => {
-  e.preventDefault();
-  const shipDate = document.getElementById("f-ship-date").value;
-  const port     = document.getElementById("f-port").value.trim().toUpperCase();
-  const container= document.getElementById("f-container").value;
-  if (!shipDate || !port || !container) return;
+// ---- PARSE LOGIC ----
+let parsedShipmentData = null;
 
+function parseExcelPaste(raw) {
+  const lines = raw.trim().split("\n").map(l => l.split("\t").map(c => c.trim()));
+  if (lines.length < 2) return null;
+
+  // Dòng cuối: chứa loại container + tổng (ví dụ: "40F*1" hoặc "AIR", "20F*1")
+  const lastLine = lines[lines.length - 1];
+  const lastText = lastLine.join(" ").toUpperCase();
+
+  let container = "LCL";
+  if (lastText.includes("40F") || lastText.includes("40HC")) {
+    const m = lastText.match(/(\d+)\s*[×X\*]\s*(\d+)/);
+    container = m ? `40F×${m[2] || m[1]}` : "40F×1";
+    if (lastText.includes("40F")) container = container.replace(/^\d+F/, "40F");
+  } else if (lastText.includes("20F")) {
+    const m = lastText.match(/(\d+)\s*[×X\*]\s*(\d+)/);
+    container = m ? `20F×${m[2] || m[1]}` : "20F×1";
+  } else if (lastText.includes("AIR")) {
+    container = "AIR";
+  } else if (lastText.includes("LCL")) {
+    container = "LCL";
+  }
+  // Normalize: "40F*1" → "40F×1"
+  container = container.replace(/[*Xx]/, "×");
+
+  // Dòng dữ liệu = tất cả trừ dòng cuối
+  const dataLines = lines.slice(0, lines.length - 1).filter(l => l.some(c => c !== ""));
+
+  // Lấy từ dòng đầu tiên: stuffingDate, ETD, port (các cột đầu có thể trống ở dòng sau)
+  let stuffingDate = "", etd = "", port = "";
+  for (const row of dataLines) {
+    if (!stuffingDate && row[0]) stuffingDate = parseDate(row[0]);
+    if (!etd        && row[1]) etd = parseDate(row[1]);
+    if (!port       && row[2]) port = row[2].toUpperCase();
+    if (stuffingDate && etd && port) break;
+  }
+
+  // Parse từng đơn hàng (bỏ qua dòng không có mã hàng)
+  const orders = dataLines
+    .filter(row => row[6] || row[3]) // có mã hàng hoặc khách hàng
+    .map(row => ({
+      customer: row[3] || "",
+      contract: row[4] || "",
+      index:    row[5] || "",
+      items:    row[6] || "",
+      qty:      parseInt((row[7]||"").replace(/[,\.]/g,""))||0,
+      ctns:     parseInt((row[8]||"").replace(/[,\.]/g,""))||0,
+      kg: 0, cbm: 0, dimL: 0, dimW: 0, dimH: 0, hsCode: "", coForm: "",
+    }));
+
+  return { stuffingDate, etd, port, container, orders };
+}
+
+function parseDate(str) {
+  if (!str) return "";
+  // Hỗ trợ: "06/19", "06/24", "2026/06/19", "19-06-2026"
+  str = str.trim();
+  // MM/DD hoặc MM/DD/YYYY
+  const m1 = str.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+  if (m1) {
+    const year = m1[3] || new Date().getFullYear();
+    return `${year}-${m1[1].padStart(2,"0")}-${m1[2].padStart(2,"0")}`;
+  }
+  // YYYY/MM/DD
+  const m2 = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (m2) return `${m2[1]}-${m2[2].padStart(2,"0")}-${m2[3].padStart(2,"0")}`;
+  return str;
+}
+
+document.getElementById("btn-parse-excel").addEventListener("click", () => {
+  const raw = document.getElementById("paste-area").value;
+  if (!raw.trim()) { showToast("Chưa paste dữ liệu!"); return; }
+
+  const data = parseExcelPaste(raw);
+  if (!data || data.orders.length === 0) {
+    showToast("Không đọc được dữ liệu. Kiểm tra lại thứ tự cột!");
+    return;
+  }
+  parsedShipmentData = data;
+
+  // Hiển thị preview
+  document.getElementById("preview-container-badge").textContent = data.container;
+  document.getElementById("preview-port-badge").textContent = "📍 " + (data.port || "—");
+  document.getElementById("preview-date-badge").textContent = "📅 Đóng hàng: " + (data.stuffingDate || "—") + "  ETD: " + (data.etd || "—");
+
+  const tbody = document.getElementById("preview-tbody");
+  tbody.innerHTML = data.orders.map((o, i) => `
+    <tr id="prev-row-${i}">
+      <td>${data.stuffingDate || "—"}</td>
+      <td>${data.etd || "—"}</td>
+      <td>${data.port || "—"}</td>
+      <td>${o.customer}</td>
+      <td>${o.contract}</td>
+      <td>${o.index}</td>
+      <td>${o.items}</td>
+      <td class="qty-pcs">${o.qty.toLocaleString()}</td>
+      <td>${o.ctns}</td>
+      <td><span style="cursor:pointer;color:var(--red-text)" onclick="removePreviewRow(${i})">✕</span></td>
+    </tr>`).join("");
+
+  const totalPcs  = data.orders.reduce((a,o) => a+o.qty,  0);
+  const totalCtns = data.orders.reduce((a,o) => a+o.ctns, 0);
+  document.getElementById("preview-summary").textContent =
+    `${data.orders.length} đơn hàng · Tổng: ${totalPcs.toLocaleString()} PCS · ${totalCtns} thùng`;
+
+  document.getElementById("paste-step").style.display = "none";
+  document.getElementById("preview-step").style.display = "";
+});
+
+window.removePreviewRow = function(idx) {
+  if (!parsedShipmentData) return;
+  parsedShipmentData.orders.splice(idx, 1);
+  // Re-render
+  document.getElementById("btn-parse-excel").click();
+  document.getElementById("paste-step").style.display = "none";
+  document.getElementById("preview-step").style.display = "";
+};
+
+document.getElementById("btn-back-paste").addEventListener("click", () => {
+  document.getElementById("paste-step").style.display = "";
+  document.getElementById("preview-step").style.display = "none";
+});
+
+document.getElementById("btn-confirm-import").addEventListener("click", async () => {
+  if (!parsedShipmentData) return;
+  const d = parsedShipmentData;
   try {
     await addDoc(collection(db, "shipments"), {
-      exportDate:   document.getElementById("f-export-date").value || null,
-      shipDate,
-      port,
-      container,
-      stuffingDate: document.getElementById("f-stuffing-date").value || null,
-      cyCut:        document.getElementById("f-cy-cut").value || null,
+      exportDate:   null,
+      shipDate:     d.etd || d.stuffingDate || null,
+      port:         d.port || "",
+      container:    d.container,
+      stuffingDate: d.stuffingDate || null,
+      cyCut:        null,
       vessel:       null,
-      etd:          null,
+      etd:          d.etd || null,
       eta:          null,
       checklist:    { 1: "done" },
-      orders:       [],
+      orders:       d.orders,
       createdAt:    serverTimestamp(),
     });
     closeModal("modal-add-shipment");
-    e.target.reset();
-    showToast("Đã tạo lô hàng!");
+    parsedShipmentData = null;
+    showToast(`Đã tạo lô hàng với ${d.orders.length} đơn hàng!`);
   } catch(err) {
     showToast("Lỗi: " + err.message);
   }

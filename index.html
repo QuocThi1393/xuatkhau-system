@@ -809,6 +809,8 @@ window.copyCbmDown = async function(shipId, idx) {
   await updateDoc(doc(db, "shipments", shipId), { orders });
   showToast(`Copy CBM/thùng: ${cbmPer} → dòng ${idx+2}`);
 };
+
+window.deleteOrder = async function(shipId, idx) {
   if (!confirm("Xóa đơn hàng này?")) return;
   const s = allShipments.find(x => x.id === shipId);
   const orders = [...(s.orders||[])];

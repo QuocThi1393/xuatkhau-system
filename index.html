@@ -171,6 +171,36 @@
   </div>
 </div>
 
+<!-- MODAL: Paste HS Code + C/O Form hàng loạt -->
+<div class="modal-backdrop" id="modal-hscode">
+  <div class="modal" style="max-width:800px">
+    <div class="modal-title">
+      Paste HS Code + C/O Form hàng loạt
+      <span class="modal-close" onclick="closeModalById('modal-hscode')"><i class="ti ti-x"></i></span>
+    </div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">
+      Copy từ Excel 2 cột: <span style="color:var(--blue-text);font-weight:500">HS Code | C/O Form</span>
+      · Số dòng phải khớp với số đơn hàng trong lô (theo thứ tự từ trên xuống)
+    </div>
+    <!-- Bảng đơn hàng hiện tại để đối chiếu -->
+    <div style="overflow-x:auto;margin-bottom:12px;max-height:200px;overflow-y:auto">
+      <table class="data-table" id="hs-ref-table">
+        <thead><tr><th>#</th><th>Mã hàng</th><th>HS Code hiện tại</th><th>C/O Form hiện tại</th></tr></thead>
+        <tbody id="hs-ref-tbody"></tbody>
+      </table>
+    </div>
+    <div style="background:var(--bg-secondary);border:1.5px dashed var(--border-md);border-radius:var(--radius-md);padding:10px;margin-bottom:12px">
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Paste vào đây (2 cột: HS Code và C/O Form):</div>
+      <textarea id="hs-paste-area" style="width:100%;height:140px;font-family:monospace;font-size:12px;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:8px;background:var(--bg-card);resize:vertical;outline:none" placeholder="620530	RCEP&#10;620520	AJ&#10;620520	RCEP&#10;..."></textarea>
+    </div>
+    <div id="hs-parse-result" style="font-size:12px;margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeModalById('modal-hscode')">Hủy</button>
+      <button class="btn btn-primary" id="btn-apply-hscode"><i class="ti ti-check"></i> Áp dụng</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script type="module">
@@ -184,7 +214,54 @@ import {
 window.closeModalById = closeModal;
 
 let allShipments = [];
-let currentShipmentId = null;
+let hsCodeShipId = null;
+
+window.openPasteHsCode = function(shipId) {
+  hsCodeShipId = shipId;
+  const s = allShipments.find(x => x.id === shipId);
+  if (!s) return;
+  const orders = s.orders || [];
+
+  // Render bảng tham chiếu
+  document.getElementById("hs-ref-tbody").innerHTML = orders.map((o, i) => `
+    <tr>
+      <td style="color:var(--text-muted)">${i+1}</td>
+      <td>${o.items || o.index || "—"}</td>
+      <td>${o.hsCode || "—"}</td>
+      <td>${o.coForm || "—"}</td>
+    </tr>`).join("");
+
+  document.getElementById("hs-paste-area").value = "";
+  document.getElementById("hs-parse-result").textContent = "";
+  openModal("modal-hscode");
+};
+
+document.getElementById("btn-apply-hscode").addEventListener("click", async () => {
+  if (!hsCodeShipId) return;
+  const s = allShipments.find(x => x.id === hsCodeShipId);
+  if (!s) return;
+
+  const raw = document.getElementById("hs-paste-area").value.trim();
+  if (!raw) { showToast("Chưa paste dữ liệu!"); return; }
+
+  const lines = raw.split("\n").map(l => l.split("\t").map(c => c.trim())).filter(l => l.some(c => c));
+  const orders = [...(s.orders||[])];
+
+  if (lines.length !== orders.length) {
+    document.getElementById("hs-parse-result").innerHTML =
+      `<span style="color:var(--red-text)">Số dòng paste (${lines.length}) không khớp số đơn hàng (${orders.length})! Kiểm tra lại.</span>`;
+    return;
+  }
+
+  lines.forEach((cols, i) => {
+    if (cols[0]) orders[i] = { ...orders[i], hsCode: cols[0] };
+    if (cols[1]) orders[i] = { ...orders[i], coForm: cols[1] };
+  });
+
+  await updateDoc(doc(db, "shipments", hsCodeShipId), { orders });
+  closeModal("modal-hscode");
+  showToast(`Đã cập nhật HS Code + C/O Form cho ${lines.length} đơn hàng!`);
+});
 
 function updateAdminUI() {
   const admin = isAdmin();
@@ -475,6 +552,7 @@ function buildCard(s, admin) {
         <div class="action-row">
           ${admin ? `<button class="btn btn-sm" onclick="openAddOrder('${s.id}')"><i class="ti ti-plus"></i> Thêm đơn</button>` : ""}
           <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+          ${admin ? `<button class="btn btn-sm" onclick="openPasteHsCode('${s.id}')"><i class="ti ti-table-import"></i> Paste HS + C/O</button>` : ""}
           ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
           ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
         </div>
@@ -494,40 +572,56 @@ function buildOrderTable(orders, shipId, admin) {
   if (!orders || orders.length === 0) {
     return `<p style="font-size:12px;color:var(--text-muted);padding:8px 0">Chưa có đơn hàng. ${admin ? 'Bấm "+ Thêm đơn" để thêm.' : ''}</p>`;
   }
+  // KG & CBM tổng = kg/thùng * số thùng
   const totalPcs  = orders.reduce((a,o) => a+(parseInt(o.qty)||0), 0);
   const totalCtns = orders.reduce((a,o) => a+(parseInt(o.ctns)||0), 0);
-  const totalKg   = orders.reduce((a,o) => a+(parseFloat(o.kg)||0), 0);
-  const totalCbm  = orders.reduce((a,o) => a+(parseFloat(o.cbm)||0), 0);
+  const totalKg   = orders.reduce((a,o) => a+Math.round((parseFloat(o.kg)||0)*(parseInt(o.ctns)||0)*10)/10, 0);
+  const totalCbm  = orders.reduce((a,o) => a+Math.round((parseFloat(o.cbm)||0)*(parseInt(o.ctns)||0)*100)/100, 0);
 
-  const rows = orders.map((o, idx) => `
+  const rows = orders.map((o, idx) => {
+    const ctns   = parseInt(o.ctns)||0;
+    const kgPer  = parseFloat(o.kg)||0;
+    const cbmPer = parseFloat(o.cbm)||0;
+    const totalRowKg  = Math.round(kgPer  * ctns * 10) / 10;
+    const totalRowCbm = Math.round(cbmPer * ctns * 100) / 100;
+    return `
     <tr>
       <td>${o.customer || "—"}</td>
       <td>${o.contract || "—"}</td>
       <td>${o.index || "—"}</td>
       <td>${o.items || "—"}</td>
       <td class="qty-pcs">${(parseInt(o.qty)||0).toLocaleString()}</td>
-      <td>${parseInt(o.ctns)||0}</td>
-      <td>${parseFloat(o.kg)||0}</td>
-      <td>${parseFloat(o.cbm)||0}</td>
+      <td>${ctns}</td>
+      <td style="position:relative">
+        ${totalRowKg}
+        ${admin && idx < orders.length-1 ? `<span title="Copy KG/thùng xuống dòng dưới" onclick="copyKgDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:11px;margin-left:4px">↓</span>` : ""}
+      </td>
+      <td style="position:relative">
+        ${totalRowCbm}
+        ${admin && idx < orders.length-1 ? `<span title="Copy CBM/thùng xuống dòng dưới" onclick="copyCbmDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:11px;margin-left:4px">↓</span>` : ""}
+      </td>
       <td>${o.hsCode || "—"}</td>
       <td>${o.coForm || "—"}</td>
       ${admin ? `<td>
         <button class="btn btn-sm" onclick="openEditOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-edit" style="font-size:11px"></i></button>
         <button class="btn btn-sm btn-danger" onclick="deleteOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-trash" style="font-size:11px"></i></button>
       </td>` : ""}
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   return `
     <table class="data-table">
       <colgroup>
         <col style="width:80px"><col style="width:80px"><col style="width:80px"><col style="width:90px">
-        <col style="width:65px"><col style="width:50px"><col style="width:55px"><col style="width:50px">
+        <col style="width:65px"><col style="width:50px"><col style="width:60px"><col style="width:60px">
         <col style="width:65px"><col style="width:65px">
         ${admin ? '<col style="width:80px">' : ""}
       </colgroup>
       <thead><tr>
         <th>Customer</th><th>Contract</th><th>Index</th><th>Items</th>
-        <th>Qty PCS</th><th>CTNs</th><th>KGs</th><th>CBM</th>
+        <th>Qty PCS</th><th>CTNs</th>
+        <th title="KG/thùng × số thùng">KGs tổng</th>
+        <th title="CBM/thùng × số thùng">CBM tổng</th>
         <th>HS Code</th><th>C/O Form</th>
         ${admin ? "<th></th>" : ""}
       </tr></thead>
@@ -602,13 +696,13 @@ function openEditOrderModal(shipId, idx, order) {
           <input type="number" class="form-input" id="fo-ctns" value="${o.ctns||""}">
         </div>
         <div class="form-group">
-          <label class="form-label">KGs (tổng)</label>
+          <label class="form-label">KG / thùng <span style="color:var(--text-muted);font-weight:400">(tổng = KG × số thùng)</span></label>
           <input type="number" class="form-input" id="fo-kg" value="${o.kg||""}" step="0.1">
         </div>
       </div>
       <div class="form-group">
-        <label class="form-label">Kích thước thùng (mm): Dài × Rộng × Cao
-          <span style="float:right;cursor:pointer;color:var(--blue-text);font-size:11px" id="btn-copy-dim">Copy từ trên</span>
+        <label class="form-label">Kích thước thùng (mm): Dài × Rộng × Cao → CBM <span style="color:var(--text-muted);font-weight:400">/ thùng</span>
+          <span style="float:right;cursor:pointer;color:var(--blue-text);font-size:11px" id="btn-copy-dim">Copy từ đơn trên</span>
         </label>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;align-items:center">
           <input type="number" class="form-input" id="fo-diml" value="${prevD}" placeholder="Dài" oninput="calcCbm()">
@@ -691,7 +785,29 @@ function openEditOrderModal(shipId, idx, order) {
   openModal("modal-edit-shipment");
 }
 
-window.deleteOrder = async function(shipId, idx) {
+// Copy KG/thùng từ dòng idx xuống dòng idx+1, tính lại tổng KG
+window.copyKgDown = async function(shipId, idx) {
+  const s = allShipments.find(x => x.id === shipId);
+  if (!s) return;
+  const orders = [...(s.orders||[])];
+  const kgPer = parseFloat(orders[idx].kg)||0;
+  orders[idx+1] = { ...orders[idx+1], kg: kgPer };
+  await updateDoc(doc(db, "shipments", shipId), { orders });
+  showToast(`Copy KG/thùng: ${kgPer} → dòng ${idx+2}`);
+};
+
+window.copyCbmDown = async function(shipId, idx) {
+  const s = allShipments.find(x => x.id === shipId);
+  if (!s) return;
+  const orders = [...(s.orders||[])];
+  const cbmPer = parseFloat(orders[idx].cbm)||0;
+  const dimL = orders[idx].dimL||0;
+  const dimW = orders[idx].dimW||0;
+  const dimH = orders[idx].dimH||0;
+  orders[idx+1] = { ...orders[idx+1], cbm: cbmPer, dimL, dimW, dimH };
+  await updateDoc(doc(db, "shipments", shipId), { orders });
+  showToast(`Copy CBM/thùng: ${cbmPer} → dòng ${idx+2}`);
+};
   if (!confirm("Xóa đơn hàng này?")) return;
   const s = allShipments.find(x => x.id === shipId);
   const orders = [...(s.orders||[])];

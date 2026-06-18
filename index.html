@@ -482,62 +482,72 @@ function parsePlanExcel(raw) {
   let current = null;
   let stuffDate = "", etd = "", port = "";
 
-  for (const row of lines) {
-    if (!row.some(c => c)) continue; // bỏ dòng trống
+  // Kiểm tra dòng tổng: chứa keyword container, KHÔNG có mã hàng ở cột 6
+  function isTotalRow(row) {
     const joined = row.join(" ").toUpperCase();
+    const hasContainerKw = /\b(40F|20F|40HC|AIR|LCL)\b/.test(joined);
+    const hasItemCode = !!(row[6] && row[6].trim()); // có mã hàng cột 6
+    const hasCustomer = !!(row[3] && row[3].trim() && !/\d+F|\bAIR\b|\bLCL\b/.test(row[3].toUpperCase()));
+    return hasContainerKw && !hasItemCode && !hasCustomer;
+  }
 
-    // Dòng tổng: chứa loại container
-    const isTotal = /\b(40F|20F|AIR|LCL|40HC)\b/.test(joined) &&
-                    (row[0]===""||row[1]===""||row[2]==="") &&
-                    !row[3]; // không có tên khách hàng
+  // Parse loại container từ dòng tổng
+  function parseContainer(row) {
+    const txt = row.join(" ").toUpperCase();
+    if (/\bAIR\b/.test(txt) && !/\d+F/.test(txt)) return "AIR";
+    // Ưu tiên dạng "40F*1+20F*1" → lấy cái đầu
+    const m = txt.match(/(\d{2}F[*×X]?\d*)/);
+    if (m) {
+      let c = m[1].replace(/[*×Xx]/,"×");
+      if (!c.includes("×")) c += "×1";
+      return c;
+    }
+    if (/\bLCL\b/.test(txt)) return "LCL";
+    return "LCL";
+  }
 
-    if (isTotal && current) {
-      // Đọc loại container từ dòng tổng
-      let cont = "LCL";
-      const cm = joined.match(/(\d+F[×X*×]?\d*|40HC|AIR|LCL)/);
-      if (cm) {
-        cont = cm[0].replace(/[*Xx×]/,"×");
-        if (!cont.includes("×") && !cont.includes("AIR") && !cont.includes("LCL")) cont += "×1";
+  for (const row of lines) {
+    if (!row.some(c => c)) continue;
+
+    if (isTotalRow(row)) {
+      if (current && current.orders.length > 0) {
+        current.container = parseContainer(row);
+        shipments.push(current);
+        current = null;
       }
-      if (joined.includes("AIR")) cont = "AIR";
-      if (joined.includes("LCL")) cont = "LCL";
-      current.container = cont;
-      shipments.push(current);
-      current = null;
       continue;
     }
 
-    // Dòng đầu lô: cột A hoặc B có ngày
-    const hasDate = row[0] && /\d{1,2}\/\d{1,2}/.test(row[0]);
-    const hasEtd  = row[1] && /\d{1,2}\/\d{1,2}/.test(row[1]);
+    // Cập nhật ngày/cảng từ cột 0,1,2
+    if (row[0] && /\d{1,2}\/\d{1,2}/.test(row[0])) stuffDate = parseDate2(row[0]);
+    if (row[1] && /\d{1,2}\/\d{1,2}/.test(row[1])) etd       = parseDate2(row[1]);
+    if (row[2] && row[2].trim())                     port      = row[2].toUpperCase();
 
-    if (hasDate || hasEtd) {
-      if (row[0]) stuffDate = parseDate2(row[0]);
-      if (row[1]) etd       = parseDate2(row[1]);
-      if (row[2]) port      = row[2].toUpperCase();
+    // Dòng đơn hàng: có khách hàng (col 3) HOẶC mã hàng (col 6)
+    const hasCustomer = !!(row[3] && row[3].trim());
+    const hasItem     = !!(row[6] && row[6].trim());
+    if (!hasCustomer && !hasItem) continue;
+
+    // Nếu chưa có lô hiện tại → tạo mới
+    if (!current) {
+      current = { stuffingDate: stuffDate, etd, port, container: "LCL", orders: [] };
     }
+    // Cập nhật lô nếu dòng này có ngày/cảng mới
+    if (row[0] && /\d{1,2}\/\d{1,2}/.test(row[0])) current.stuffingDate = stuffDate;
+    if (row[1] && /\d{1,2}\/\d{1,2}/.test(row[1])) current.etd = etd;
+    if (row[2] && row[2].trim()) current.port = port;
 
-    // Dòng có dữ liệu đơn hàng: cột khách hàng (col 3) hoặc mã hàng (col 6)
-    if (row[3] || row[6]) {
-      if (!current) {
-        current = { stuffingDate: stuffDate, etd, port, container: "LCL", orders: [] };
-      }
-      // Cập nhật stuffDate/etd/port nếu dòng này có
-      if (row[0] && /\d{1,2}\/\d{1,2}/.test(row[0])) current.stuffingDate = parseDate2(row[0]);
-      if (row[1] && /\d{1,2}\/\d{1,2}/.test(row[1])) current.etd = parseDate2(row[1]);
-      if (row[2]) current.port = row[2].toUpperCase();
-
-      current.orders.push({
-        customer: row[3]||"", contract: row[4]||"",
-        index:    row[5]||"", items:    row[6]||"",
-        qty:  parseInt((row[7]||"").replace(/[,.]/g,""))||0,
-        ctns: parseInt((row[8]||"").replace(/[,.]/g,""))||0,
-        kg:0, cbm:0, dimL:0, dimW:0, dimH:0, hsCode:"", coForm:"",
-      });
-    }
+    current.orders.push({
+      customer: row[3]||"", contract: row[4]||"",
+      index:    row[5]||"", items:    row[6]||"",
+      qty:  parseInt((row[7]||"").replace(/[,. ]/g,""))||0,
+      ctns: parseInt((row[8]||"").replace(/[,. ]/g,""))||0,
+      kg:0, cbm:0, dimL:0, dimW:0, dimH:0, hsCode:"", coForm:"",
+    });
   }
-  // Nếu còn lô chưa đóng
-  if (current && current.orders.length) shipments.push(current);
+
+  // Lô cuối chưa có dòng tổng
+  if (current && current.orders.length > 0) shipments.push(current);
   return shipments;
 }
 

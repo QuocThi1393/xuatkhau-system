@@ -35,6 +35,9 @@
       </select>
     </div>
     <div class="toolbar-right">
+      <button class="btn" id="btn-import-plan" style="display:none">
+        <i class="ti ti-file-import"></i> Import kế hoạch
+      </button>
       <button class="btn btn-primary" id="btn-add-shipment">
         <i class="ti ti-plus"></i> Thêm lô hàng
       </button>
@@ -201,6 +204,64 @@
   </div>
 </div>
 
+<!-- MODAL: Import toàn bộ kế hoạch -->
+<div class="modal-backdrop" id="modal-import-plan">
+  <div class="modal" style="max-width:960px">
+    <div class="modal-title">
+      Import Kế Hoạch Xuất Hàng
+      <span class="modal-close" onclick="closeModalById('modal-import-plan')"><i class="ti ti-x"></i></span>
+    </div>
+
+    <!-- Bước 1: Paste -->
+    <div id="import-step1">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:10px">
+        <b style="color:var(--text)">Cách dùng:</b> Trong Excel, bôi đen <b>toàn bộ dữ liệu</b> (tất cả các lô, bao gồm dòng tổng) → Copy → Ctrl+V vào đây.
+        Hệ thống sẽ tự động tách thành từng lô hàng.
+      </div>
+      <div style="font-size:11px;font-weight:500;color:var(--blue-text);background:var(--blue-bg);padding:8px 12px;border-radius:var(--radius-md);margin-bottom:10px">
+        Thứ tự cột: Ngày xuất | ETD | Nơi GH | Khách hàng | Hợp đồng | Đơn hàng | Mã hàng | Số lượng | Số thùng
+      </div>
+      <textarea id="import-paste-area"
+        style="width:100%;height:220px;font-family:monospace;font-size:12px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:10px;background:var(--bg-card);resize:vertical;outline:none"
+        placeholder="Paste toàn bộ kế hoạch vào đây..."></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+        <button class="btn" onclick="closeModalById('modal-import-plan')">Hủy</button>
+        <button class="btn btn-primary" id="btn-parse-plan"><i class="ti ti-analyze"></i> Phân tích</button>
+      </div>
+    </div>
+
+    <!-- Bước 2: Xem trước & xác nhận -->
+    <div id="import-step2" style="display:none">
+      <div style="font-size:13px;font-weight:500;margin-bottom:12px" id="import-summary"></div>
+      <div style="overflow-y:auto;max-height:420px;border:0.5px solid var(--border);border-radius:var(--radius-md)">
+        <table class="data-table" style="table-layout:fixed">
+          <colgroup>
+            <col style="width:36px"><col style="width:100px"><col style="width:80px">
+            <col style="width:70px"><col style="width:55px"><col style="width:80px">
+            <col style="width:130px"><col style="width:auto">
+          </colgroup>
+          <thead><tr>
+            <th></th><th>Cảng / ETD</th><th>Container</th>
+            <th>Đơn hàng</th><th>Trùng</th><th>Xử lý</th>
+            <th>Mã hàng (mẫu)</th><th>Khách hàng</th>
+          </tr></thead>
+          <tbody id="import-preview-tbody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
+        💡 Lô <span style="color:var(--amber-text);font-weight:500">⚠️ Trùng</span> = đã có trong hệ thống. Tick "Ghi đè" để cập nhật danh sách đơn hàng (checklist & thông tin tàu giữ nguyên).
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px">
+        <button class="btn" id="btn-back-import"><i class="ti ti-arrow-left"></i> Sửa lại</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="closeModalById('modal-import-plan')">Hủy</button>
+          <button class="btn btn-primary" id="btn-confirm-import-plan"><i class="ti ti-check"></i> Xác nhận Import</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script type="module">
@@ -269,6 +330,7 @@ function updateAdminUI() {
   document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
   document.getElementById("login-label").textContent = admin ? "Đăng xuất" : "Đăng nhập";
   document.getElementById("btn-add-shipment").style.display = admin ? "flex" : "none";
+  document.getElementById("btn-import-plan").style.display = admin ? "flex" : "none";
   renderList();
 }
 
@@ -304,7 +366,192 @@ document.getElementById("btn-add-shipment").addEventListener("click", () => {
   openModal("modal-add-shipment");
 });
 
-// ---- PARSE LOGIC ----
+// ---- IMPORT KẾ HOẠCH ----
+let parsedPlanData = []; // mảng các lô đã parse
+
+document.getElementById("btn-import-plan").addEventListener("click", () => {
+  document.getElementById("import-step1").style.display = "";
+  document.getElementById("import-step2").style.display = "none";
+  document.getElementById("import-paste-area").value = "";
+  openModal("modal-import-plan");
+});
+
+document.getElementById("btn-back-import").addEventListener("click", () => {
+  document.getElementById("import-step1").style.display = "";
+  document.getElementById("import-step2").style.display = "none";
+});
+
+document.getElementById("btn-parse-plan").addEventListener("click", () => {
+  const raw = document.getElementById("import-paste-area").value.trim();
+  if (!raw) { showToast("Chưa paste dữ liệu!"); return; }
+
+  const shipments = parsePlanExcel(raw);
+  if (!shipments.length) { showToast("Không đọc được dữ liệu. Kiểm tra lại!"); return; }
+
+  parsedPlanData = shipments;
+
+  // So sánh với DB để tìm trùng
+  parsedPlanData.forEach(ns => {
+    const newItems = new Set(ns.orders.map(o => o.items).filter(Boolean));
+    ns.matchedShipment = allShipments.find(existing => {
+      const existItems = new Set((existing.orders||[]).map(o => o.items).filter(Boolean));
+      // Trùng nếu có ít nhất 30% mã hàng khớp
+      let overlap = 0;
+      newItems.forEach(item => { if (existItems.has(item)) overlap++; });
+      return overlap > 0 && overlap >= Math.min(newItems.size, existItems.size) * 0.3;
+    });
+    ns.overwrite = !!ns.matchedShipment; // mặc định tick ghi đè nếu trùng
+  });
+
+  renderImportPreview();
+  document.getElementById("import-summary").textContent =
+    `Tìm thấy ${parsedPlanData.length} lô hàng · ${parsedPlanData.filter(s=>s.matchedShipment).length} trùng · ${parsedPlanData.filter(s=>!s.matchedShipment).length} mới`;
+  document.getElementById("import-step1").style.display = "none";
+  document.getElementById("import-step2").style.display = "";
+});
+
+function renderImportPreview() {
+  const tbody = document.getElementById("import-preview-tbody");
+  tbody.innerHTML = parsedPlanData.map((ns, i) => {
+    const isMatch = !!ns.matchedShipment;
+    const sampleItems = ns.orders.slice(0,2).map(o=>o.items).filter(Boolean).join(", ");
+    const customers   = [...new Set(ns.orders.map(o=>o.customer).filter(Boolean))].join(", ");
+    return `<tr style="background:${isMatch?'var(--amber-bg)':''}">
+      <td style="text-align:center;font-size:13px">${isMatch?"⚠️":"🆕"}</td>
+      <td><b>${ns.port||"—"}</b><br><span style="font-size:11px;color:var(--text-muted)">ETD ${ns.etd||"—"} · Đóng ${ns.stuffingDate||"—"}</span></td>
+      <td><span class="badge badge-blue" style="font-size:11px">${ns.container}</span></td>
+      <td style="font-size:12px">${ns.orders.length} đơn</td>
+      <td style="font-size:11px;color:${isMatch?'var(--amber-text)':'var(--green-text)'}">${isMatch?"Có":"Mới"}</td>
+      <td>
+        ${isMatch
+          ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
+               <input type="checkbox" ${ns.overwrite?"checked":""} onchange="toggleOverwrite(${i},this.checked)"> Ghi đè
+             </label>`
+          : `<span style="font-size:11px;color:var(--green-text)">Tạo mới</span>`}
+      </td>
+      <td style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis">${sampleItems}${ns.orders.length>2?"...":""}</td>
+      <td style="font-size:12px">${customers}</td>
+    </tr>`;
+  }).join("");
+}
+
+window.toggleOverwrite = function(idx, val) {
+  parsedPlanData[idx].overwrite = val;
+};
+
+document.getElementById("btn-confirm-import-plan").addEventListener("click", async () => {
+  const toCreate   = parsedPlanData.filter(s => !s.matchedShipment);
+  const toOverwrite= parsedPlanData.filter(s => s.matchedShipment && s.overwrite);
+  const toSkip     = parsedPlanData.filter(s => s.matchedShipment && !s.overwrite);
+
+  if (!confirm(`Xác nhận:\n• Tạo mới: ${toCreate.length} lô\n• Ghi đè: ${toOverwrite.length} lô (chỉ cập nhật đơn hàng)\n• Bỏ qua: ${toSkip.length} lô\n\nTiếp tục?`)) return;
+
+  let created = 0, overwritten = 0;
+
+  for (const ns of toCreate) {
+    await addDoc(collection(db, "shipments"), {
+      exportDate: null, shipDate: ns.etd || ns.stuffingDate || null,
+      port: ns.port, container: ns.container,
+      stuffingDate: ns.stuffingDate || null, cyCut: null,
+      vessel: null, etd: ns.etd || null, eta: null,
+      checklist: { 1: "done" }, orders: ns.orders,
+      createdAt: serverTimestamp(),
+    });
+    created++;
+  }
+
+  for (const ns of toOverwrite) {
+    await updateDoc(doc(db, "shipments", ns.matchedShipment.id), {
+      orders: ns.orders,
+      // Cập nhật thêm port/container/date nếu có thay đổi
+      port: ns.port || ns.matchedShipment.port,
+      container: ns.container || ns.matchedShipment.container,
+      stuffingDate: ns.stuffingDate || ns.matchedShipment.stuffingDate || null,
+      etd: ns.etd || ns.matchedShipment.etd || null,
+    });
+    overwritten++;
+  }
+
+  closeModal("modal-import-plan");
+  showToast(`✅ Xong! Tạo mới: ${created} · Ghi đè: ${overwritten} · Bỏ qua: ${toSkip.length}`);
+});
+
+function parsePlanExcel(raw) {
+  const lines = raw.split("\n").map(l => l.split("\t").map(c => c.trim()));
+  const shipments = [];
+  let current = null;
+  let stuffDate = "", etd = "", port = "";
+
+  for (const row of lines) {
+    if (!row.some(c => c)) continue; // bỏ dòng trống
+    const joined = row.join(" ").toUpperCase();
+
+    // Dòng tổng: chứa loại container
+    const isTotal = /\b(40F|20F|AIR|LCL|40HC)\b/.test(joined) &&
+                    (row[0]===""||row[1]===""||row[2]==="") &&
+                    !row[3]; // không có tên khách hàng
+
+    if (isTotal && current) {
+      // Đọc loại container từ dòng tổng
+      let cont = "LCL";
+      const cm = joined.match(/(\d+F[×X*×]?\d*|40HC|AIR|LCL)/);
+      if (cm) {
+        cont = cm[0].replace(/[*Xx×]/,"×");
+        if (!cont.includes("×") && !cont.includes("AIR") && !cont.includes("LCL")) cont += "×1";
+      }
+      if (joined.includes("AIR")) cont = "AIR";
+      if (joined.includes("LCL")) cont = "LCL";
+      current.container = cont;
+      shipments.push(current);
+      current = null;
+      continue;
+    }
+
+    // Dòng đầu lô: cột A hoặc B có ngày
+    const hasDate = row[0] && /\d{1,2}\/\d{1,2}/.test(row[0]);
+    const hasEtd  = row[1] && /\d{1,2}\/\d{1,2}/.test(row[1]);
+
+    if (hasDate || hasEtd) {
+      if (row[0]) stuffDate = parseDate2(row[0]);
+      if (row[1]) etd       = parseDate2(row[1]);
+      if (row[2]) port      = row[2].toUpperCase();
+    }
+
+    // Dòng có dữ liệu đơn hàng: cột khách hàng (col 3) hoặc mã hàng (col 6)
+    if (row[3] || row[6]) {
+      if (!current) {
+        current = { stuffingDate: stuffDate, etd, port, container: "LCL", orders: [] };
+      }
+      // Cập nhật stuffDate/etd/port nếu dòng này có
+      if (row[0] && /\d{1,2}\/\d{1,2}/.test(row[0])) current.stuffingDate = parseDate2(row[0]);
+      if (row[1] && /\d{1,2}\/\d{1,2}/.test(row[1])) current.etd = parseDate2(row[1]);
+      if (row[2]) current.port = row[2].toUpperCase();
+
+      current.orders.push({
+        customer: row[3]||"", contract: row[4]||"",
+        index:    row[5]||"", items:    row[6]||"",
+        qty:  parseInt((row[7]||"").replace(/[,.]/g,""))||0,
+        ctns: parseInt((row[8]||"").replace(/[,.]/g,""))||0,
+        kg:0, cbm:0, dimL:0, dimW:0, dimH:0, hsCode:"", coForm:"",
+      });
+    }
+  }
+  // Nếu còn lô chưa đóng
+  if (current && current.orders.length) shipments.push(current);
+  return shipments;
+}
+
+function parseDate2(str) {
+  if (!str) return "";
+  const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+  if (m) {
+    const y = m[3] || new Date().getFullYear();
+    return `${y}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`;
+  }
+  return str;
+}
+
+// ---- IMPORT KẾ HOẠCH END ----
 let parsedShipmentData = null;
 
 function parseExcelPaste(raw) {

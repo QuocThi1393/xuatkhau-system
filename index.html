@@ -262,12 +262,23 @@
   </div>
 </div>
 
+<!-- MODAL: Nhập kích thước CBM -->
+<div class="modal-backdrop" id="modal-dim">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">
+      <span id="dim-popup-title">Nhập kích thước</span>
+      <span class="modal-close" onclick="closeModalById('modal-dim')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="dim-popup-body"></div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script type="module">
 import { db } from "./js/firebase-config.js";
 import { isAdmin, loginAdmin, logoutAdmin } from "./js/auth.js";
-import { showToast, formatDate, getProgress, getStatus, progColor, renderChecklist, CHECKLIST_STEPS, openModal, closeModal } from "./js/utils.js";
+import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, renderChecklist, CHECKLIST_STEPS, openModal, closeModal } from "./js/utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -730,6 +741,12 @@ function renderList() {
   const container = document.getElementById("shipment-list");
   const admin = isAdmin();
 
+  // Ghi nhớ các card đang mở
+  const openCards = new Set();
+  document.querySelectorAll(".card-detail.open").forEach(el => {
+    openCards.add(el.id.replace("detail-", ""));
+  });
+
   let list = sortShipments(allShipments);
 
   if (filterVal) {
@@ -753,6 +770,14 @@ function renderList() {
 
   container.innerHTML = "";
   list.forEach(s => container.appendChild(buildCard(s, admin)));
+
+  // Mở lại các card đã mở trước đó
+  openCards.forEach(id => {
+    const detail = document.getElementById("detail-" + id);
+    const cv = document.getElementById("cv-" + id);
+    if (detail) detail.classList.add("open");
+    if (cv) cv.classList.add("open");
+  });
 }
 
 function buildCard(s, admin) {
@@ -764,7 +789,7 @@ function buildCard(s, admin) {
   card.className = "shipment-card";
   card.id = "card-" + s.id;
 
-  // Checklist chấm tròn
+  // Checklist chấm tròn (admin click được)
   const dotsHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
     let cls = "ck";
@@ -773,7 +798,8 @@ function buildCard(s, admin) {
     const inner = state === "done" ? `<i class="ti ti-check" style="font-size:11px"></i>`
                 : state === "skip" ? `<i class="ti ti-minus" style="font-size:11px"></i>`
                 : step.short;
-    return `<div class="${cls}" title="${step.label}">${inner}</div>`;
+    const clickFn = admin ? `ckToggle('${s.id}',${step.id},'${state}',${step.skippable})` : "";
+    return `<div class="${cls}" title="${step.label}" ${admin?"style='cursor:pointer'":""} onclick="${clickFn}">${inner}</div>`;
   }).join("");
 
   // Checklist list (trong detail)
@@ -788,12 +814,16 @@ function buildCard(s, admin) {
     </div>`;
   }).join("");
 
+  // Tên lô = các khách hàng duy nhất + cảng đầy đủ
+  const customers = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
+  const custLabel = customers.length ? customers.join(" / ") + " — " : "";
+
   card.innerHTML = `
     <div style="padding:14px 16px">
       <div class="card-row1">
         <div>
           <div class="card-title">
-            ${s.port}
+            ${custLabel}${fullPort(s.port)}
             <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container}</span>
           </div>
           <div class="card-meta">
@@ -858,13 +888,12 @@ function buildEditableTable(orders, shipId) {
     {key:"qty",      label:"Qty PCS",   w:"65px", type:"number"},
     {key:"ctns",     label:"CTNs",      w:"50px", type:"number"},
     {key:"kg",       label:"KG/thùng",  w:"65px", type:"number"},
-    {key:"cbm",      label:"CBM/thùng", w:"65px", type:"number"},
     {key:"hsCode",   label:"HS Code",   w:"65px"},
     {key:"coForm",   label:"C/O Form",  w:"65px"},
   ];
 
-  const headerCols = cols.map(c=>`<col style="width:${c.w}">`).join("") + `<col style="width:32px">`;
-  const headerRow  = cols.map(c=>`<th>${c.label}</th>`).join("") + `<th></th>`;
+  const headerCols = cols.map(c=>`<col style="width:${c.w}">`).join("") + `<col style="width:90px"><col style="width:32px">`;
+  const headerRow  = cols.map(c=>`<th>${c.label}</th>`).join("") + `<th>CBM/thùng</th><th></th>`;
 
   const rows = orders.map((o,i) => {
     const cells = cols.map(c => {
@@ -875,12 +904,23 @@ function buildEditableTable(orders, shipId) {
         ${c.type==="number"?'type="number" step="any"':''}
       ></td>`;
     }).join("");
-    return `<tr id="erow-${shipId}-${i}">${cells}
+    // Cột CBM: hiện giá trị + dim, click mở popup
+    const dimStr = (o.dimL&&o.dimW&&o.dimH) ? `${o.dimL}×${o.dimW}×${o.dimH}` : "";
+    const cbmCell = `<td>
+      <input type="hidden" class="xk-cell" data-key="cbm"  data-row="${i}" value="${o.cbm||0}">
+      <input type="hidden" class="xk-cell" data-key="dimL" data-row="${i}" value="${o.dimL||0}">
+      <input type="hidden" class="xk-cell" data-key="dimW" data-row="${i}" value="${o.dimW||0}">
+      <input type="hidden" class="xk-cell" data-key="dimH" data-row="${i}" value="${o.dimH||0}">
+      <span onclick="openDimPopup('${shipId}',${i})" style="cursor:pointer;display:flex;align-items:center;gap:4px;font-size:12px;color:var(--blue-text)" title="${dimStr||'Bấm để nhập kích thước'}">
+        <span id="cbm-disp-${shipId}-${i}">${o.cbm||0}</span>
+        <i class="ti ti-ruler-2" style="font-size:13px"></i>
+      </span>
+    </td>`;
+    return `<tr id="erow-${shipId}-${i}">${cells}${cbmCell}
       <td><button onclick="deleteOrderRow('${shipId}',${i})" style="border:none;background:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:2px 4px">✕</button></td>
     </tr>`;
   }).join("");
 
-  // Tổng
   const totalPcs  = orders.reduce((a,o)=>a+(parseInt(o.qty)||0),0);
   const totalCtns = orders.reduce((a,o)=>a+(parseInt(o.ctns)||0),0);
   const totalKg   = orders.reduce((a,o)=>a+Math.round((parseFloat(o.kg)||0)*(parseInt(o.ctns)||0)*10)/10,0);
@@ -892,14 +932,74 @@ function buildEditableTable(orders, shipId) {
     <tbody id="etbody-${shipId}">${rows}</tbody>
     <tfoot><tr>
       <td colspan="4" style="color:var(--text-muted);font-size:12px">Tổng (${orders.length} đơn)</td>
-      <td class="qty-pcs" id="etotal-pcs-${shipId}">${totalPcs.toLocaleString()}</td>
-      <td id="etotal-ctns-${shipId}">${totalCtns}</td>
-      <td id="etotal-kg-${shipId}">${totalKg}</td>
-      <td id="etotal-cbm-${shipId}">${totalCbm}</td>
-      <td colspan="3"></td>
+      <td class="qty-pcs">${totalPcs.toLocaleString()}</td>
+      <td>${totalCtns}</td>
+      <td>${totalKg} kg</td>
+      <td colspan="2"></td>
+      <td>${totalCbm} cbm</td>
+      <td></td>
     </tr></tfoot>
   </table>`;
 }
+
+// Popup nhập kích thước → tính CBM
+window.openDimPopup = function(shipId, rowIdx) {
+  const row = document.getElementById(`erow-${shipId}-${rowIdx}`);
+  if (!row) return;
+  const getCell = k => row.querySelector(`.xk-cell[data-key="${k}"]`);
+  const curL = getCell("dimL").value, curW = getCell("dimW").value, curH = getCell("dimH").value;
+
+  document.getElementById("dim-popup-title").textContent = "Nhập kích thước thùng (mm)";
+  document.getElementById("dim-popup-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">CBM = Dài × Rộng × Cao / 1.000.000</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div>
+        <label class="form-label">Dài (mm)</label>
+        <input type="number" class="form-input" id="dim-l" value="${curL>0?curL:''}" oninput="calcDimCbm()">
+      </div>
+      <div>
+        <label class="form-label">Rộng (mm)</label>
+        <input type="number" class="form-input" id="dim-w" value="${curW>0?curW:''}" oninput="calcDimCbm()">
+      </div>
+      <div>
+        <label class="form-label">Cao (mm)</label>
+        <input type="number" class="form-input" id="dim-h" value="${curH>0?curH:''}" oninput="calcDimCbm()">
+      </div>
+    </div>
+    <div style="background:var(--blue-bg);padding:10px 14px;border-radius:var(--radius-md);font-size:14px;margin-bottom:16px">
+      CBM/thùng = <b id="dim-cbm-result" style="color:var(--blue-text)">0</b>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="closeModalById('modal-dim')">Hủy</button>
+      <button class="btn btn-primary" onclick="applyDim('${shipId}',${rowIdx})"><i class="ti ti-check"></i> Áp dụng</button>
+    </div>`;
+  window.calcDimCbm();
+  openModal("modal-dim");
+};
+
+window.calcDimCbm = function() {
+  const l = parseFloat(document.getElementById("dim-l")?.value)||0;
+  const w = parseFloat(document.getElementById("dim-w")?.value)||0;
+  const h = parseFloat(document.getElementById("dim-h")?.value)||0;
+  const cbm = Math.round(l*w*h/10000)/100;
+  const el = document.getElementById("dim-cbm-result");
+  if (el) el.textContent = cbm;
+};
+
+window.applyDim = function(shipId, rowIdx) {
+  const l = parseFloat(document.getElementById("dim-l").value)||0;
+  const w = parseFloat(document.getElementById("dim-w").value)||0;
+  const h = parseFloat(document.getElementById("dim-h").value)||0;
+  const cbm = Math.round(l*w*h/10000)/100;
+  const row = document.getElementById(`erow-${shipId}-${rowIdx}`);
+  row.querySelector(`.xk-cell[data-key="dimL"]`).value = l;
+  row.querySelector(`.xk-cell[data-key="dimW"]`).value = w;
+  row.querySelector(`.xk-cell[data-key="dimH"]`).value = h;
+  row.querySelector(`.xk-cell[data-key="cbm"]`).value = cbm;
+  document.getElementById(`cbm-disp-${shipId}-${rowIdx}`).textContent = cbm;
+  closeModal("modal-dim");
+  showToast("Đã cập nhật CBM (nhớ bấm Lưu thay đổi)");
+};
 
 window.addOrderRow = function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);

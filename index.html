@@ -533,7 +533,7 @@ function buildCard(s, admin) {
   }).join("");
 
   card.innerHTML = `
-    <div class="card-header" id="hdr-${s.id}" onclick="toggleCard('${s.id}')">
+    <div class="card-header" id="hdr-${s.id}" onclick="toggleCard('${s.id}', event)">
       <div class="card-row1">
         <div>
           <div class="card-title">
@@ -557,7 +557,7 @@ function buildCard(s, admin) {
         <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta) || "—"}</span>
         <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut) || "—"}</span>
       </div>
-      <div class="checklist" id="cl-dots-${s.id}" style="margin-top:6px">${dotsHTML}</div>
+      <div class="checklist no-toggle" id="cl-dots-${s.id}" style="margin-top:6px">${dotsHTML}</div>
       <div class="progress-wrap" style="margin-top:6px">
         <span class="prog-label">${done} / ${total} bước</span>
         <div class="progress-track">
@@ -566,9 +566,8 @@ function buildCard(s, admin) {
         <span class="prog-label">${pct}%</span>
       </div>
     </div>
-    <div class="card-detail" id="detail-${s.id}" onclick="event.stopPropagation()">
+    <div class="card-detail no-toggle" id="detail-${s.id}">
       <div style="display:flex;gap:0;align-items:stretch">
-        <!-- Bảng đơn hàng -->
         <div style="flex:1;min-width:0;overflow-x:auto">
           <div class="detail-inner">
             ${buildOrderTable(s.orders||[], s.id, admin)}
@@ -581,8 +580,7 @@ function buildCard(s, admin) {
             </div>
           </div>
         </div>
-        <!-- Checklist dạng list bên phải -->
-        <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary);overflow-y:auto">
+        <div class="no-toggle" style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary);overflow-y:auto">
           <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
           <div class="ck-list">${listHTML}</div>
         </div>
@@ -662,7 +660,9 @@ function buildOrderTable(orders, shipId, admin) {
     </table>`;
 }
 
-window.toggleCard = function(id) {
+window.toggleCard = function(id, e) {
+  // Chỉ toggle khi click đúng vào vùng header, không phải từ bubble
+  if (e && e.target.closest('.no-toggle')) return;
   const detail = document.getElementById("detail-" + id);
   const cv     = document.getElementById("cv-" + id);
   const open   = detail.classList.contains("open");

@@ -11,6 +11,24 @@ export function showToast(msg, duration = 2500) {
   setTimeout(() => t.classList.remove("show"), duration);
 }
 
+export const PORT_FULLNAME = {
+  "YOKO": "YOKOHAMA",
+  "OSAKA": "OSAKA",
+  "KOBE": "KOBE",
+  "TOKYO": "TOKYO",
+  "NAGOYA": "NAGOYA",
+  "HAKATA": "HAKATA",
+  "SHIMIZU": "SHIMIZU",
+  "MOJI": "MOJI",
+  "THAILAND": "THAILAND",
+};
+
+export function fullPort(port) {
+  if (!port) return "—";
+  const up = port.toUpperCase().trim();
+  return PORT_FULLNAME[up] || up;
+}
+
 export function formatDate(str) {
   if (!str) return "—";
   const d = new Date(str);

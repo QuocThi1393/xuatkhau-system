@@ -969,9 +969,14 @@ window.openDimPopup = function(shipId, rowIdx) {
     <div style="background:var(--blue-bg);padding:10px 14px;border-radius:var(--radius-md);font-size:14px;margin-bottom:16px">
       CBM/thùng = <b id="dim-cbm-result" style="color:var(--blue-text)">0</b>
     </div>
-    <div style="display:flex;justify-content:flex-end;gap:8px">
-      <button class="btn" onclick="closeModalById('modal-dim')">Hủy</button>
-      <button class="btn btn-primary" onclick="applyDim('${shipId}',${rowIdx})"><i class="ti ti-check"></i> Áp dụng</button>
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+      <button class="btn btn-sm" onclick="applyDimAll('${shipId}',${rowIdx})" title="Áp dụng kích thước này cho TẤT CẢ đơn hàng trong lô">
+        <i class="ti ti-copy"></i> Áp cho cả lô
+      </button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModalById('modal-dim')">Hủy</button>
+        <button class="btn btn-primary" onclick="applyDim('${shipId}',${rowIdx})"><i class="ti ti-check"></i> Áp dòng này</button>
+      </div>
     </div>`;
   window.calcDimCbm();
   openModal("modal-dim");
@@ -984,6 +989,28 @@ window.calcDimCbm = function() {
   const cbm = Math.round(l*w*h/10000)/100;
   const el = document.getElementById("dim-cbm-result");
   if (el) el.textContent = cbm;
+};
+
+window.applyDimAll = function(shipId, rowIdx) {
+  const l = parseFloat(document.getElementById("dim-l").value)||0;
+  const w = parseFloat(document.getElementById("dim-w").value)||0;
+  const h = parseFloat(document.getElementById("dim-h").value)||0;
+  const cbm = Math.round(l*w*h/10000)/100;
+  if (!l || !w || !h) { showToast("Nhập đủ Dài × Rộng × Cao trước!"); return; }
+
+  const tbody = document.getElementById(`etbody-${shipId}`);
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll("tr");
+  rows.forEach((row, i) => {
+    row.querySelector(`.xk-cell[data-key="dimL"]`).value = l;
+    row.querySelector(`.xk-cell[data-key="dimW"]`).value = w;
+    row.querySelector(`.xk-cell[data-key="dimH"]`).value = h;
+    row.querySelector(`.xk-cell[data-key="cbm"]`).value = cbm;
+    const disp = document.getElementById(`cbm-disp-${shipId}-${i}`);
+    if (disp) disp.textContent = cbm;
+  });
+  closeModal("modal-dim");
+  showToast(`Đã áp CBM ${cbm} cho tất cả ${rows.length} đơn (nhớ bấm Lưu thay đổi)`);
 };
 
 window.applyDim = function(shipId, rowIdx) {

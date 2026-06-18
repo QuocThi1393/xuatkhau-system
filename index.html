@@ -507,72 +507,72 @@ function buildCard(s, admin) {
   card.className = "shipment-card";
   card.id = "card-" + s.id;
 
-  // Checklist dạng chấm tròn (hiện khi đóng)
+  // Checklist chấm tròn
   const dotsHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
     let cls = "ck";
-    if (state === "done")  cls += " done";
-    if (state === "skip")  cls += " skip";
+    if (state === "done") cls += " done";
+    if (state === "skip") cls += " skip";
     const inner = state === "done" ? `<i class="ti ti-check" style="font-size:11px"></i>`
                 : state === "skip" ? `<i class="ti ti-minus" style="font-size:11px"></i>`
                 : step.short;
-    return `<div class="${cls}" title="${step.label}" onclick="event.stopPropagation();${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:'return'}">${inner}</div>`;
+    return `<div class="${cls}" title="${step.label}">${inner}</div>`;
   }).join("");
 
-  // Checklist dạng list (hiện khi mở)
+  // Checklist list (trong detail)
   const listHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
-    let cls = "ck-list-item";
-    if (state === "done")    cls += " ck-done";
-    if (state === "skip")    cls += " ck-skipped";
-    const dot = state === "done" ? "✓" : state === "skip" ? "—" : step.short;
-    return `<div class="${cls}" onclick="event.stopPropagation();${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:'return'}">
+    let cls = "ck-list-item" + (state==="done"?" ck-done":state==="skip"?" ck-skipped":"");
+    const dot = state==="done"?"✓":state==="skip"?"—":step.short;
+    const clickFn = admin ? `ckToggle('${s.id}',${step.id},'${state}',${step.skippable})` : "";
+    return `<div class="${cls}" ${admin?"style='cursor:pointer'":""} onclick="${clickFn}">
       <span class="ck-dot2">${dot}</span>
       <span class="ck-name2">${step.label}</span>
     </div>`;
   }).join("");
 
   card.innerHTML = `
-    <div class="card-header" id="hdr-${s.id}" onclick="toggleCard('${s.id}', event)">
+    <div style="padding:14px 16px">
       <div class="card-row1">
         <div>
           <div class="card-title">
             ${s.port}
-            <span class="badge ${isAir ? 'badge-gray' : 'badge-blue'}">${s.container}</span>
+            <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container}</span>
           </div>
           <div class="card-meta">
-            Đóng hàng: ${formatDate(s.stuffingDate) || "—"} ·
-            Ship: ${formatDate(s.shipDate)} ·
-            ${(s.orders||[]).length} đơn hàng
+            Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng
           </div>
         </div>
         <div class="card-right">
           <span class="badge ${status.cls}">${status.label}</span>
-          <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
+          <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">
+            <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
+          </button>
         </div>
       </div>
-      <div class="vessel-info">
-        <span><i class="ti ti-${isAir ? 'plane' : 'ship'}"></i>${s.vessel || "Chưa có tàu"}</span>
-        <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd) || "—"}</span>
-        <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta) || "—"}</span>
-        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut) || "—"}</span>
+      <div class="vessel-info" style="margin-top:6px">
+        <span><i class="ti ti-${isAir?"plane":"ship"}"></i>${s.vessel||"Chưa có tàu"}</span>
+        <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd)||"—"}</span>
+        <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta)||"—"}</span>
+        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}</span>
       </div>
-      <div class="checklist no-toggle" id="cl-dots-${s.id}" style="margin-top:6px">${dotsHTML}</div>
+      <div class="checklist" style="margin-top:8px">${dotsHTML}</div>
       <div class="progress-wrap" style="margin-top:6px">
         <span class="prog-label">${done} / ${total} bước</span>
-        <div class="progress-track">
-          <div class="progress-fill" style="width:${pct}%;background:${progColor(pct)}"></div>
-        </div>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${progColor(pct)}"></div></div>
         <span class="prog-label">${pct}%</span>
       </div>
     </div>
-    <div class="card-detail no-toggle" id="detail-${s.id}">
-      <div style="display:flex;gap:0;align-items:stretch">
+
+    <div class="card-detail" id="detail-${s.id}">
+      <div style="display:flex;align-items:stretch">
+        <!-- Trái: bảng đơn hàng -->
         <div style="flex:1;min-width:0;overflow-x:auto">
           <div class="detail-inner">
-            ${buildOrderTable(s.orders||[], s.id, admin)}
-            <div class="action-row">
-              ${admin ? `<button class="btn btn-sm" onclick="openAddOrder('${s.id}')"><i class="ti ti-plus"></i> Thêm đơn</button>` : ""}
+            ${admin ? buildEditableTable(s.orders||[], s.id) : buildOrderTable(s.orders||[], s.id, false)}
+            <div class="action-row" style="margin-top:10px">
+              ${admin ? `<button class="btn btn-sm" onclick="addOrderRow('${s.id}')"><i class="ti ti-plus"></i> Thêm dòng</button>` : ""}
+              ${admin ? `<button class="btn btn-sm btn-primary" onclick="saveOrderTable('${s.id}')"><i class="ti ti-device-floppy"></i> Lưu thay đổi</button>` : ""}
               <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
               ${admin ? `<button class="btn btn-sm" onclick="openPasteHsCode('${s.id}')"><i class="ti ti-table-import"></i> Paste HS + C/O</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
@@ -580,7 +580,8 @@ function buildCard(s, admin) {
             </div>
           </div>
         </div>
-        <div class="no-toggle" style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary);overflow-y:auto">
+        <!-- Phải: checklist tên bước -->
+        <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary)">
           <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
           <div class="ck-list">${listHTML}</div>
         </div>
@@ -589,6 +590,101 @@ function buildCard(s, admin) {
 
   return card;
 }
+
+// Bảng chỉnh sửa dạng Excel cho Admin
+function buildEditableTable(orders, shipId) {
+  const cols = [
+    {key:"customer", label:"Customer",  w:"90px"},
+    {key:"contract", label:"Contract",  w:"80px"},
+    {key:"index",    label:"Index",     w:"90px"},
+    {key:"items",    label:"Items",     w:"90px"},
+    {key:"qty",      label:"Qty PCS",   w:"65px", type:"number"},
+    {key:"ctns",     label:"CTNs",      w:"50px", type:"number"},
+    {key:"kg",       label:"KG/thùng",  w:"65px", type:"number"},
+    {key:"cbm",      label:"CBM/thùng", w:"65px", type:"number"},
+    {key:"hsCode",   label:"HS Code",   w:"65px"},
+    {key:"coForm",   label:"C/O Form",  w:"65px"},
+  ];
+
+  const headerCols = cols.map(c=>`<col style="width:${c.w}">`).join("") + `<col style="width:32px">`;
+  const headerRow  = cols.map(c=>`<th>${c.label}</th>`).join("") + `<th></th>`;
+
+  const rows = orders.map((o,i) => {
+    const cells = cols.map(c => {
+      const val = o[c.key]||"";
+      return `<td><input class="xk-cell" data-key="${c.key}" data-row="${i}" value="${val}"
+        style="width:100%;border:none;background:transparent;font-size:12px;padding:3px 4px;outline:none;font-family:inherit"
+        onfocus="this.style.background='var(--blue-bg)'" onblur="this.style.background='transparent'"
+        ${c.type==="number"?'type="number" step="any"':''}
+      ></td>`;
+    }).join("");
+    return `<tr id="erow-${shipId}-${i}">${cells}
+      <td><button onclick="deleteOrderRow('${shipId}',${i})" style="border:none;background:none;cursor:pointer;color:var(--red-text);font-size:14px;padding:2px 4px">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  // Tổng
+  const totalPcs  = orders.reduce((a,o)=>a+(parseInt(o.qty)||0),0);
+  const totalCtns = orders.reduce((a,o)=>a+(parseInt(o.ctns)||0),0);
+  const totalKg   = orders.reduce((a,o)=>a+Math.round((parseFloat(o.kg)||0)*(parseInt(o.ctns)||0)*10)/10,0);
+  const totalCbm  = orders.reduce((a,o)=>a+Math.round((parseFloat(o.cbm)||0)*(parseInt(o.ctns)||0)*100)/100,0);
+
+  return `<table class="data-table" id="etable-${shipId}">
+    <colgroup>${headerCols}</colgroup>
+    <thead><tr>${headerRow}</tr></thead>
+    <tbody id="etbody-${shipId}">${rows}</tbody>
+    <tfoot><tr>
+      <td colspan="4" style="color:var(--text-muted);font-size:12px">Tổng (${orders.length} đơn)</td>
+      <td class="qty-pcs" id="etotal-pcs-${shipId}">${totalPcs.toLocaleString()}</td>
+      <td id="etotal-ctns-${shipId}">${totalCtns}</td>
+      <td id="etotal-kg-${shipId}">${totalKg}</td>
+      <td id="etotal-cbm-${shipId}">${totalCbm}</td>
+      <td colspan="3"></td>
+    </tr></tfoot>
+  </table>`;
+}
+
+window.addOrderRow = function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const newOrders = [...(s.orders||[]), {customer:"",contract:"",index:"",items:"",qty:0,ctns:0,kg:0,cbm:0,hsCode:"",coForm:""}];
+  // Re-render bảng
+  const inner = document.querySelector(`#detail-${shipId} .detail-inner`);
+  if (inner) {
+    const oldTable = inner.querySelector("table");
+    if (oldTable) oldTable.outerHTML = buildEditableTable(newOrders, shipId);
+    inner.insertAdjacentHTML("afterbegin", buildEditableTable(newOrders, shipId));
+    if (oldTable) oldTable.remove();
+  }
+};
+
+window.deleteOrderRow = async function(shipId, idx) {
+  if (!confirm("Xóa dòng này?")) return;
+  const s = allShipments.find(x=>x.id===shipId);
+  const orders = [...(s.orders||[])];
+  orders.splice(idx,1);
+  await updateDoc(doc(db,"shipments",shipId),{orders});
+  showToast("Đã xóa!");
+};
+
+window.saveOrderTable = async function(shipId) {
+  if (!confirm("Lưu tất cả thay đổi?")) return;
+  const tbody = document.getElementById(`etbody-${shipId}`);
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll("tr");
+  const orders = [];
+  rows.forEach(row => {
+    const cells = row.querySelectorAll(".xk-cell");
+    const o = {};
+    cells.forEach(c => {
+      const k = c.dataset.key;
+      o[k] = c.type==="number" ? (parseFloat(c.value)||0) : c.value.trim();
+    });
+    orders.push(o);
+  });
+  await updateDoc(doc(db,"shipments",shipId),{orders});
+  showToast("Đã lưu!");
+};
 
 function buildOrderTable(orders, shipId, admin) {
   if (!orders || orders.length === 0) {
@@ -660,9 +756,7 @@ function buildOrderTable(orders, shipId, admin) {
     </table>`;
 }
 
-window.toggleCard = function(id, e) {
-  // Chỉ toggle khi click đúng vào vùng header, không phải từ bubble
-  if (e && e.target.closest('.no-toggle')) return;
+window.toggleCard = function(id) {
   const detail = document.getElementById("detail-" + id);
   const cv     = document.getElementById("cv-" + id);
   const open   = detail.classList.contains("open");

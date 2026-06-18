@@ -507,50 +507,67 @@ function buildCard(s, admin) {
   card.className = "shipment-card";
   card.id = "card-" + s.id;
 
-  const orders    = s.orders || [];
-  const totalPcs  = orders.reduce((a,o) => a+(parseInt(o.qty)||0), 0);
-  const totalCtns = orders.reduce((a,o) => a+(parseInt(o.ctns)||0), 0);
-  const totalKg   = orders.reduce((a,o) => a+(parseFloat(o.kg)||0), 0);
-  const totalCbm  = orders.reduce((a,o) => a+(parseFloat(o.cbm)||0), 0);
+  // Build checklist HTML với tên bước
+  const clHTML = CHECKLIST_STEPS.map(step => {
+    const state = (s.checklist||{})[step.id] || "pending";
+    let cls = "ck-item";
+    let icon = "";
+    if (state === "done")  { cls += " ck-item-done";   icon = `<i class="ti ti-check"></i>`; }
+    if (state === "skip")  { cls += " ck-item-skip";   icon = `<i class="ti ti-minus"></i>`; }
+    if (state === "active"){ cls += " ck-item-active";  icon = step.short; }
+    if (state === "pending"){ icon = step.short; }
+    return `<div class="${cls}" data-ship="${s.id}" data-step="${step.id}" data-state="${state}" title="${step.label}${step.skippable?' (có thể bỏ qua)':''}">
+      <span class="ck-dot">${state==="done"?`<i class="ti ti-check" style="font-size:10px"></i>`:state==="skip"?`<i class="ti ti-minus" style="font-size:10px"></i>`:step.short}</span>
+      <span class="ck-name">${step.label}</span>
+    </div>`;
+  }).join("");
 
   card.innerHTML = `
-    <div class="card-header" onclick="toggleCard('${s.id}')">
-      <div class="card-row1">
-        <div>
-          <div class="card-title">
-            ${s.port}
-            <span class="badge ${isAir ? 'badge-gray' : 'badge-blue'}">${s.container}</span>
+    <div class="card-header" id="hdr-${s.id}">
+      <div style="display:flex;gap:0;align-items:stretch">
+        <!-- LEFT: info + toggle -->
+        <div style="flex:1;padding:14px 16px;cursor:pointer;min-width:0" onclick="toggleCard('${s.id}')">
+          <div class="card-row1">
+            <div>
+              <div class="card-title">
+                ${s.port}
+                <span class="badge ${isAir ? 'badge-gray' : 'badge-blue'}">${s.container}</span>
+              </div>
+              <div class="card-meta">
+                Đóng hàng: ${formatDate(s.stuffingDate) || "—"} ·
+                Ship: ${formatDate(s.shipDate)} ·
+                ${(s.orders||[]).length} đơn hàng
+              </div>
+            </div>
+            <div class="card-right">
+              <span class="badge ${status.cls}">${status.label}</span>
+              <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
+            </div>
           </div>
-          <div class="card-meta">
-            Đóng hàng: ${formatDate(s.stuffingDate) || "—"} ·
-            Ship: ${formatDate(s.shipDate)} ·
-            ${orders.length} đơn hàng
+          <div class="vessel-info">
+            <span><i class="ti ti-${isAir ? 'plane' : 'ship'}"></i>${s.vessel || "Chưa có tàu"}</span>
+            <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd) || "—"}</span>
+            <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta) || "—"}</span>
+            <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut) || "—"}</span>
+          </div>
+          <div class="progress-wrap" style="margin-top:4px">
+            <span class="prog-label">${done} / ${total} bước</span>
+            <div class="progress-track">
+              <div class="progress-fill" style="width:${pct}%;background:${progColor(pct)}"></div>
+            </div>
+            <span class="prog-label">${pct}%</span>
           </div>
         </div>
-        <div class="card-right">
-          <span class="badge ${status.cls}">${status.label}</span>
-          <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
+        <!-- RIGHT: checklist với tên bước -->
+        <div style="width:220px;flex-shrink:0;border-left:0.5px solid var(--border);padding:10px 12px;background:var(--bg-secondary);overflow-y:auto;max-height:160px">
+          <div id="cl-${s.id}" class="ck-list"></div>
         </div>
-      </div>
-      <div class="vessel-info">
-        <span><i class="ti ti-${isAir ? 'plane' : 'ship'}"></i>${s.vessel || "Chưa có tàu"}</span>
-        <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd) || "—"}</span>
-        <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta) || "—"}</span>
-        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut) || "—"}</span>
-      </div>
-      <div class="checklist" id="cl-${s.id}"></div>
-      <div class="progress-wrap" style="margin-top:6px">
-        <span class="prog-label">${done} / ${total} bước</span>
-        <div class="progress-track">
-          <div class="progress-fill" style="width:${pct}%;background:${progColor(pct)}"></div>
-        </div>
-        <span class="prog-label">${pct}%</span>
       </div>
     </div>
     <div class="card-detail" id="detail-${s.id}">
       <div class="detail-inner">
-        ${buildOrderTable(orders, s.id, admin)}
-        <div class="action-row" onclick="event.stopPropagation()">
+        ${buildOrderTable(s.orders||[], s.id, admin)}
+        <div class="action-row">
           ${admin ? `<button class="btn btn-sm" onclick="openAddOrder('${s.id}')"><i class="ti ti-plus"></i> Thêm đơn</button>` : ""}
           <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
           ${admin ? `<button class="btn btn-sm" onclick="openPasteHsCode('${s.id}')"><i class="ti ti-table-import"></i> Paste HS + C/O</button>` : ""}
@@ -560,11 +577,18 @@ function buildCard(s, admin) {
       </div>
     </div>`;
 
+  // Render checklist với tên bước và click handler
   const clEl = card.querySelector(`#cl-${s.id}`);
-  renderChecklist(clEl, s.checklist, admin ? async (stepId, newState) => {
-    const updated = { ...(s.checklist||{}), [stepId]: newState };
-    await updateDoc(doc(db, "shipments", s.id), { checklist: updated });
-  } : null);
+  clEl.innerHTML = CHECKLIST_STEPS.map(step => {
+    const state = (s.checklist||{})[step.id] || "pending";
+    let itemCls = "ck-list-item";
+    if (state === "done")  itemCls += " ck-done";
+    if (state === "skip")  itemCls += " ck-skipped";
+    return `<div class="${itemCls}" onclick="event.stopPropagation();${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:''}">
+      <span class="ck-dot2">${state==="done"?'✓':state==="skip"?'—':step.short}</span>
+      <span class="ck-name2">${step.label}</span>
+    </div>`;
+  }).join("");
 
   return card;
 }
@@ -595,11 +619,11 @@ function buildOrderTable(orders, shipId, admin) {
       <td>${ctns}</td>
       <td>
         ${totalRowKg}
-        ${admin && idx < orders.length-1 ? `<span title="Copy KG/thùng xuống dòng dưới" onclick="event.stopPropagation();copyKgDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:15px;margin-left:6px;vertical-align:middle;font-weight:bold">↓</span>` : ""}
+        ${admin && idx < orders.length-1 ? `<i class="ti ti-arrow-down-circle" title="Copy KG/thùng xuống" onclick="event.stopPropagation();copyKgDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:13px;margin-left:5px;vertical-align:middle"></i>` : ""}
       </td>
       <td>
         ${totalRowCbm}
-        ${admin && idx < orders.length-1 ? `<span title="Copy CBM/thùng xuống dòng dưới" onclick="event.stopPropagation();copyCbmDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:15px;margin-left:6px;vertical-align:middle;font-weight:bold">↓</span>` : ""}
+        ${admin && idx < orders.length-1 ? `<i class="ti ti-arrow-down-circle" title="Copy CBM/thùng xuống" onclick="event.stopPropagation();copyCbmDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:13px;margin-left:5px;vertical-align:middle"></i>` : ""}
       </td>
       <td>${o.hsCode || "—"}</td>
       <td>${o.coForm || "—"}</td>
@@ -786,6 +810,17 @@ function openEditOrderModal(shipId, idx, order) {
   openModal("modal-edit-shipment");
 }
 
+window.ckToggle = async function(shipId, stepId, currentState, skippable) {
+  let next;
+  if (currentState === "pending") next = "done";
+  else if (currentState === "done" && skippable) next = "skip";
+  else if (currentState === "done") next = "pending";
+  else next = "pending"; // skip → pending
+  const s = allShipments.find(x => x.id === shipId);
+  const updated = { ...(s.checklist||{}), [stepId]: next };
+  await updateDoc(doc(db, "shipments", shipId), { checklist: updated });
+};
+
 // Copy KG/thùng từ dòng idx xuống dòng idx+1, tính lại tổng KG
 window.copyKgDown = async function(shipId, idx) {
   const s = allShipments.find(x => x.id === shipId);
@@ -890,6 +925,7 @@ window.openEditShipment = function(id) {
 
   document.getElementById("form-edit-ship").addEventListener("submit", async e => {
     e.preventDefault();
+    if (!confirm("Lưu thay đổi lô hàng này?")) return;
     await updateDoc(doc(db, "shipments", id), {
       exportDate:   document.getElementById("es-export-date").value || null,
       shipDate:     document.getElementById("es-ship-date").value,

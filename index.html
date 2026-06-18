@@ -550,7 +550,7 @@ function buildCard(s, admin) {
     <div class="card-detail" id="detail-${s.id}">
       <div class="detail-inner">
         ${buildOrderTable(orders, s.id, admin)}
-        <div class="action-row">
+        <div class="action-row" onclick="event.stopPropagation()">
           ${admin ? `<button class="btn btn-sm" onclick="openAddOrder('${s.id}')"><i class="ti ti-plus"></i> Thêm đơn</button>` : ""}
           <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
           ${admin ? `<button class="btn btn-sm" onclick="openPasteHsCode('${s.id}')"><i class="ti ti-table-import"></i> Paste HS + C/O</button>` : ""}
@@ -593,19 +593,19 @@ function buildOrderTable(orders, shipId, admin) {
       <td>${o.items || "—"}</td>
       <td class="qty-pcs">${(parseInt(o.qty)||0).toLocaleString()}</td>
       <td>${ctns}</td>
-      <td style="position:relative">
+      <td>
         ${totalRowKg}
-        ${admin && idx < orders.length-1 ? `<span title="Copy KG/thùng xuống dòng dưới" onclick="copyKgDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:11px;margin-left:4px">↓</span>` : ""}
+        ${admin && idx < orders.length-1 ? `<span title="Copy KG/thùng xuống dòng dưới" onclick="event.stopPropagation();copyKgDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:15px;margin-left:6px;vertical-align:middle;font-weight:bold">↓</span>` : ""}
       </td>
-      <td style="position:relative">
+      <td>
         ${totalRowCbm}
-        ${admin && idx < orders.length-1 ? `<span title="Copy CBM/thùng xuống dòng dưới" onclick="copyCbmDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:11px;margin-left:4px">↓</span>` : ""}
+        ${admin && idx < orders.length-1 ? `<span title="Copy CBM/thùng xuống dòng dưới" onclick="event.stopPropagation();copyCbmDown('${shipId}',${idx})" style="cursor:pointer;color:var(--blue-text);font-size:15px;margin-left:6px;vertical-align:middle;font-weight:bold">↓</span>` : ""}
       </td>
       <td>${o.hsCode || "—"}</td>
       <td>${o.coForm || "—"}</td>
       ${admin ? `<td>
-        <button class="btn btn-sm" onclick="openEditOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-edit" style="font-size:11px"></i></button>
-        <button class="btn btn-sm btn-danger" onclick="deleteOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-trash" style="font-size:11px"></i></button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();openEditOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-edit" style="font-size:11px"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deleteOrder('${shipId}',${idx})" style="padding:2px 6px"><i class="ti ti-trash" style="font-size:11px"></i></button>
       </td>` : ""}
     </tr>`;
   }).join("");

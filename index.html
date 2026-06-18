@@ -986,7 +986,7 @@ window.calcDimCbm = function() {
   const l = parseFloat(document.getElementById("dim-l")?.value)||0;
   const w = parseFloat(document.getElementById("dim-w")?.value)||0;
   const h = parseFloat(document.getElementById("dim-h")?.value)||0;
-  const cbm = Math.round(l*w*h/10000)/100;
+  const cbm = Math.round(l*w*h/1000000)/1000;
   const el = document.getElementById("dim-cbm-result");
   if (el) el.textContent = cbm;
 };
@@ -995,7 +995,7 @@ window.applyDimAll = function(shipId, rowIdx) {
   const l = parseFloat(document.getElementById("dim-l").value)||0;
   const w = parseFloat(document.getElementById("dim-w").value)||0;
   const h = parseFloat(document.getElementById("dim-h").value)||0;
-  const cbm = Math.round(l*w*h/10000)/100;
+  const cbm = Math.round(l*w*h/1000000)/1000;
   if (!l || !w || !h) { showToast("Nhập đủ Dài × Rộng × Cao trước!"); return; }
 
   const tbody = document.getElementById(`etbody-${shipId}`);
@@ -1017,7 +1017,7 @@ window.applyDim = function(shipId, rowIdx) {
   const l = parseFloat(document.getElementById("dim-l").value)||0;
   const w = parseFloat(document.getElementById("dim-w").value)||0;
   const h = parseFloat(document.getElementById("dim-h").value)||0;
-  const cbm = Math.round(l*w*h/10000)/100;
+  const cbm = Math.round(l*w*h/1000000)/1000;
   const row = document.getElementById(`erow-${shipId}-${rowIdx}`);
   row.querySelector(`.xk-cell[data-key="dimL"]`).value = l;
   row.querySelector(`.xk-cell[data-key="dimW"]`).value = w;
@@ -1242,7 +1242,7 @@ function openEditOrderModal(shipId, idx, order) {
     const w = parseFloat(document.getElementById("fo-dimw").value)||0;
     const h = parseFloat(document.getElementById("fo-dimh").value)||0;
     if (d && w && h) {
-      document.getElementById("fo-cbm").value = Math.round(d*w*h/10000)/100;
+      document.getElementById("fo-cbm").value = Math.round(d*w*h/1000000)/1000;
     }
   };
 

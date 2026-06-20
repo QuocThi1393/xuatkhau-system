@@ -193,6 +193,11 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
     if (row.etd)          ctxEtd   = parseDate2(row.etd);
     if (row.pod)          ctxPod   = String(row.pod).toUpperCase();
 
+    // DEBUG: log dòng có ngày
+    if (row.stuffingDate || row.etd) {
+      console.log("Dòng có ngày:", JSON.stringify({stuff:row.stuffingDate, etd:row.etd, parsed_stuff:ctxStuff, parsed_etd:ctxEtd}));
+    }
+
     if (!current) current = { stuffingDate: ctxStuff, etd: ctxEtd, pod: ctxPod, container: "", orders: [] };
     if (row.stuffingDate) current.stuffingDate = ctxStuff;
     if (row.etd)          current.etd = ctxEtd;

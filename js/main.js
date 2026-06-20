@@ -395,10 +395,10 @@ function buildCard(s, admin) {
           <div class="card-title">${custLabel}${fullPort(s.port)}
             <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container||"?"}</span>
           </div>
-          <div class="card-meta">Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng${periodLabel?` · <span style="color:var(--blue-text)">${periodLabel}</span>`:""}</div>
+          <div class="card-meta">Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng</div>
         </div>
         <div class="card-right" style="display:flex;flex-direction:row;align-items:center;gap:10px">
-          <img src="https://i.ibb.co/WdjmxxJ/image.png" style="height:26px;width:auto;opacity:0.85" alt="TOS">
+          <span class="period-label" ${admin?`onclick="editPeriod('${s.id}')" style="cursor:pointer;font-size:12px;font-weight:500;color:var(--blue-text);border:0.5px dashed var(--blue-border);padding:3px 8px;border-radius:var(--radius-md)" title="Bấm để sửa tháng"`:`style="font-size:12px;font-weight:500;color:var(--blue-text)"`}>${periodLabel || (admin?"+ Gán tháng":"")}</span>
           <span class="badge ${status.cls}">${status.label}</span>
           <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">
             <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
@@ -468,6 +468,19 @@ function buildReadonlyTable(orders) {
     <td>${Math.round(tKg*10)/10}</td><td>${Math.round(tCbm*100)/100}</td><td colspan="3"></td></tr></tfoot>
   </table>`;
 }
+
+window.editPeriod = function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const cur = s.period || "";
+  const val = prompt("Nhập tháng cho lô hàng (định dạng YYYY-MM, ví dụ 2026-06).\nĐể trống để xóa:", cur);
+  if (val === null) return; // hủy
+  const v = val.trim();
+  if (v && !/^\d{4}-\d{2}$/.test(v)) { showToast("Sai định dạng! Dùng YYYY-MM, ví dụ 2026-06"); return; }
+  updateDoc(doc(db,"shipments",shipId), { period: v || null }).then(() => {
+    showToast(v ? "Đã gán tháng "+v : "Đã xóa tháng");
+  });
+};
 
 window.toggleCard = function(id) {
   const detail = document.getElementById("detail-"+id);

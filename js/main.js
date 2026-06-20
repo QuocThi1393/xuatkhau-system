@@ -185,23 +185,22 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
         current.container = rowText;
         shipments.push(current);
         current = null;
+        ctxStuff = ""; ctxEtd = ""; ctxPod = ""; // reset cho lô sau
       }
       continue;
     }
 
-    if (row.stuffingDate) ctxStuff = parseDate2(row.stuffingDate);
-    if (row.etd)          ctxEtd   = parseDate2(row.etd);
-    if (row.pod)          ctxPod   = String(row.pod).toUpperCase();
-
-    // DEBUG: log dòng có ngày
-    if (row.stuffingDate || row.etd) {
-      console.log("Dòng có ngày:", JSON.stringify({stuff:row.stuffingDate, etd:row.etd, parsed_stuff:ctxStuff, parsed_etd:ctxEtd}));
-    }
+    const sd = (row.stuffingDate||"").toString().trim();
+    const ed = (row.etd||"").toString().trim();
+    const pd = (row.pod||"").toString().trim();
+    if (sd) ctxStuff = parseDate2(sd);
+    if (ed) ctxEtd   = parseDate2(ed);
+    if (pd) ctxPod   = pd.toUpperCase();
 
     if (!current) current = { stuffingDate: ctxStuff, etd: ctxEtd, pod: ctxPod, container: "", orders: [] };
-    if (row.stuffingDate) current.stuffingDate = ctxStuff;
-    if (row.etd)          current.etd = ctxEtd;
-    if (row.pod)          current.pod = ctxPod;
+    if (sd) current.stuffingDate = ctxStuff;
+    if (ed) current.etd = ctxEtd;
+    if (pd) current.pod = ctxPod;
 
     const o = computeRow({
       pod: row.pod ? String(row.pod).toUpperCase() : ctxPod,

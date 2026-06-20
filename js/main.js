@@ -596,7 +596,7 @@ window.deleteShipment = async function(id) {
 window.openEmailModal = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  let contact="—", consignee="—", description="SHIRTS", note="";
+  let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="";
   const first = (s.orders||[])[0];
   if (first?.customer) {
     try {
@@ -604,41 +604,70 @@ window.openEmailModal = async function(shipId) {
       const snap = await getDocs(q(col(db,"customers"), where("name","==",first.customer)));
       if (!snap.empty) {
         const c = snap.docs[0].data();
-        contact=c.contactPerson||"—";
-        consignee=c.consignee||c.consigneeName||"—";
-        description=c.description||"SHIRTS"; note=c.note||"";
+        consignee=c.consignee||"—"; description=c.description||"SHIRTS"; note=c.note||"";
+        mailTo=c.mailTo||""; mailCc=c.mailCc||""; shortName=c.shortName||c.name||"";
       }
     } catch(e){}
   }
-  const contracts = [...new Set((s.orders||[]).map(o=>o.contract).filter(Boolean))].join(", ");
+  const contracts = [...new Set((s.orders||[]).map(o=>o.contract).filter(Boolean))];
+  const firstContract = contracts[0] || "";
   const tPcs = (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
   const tCtns= (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
   const tKg  = Math.round((s.orders||[]).reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0));
   const tCbm = Math.round((s.orders||[]).reduce((a,o)=>a+(parseFloat(o.cbm)||0),0)*100)/100;
   const etdStr = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}).toUpperCase() : "???";
+  const etdShort = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit"}).toUpperCase() : "???";
 
-  const txt = `Dear ${contact},
+  // Subject: New Booking 1x20 shipments //HCM-BANGKOK, THAILAND/ ETD 24 JUN / Consignee: FLEX THAILAND//V26TS006
+  const subject = `New Booking ${s.container||""} shipments //HCM-${fullPort(s.port)}/ ETD ${etdShort} / Consignee: ${shortName}//${firstContract}`;
 
-Please arrange for our NEW FCL BOOKING as follows!
+  const body = `Please arrange for our NEW FCL BOOKING as follows!
 
 ${s.container||"???"} TO ${fullPort(s.port)}, JAPAN:
 
 ETD: ~ ${etdStr}  TO: ${fullPort(s.port)}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
 
 Description: ${description}
-Contract number: ${contracts}
+Contract number: ${contracts.join(", ")}
 Quantity: ${tPcs.toLocaleString()} pcs = (about) ${tCtns} cartons = (about) ${tKg} kgs = (about) ${tCbm} cbm
 
 Consignee: ${consignee}
 ${note ? "\nNote: "+note : ""}
 
 Best regards,`;
-  document.getElementById("email-body").textContent = txt;
+
+  document.getElementById("email-body").innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="width:50px;font-size:12px;font-weight:500;color:var(--text-muted)">To:</span>
+        <input class="form-input" id="em-to" value="${mailTo}" style="flex:1;font-size:12px">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="width:50px;font-size:12px;font-weight:500;color:var(--text-muted)">CC:</span>
+        <input class="form-input" id="em-cc" value="${mailCc}" style="flex:1;font-size:12px">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="width:50px;font-size:12px;font-weight:500;color:var(--text-muted)">Subject:</span>
+        <input class="form-input" id="em-subject" value="${subject.replace(/"/g,'&quot;')}" style="flex:1;font-size:12px">
+      </div>
+    </div>
+    <textarea id="em-body" style="width:100%;height:280px;font-size:13px;line-height:1.6;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:12px;font-family:inherit;resize:vertical;outline:none">${body}</textarea>`;
+
+  window._emailData = { mailTo, mailCc };
   openModal("modal-email");
 };
 document.getElementById("btn-copy-email").addEventListener("click", () => {
-  navigator.clipboard.writeText(document.getElementById("email-body").textContent);
-  showToast("Đã copy email!");
+  const body = document.getElementById("em-body")?.value || "";
+  navigator.clipboard.writeText(body);
+  showToast("Đã copy nội dung email!");
+});
+document.getElementById("btn-open-mail").addEventListener("click", () => {
+  const to = document.getElementById("em-to")?.value || "";
+  const cc = document.getElementById("em-cc")?.value || "";
+  const subject = document.getElementById("em-subject")?.value || "";
+  const body = document.getElementById("em-body")?.value || "";
+  const link = `mailto:${encodeURIComponent(to)}?cc=${encodeURIComponent(cc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = link;
 });
 
 document.getElementById("filter-status").addEventListener("change", renderList);
@@ -740,9 +769,9 @@ function renderPackingA4(s, cust, p) {
     ? `${s.container||""} : ${p.contNo||""}/ ${p.sealNo||""}`
     : `${s.container||""}`;
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Packing List - ${fullPort(s.port)}</title>
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4; margin: 10mm; }
   * { box-sizing: border-box; }
   body { font-family: "Times New Roman", serif; font-size: 12px; color:#000; margin:0; }
   .pl-header { text-align:center; position:relative; border-bottom:0; }

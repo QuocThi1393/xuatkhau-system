@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hệ thống Xuất Khẩu</title>
+<link rel="icon" type="image/png" href="https://i.ibb.co/WdjmxxJ/image.png">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <!-- Handsontable: Excel trên web -->
@@ -42,6 +43,9 @@
         <option value="processing">Đang xử lý</option>
         <option value="done">Hoàn tất</option>
       </select>
+      <select class="form-select" id="filter-month" style="width:160px;padding:6px 8px">
+        <option value="">Tất cả tháng</option>
+      </select>
     </div>
     <div class="toolbar-right">
       <button class="btn" id="btn-import-plan" style="display:none">
@@ -53,9 +57,14 @@
     </div>
   </div>
 
-  <div id="shipment-list">
+  <div id="shipment-list" style="position:relative;min-height:300px">
     <div class="spinner"></div>
   </div>
+</div>
+
+<!-- Logo nền mờ giữa trang -->
+<div id="bg-logo" style="position:fixed;top:55%;left:50%;transform:translate(-50%,-50%);z-index:-1;opacity:0.05;pointer-events:none;width:480px;max-width:60vw">
+  <img src="https://i.ibb.co/hJBsykzj/Gemini-Generated-Image-2ftafj2ftafj2fta.jpg" style="width:100%;height:auto" alt="">
 </div>
 
 <!-- MODAL: Import / Thêm bằng bảng Excel -->

@@ -316,8 +316,18 @@ function sortShipments(list) {
 
 function renderList() {
   const filterVal = document.getElementById("filter-status").value;
+  const filterMonth = document.getElementById("filter-month").value;
   const container = document.getElementById("shipment-list");
   const admin = isAdmin();
+
+  // Đổ danh sách tháng vào dropdown
+  const months = [...new Set(allShipments.map(s=>s.period).filter(Boolean))].sort().reverse();
+  const monthSel = document.getElementById("filter-month");
+  const curMonth = monthSel.value;
+  monthSel.innerHTML = `<option value="">Tất cả tháng</option>` + months.map(m => {
+    const [y,mo] = m.split("-");
+    return `<option value="${m}" ${m===curMonth?"selected":""}>Tháng ${mo}/${y}</option>`;
+  }).join("");
 
   const openCards = new Set();
   document.querySelectorAll(".card-detail.open").forEach(el => openCards.add(el.id.replace("detail-","")));
@@ -329,6 +339,9 @@ function renderList() {
       return (filterVal==="done"&&label==="Hoàn tất") || (filterVal==="booking"&&label==="Chờ booking")
           || (filterVal==="processing"&&label==="Đang xử lý") || (filterVal==="pending"&&label==="Chờ xử lý");
     });
+  }
+  if (filterMonth) {
+    list = list.filter(s => s.period === filterMonth);
   }
 
   document.getElementById("shipment-count").textContent = list.length + " lô hàng · sắp theo ngày đóng hàng";
@@ -348,9 +361,12 @@ function buildCard(s, admin) {
   const { done, total, pct } = getProgress(s.checklist);
   const status = getStatus(s.checklist);
   const isAir = (s.container||"").toUpperCase().includes("AIR");
+  const isDone = done === total;
   const card = document.createElement("div");
   card.className = "shipment-card";
   card.id = "card-"+s.id;
+  // Card hoàn tất → nền xanh nhẹ
+  if (isDone) card.style.background = "#EBF3FB";
 
   const dotsHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
@@ -370,6 +386,7 @@ function buildCard(s, admin) {
 
   const customers = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
   const custLabel = customers.length ? customers.join(" / ")+" — " : "";
+  const periodLabel = s.period ? (() => { const [y,mo]=s.period.split("-"); return `Tháng ${mo}/${y}`; })() : "";
 
   card.innerHTML = `
     <div style="padding:14px 16px">
@@ -378,9 +395,10 @@ function buildCard(s, admin) {
           <div class="card-title">${custLabel}${fullPort(s.port)}
             <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container||"?"}</span>
           </div>
-          <div class="card-meta">Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng</div>
+          <div class="card-meta">Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng${periodLabel?` · <span style="color:var(--blue-text)">${periodLabel}</span>`:""}</div>
         </div>
-        <div class="card-right">
+        <div class="card-right" style="display:flex;flex-direction:row;align-items:center;gap:10px">
+          <img src="https://i.ibb.co/WdjmxxJ/image.png" style="height:26px;width:auto;opacity:0.85" alt="TOS">
           <span class="badge ${status.cls}">${status.label}</span>
           <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">
             <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
@@ -557,6 +575,10 @@ window.openEditShipment = function(id) {
         <div class="form-group"><label class="form-label">Số Container</label><input class="form-input" id="es-contno" value="${s.contNo||""}" placeholder="GAOU2267867"></div>
       </div>
       <div class="form-group"><label class="form-label">Số Seal</label><input class="form-input" id="es-sealno" value="${s.sealNo||""}" placeholder="SITB004160"></div>
+      <div class="form-group">
+        <label class="form-label">Lô hàng thuộc tháng (MM/YYYY)</label>
+        <input type="month" class="form-input" id="es-period" value="${s.period||""}">
+      </div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
         <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Lưu</button>
@@ -579,6 +601,7 @@ window.openEditShipment = function(id) {
       booking: document.getElementById("es-booking").value.trim()||null,
       contNo: document.getElementById("es-contno").value.trim()||null,
       sealNo: document.getElementById("es-sealno").value.trim()||null,
+      period: document.getElementById("es-period").value||null,
     });
     closeModal("modal-edit-shipment");
     showToast("Đã cập nhật lô hàng!");
@@ -671,6 +694,7 @@ document.getElementById("btn-open-mail").addEventListener("click", () => {
 });
 
 document.getElementById("filter-status").addEventListener("change", renderList);
+document.getElementById("filter-month").addEventListener("change", renderList);
 
 // ====== PACKING LIST ======
 window.openPackingList = function(shipId) {

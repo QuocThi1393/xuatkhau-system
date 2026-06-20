@@ -85,16 +85,11 @@ function emptyRows(n) {
 
 function initImportHot() {
   const cont = document.getElementById("hot-import");
-  // Bảng import có thêm cột "Quy cách" ở đầu để đánh dấu dòng tổng
-  const importCols = [
-    { data: "packing", title: "Quy cách (dòng tổng)", width: 130 },
-    ...COLS
-  ];
   if (importHot) { importHot.destroy(); importHot = null; }
   importHot = new Handsontable(cont, {
     data: emptyRows(60),
-    columns: importCols,
-    colHeaders: importCols.map(c => c.title),
+    columns: COLS,
+    colHeaders: COLS.map(c => c.title),
     rowHeaders: true,
     height: 420,
     width: "100%",
@@ -105,7 +100,6 @@ function initImportHot() {
     afterChange: (changes, source) => {
       if (source === "loadData") return;
       if (!changes) return;
-      // Tự tính kgTotal & cbm
       const data = importHot.getSourceData();
       changes.forEach(([r]) => {
         if (data[r]) computeRow(data[r]);
@@ -170,19 +164,29 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
   let ctxStuff = "", ctxEtd = "", ctxPod = "";
 
   for (const row of rows) {
-    const packing = (row.packing || "").toString().trim();
-    const hasItem = (row.items || "").toString().trim() || (row.customer || "").toString().trim();
+    const itemVal = (row.items || "").toString().trim();
+    const custVal = (row.customer || "").toString().trim();
+    const contractVal = (row.contract || "").toString().trim();
+    const podVal  = (row.pod || "").toString().trim();
+    const dateVal = (row.stuffingDate||"").toString().trim() || (row.etd||"").toString().trim();
 
-    // Dòng tổng = có quy cách, không có item/customer
-    if (packing && !hasItem) {
-      if (current && current.orders.length) {
-        current.container = packing;
+    // Dòng tổng (kết thúc lô): KHÔNG có Customer + KHÔNG có Contract + KHÔNG có ngày/POD
+    // nhưng CÓ text ở đâu đó (thường là Items/giữa, do merge). Đây là dòng quy cách đóng hàng.
+    const isTotalRow = !custVal && !contractVal && !podVal && !dateVal;
+    const rowText = [row.pod,row.customer,row.contract,row.index,row.items]
+      .map(v=>(v||"").toString().trim()).filter(Boolean).join(" ").trim();
+
+    if (isTotalRow) {
+      if (rowText && current && current.orders.length) {
+        current.container = rowText;
         shipments.push(current);
         current = null;
       }
       continue;
     }
-    if (!hasItem) continue;
+
+    // Dòng đơn hàng: phải có customer (hoặc contract)
+    if (!custVal && !contractVal) continue;
 
     if (row.stuffingDate) ctxStuff = parseDate2(row.stuffingDate);
     if (row.etd)          ctxEtd   = parseDate2(row.etd);
@@ -195,8 +199,8 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
 
     const o = computeRow({
       pod: row.pod ? String(row.pod).toUpperCase() : ctxPod,
-      customer: row.customer||"", contract: row.contract||"",
-      index: row.index||"", items: row.items||"",
+      customer: custVal, contract: contractVal,
+      index: row.index||"", items: itemVal,
       qty: parseFloat(String(row.qty||"").replace(/[,]/g,""))||0,
       ctns: parseFloat(String(row.ctns||"").replace(/[,]/g,""))||0,
       kgPerCtn: parseFloat(row.kgPerCtn)||0,

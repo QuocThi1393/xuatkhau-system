@@ -137,11 +137,12 @@ let parsedPlan = [];
 function parseDate2(str) {
   if (!str) return "";
   str = String(str).trim();
-  // dd-mm hoặc dd/mm
+  // Định dạng MM/DD hoặc MM/DD/YYYY (kiểu Nhật: tháng trước, ngày sau)
   let m = str.match(/^(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?$/);
   if (m) {
+    const mo = m[1], day = m[2];
     const y = m[3] ? (m[3].length===2 ? "20"+m[3] : m[3]) : new Date().getFullYear();
-    return `${y}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
+    return `${y}-${mo.padStart(2,"0")}-${day.padStart(2,"0")}`;
   }
   // "05-Jul" dạng
   m = str.match(/^(\d{1,2})[-\s]([A-Za-z]{3})/);

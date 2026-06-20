@@ -167,16 +167,19 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
     const itemVal = (row.items || "").toString().trim();
     const custVal = (row.customer || "").toString().trim();
     const contractVal = (row.contract || "").toString().trim();
+    const indexVal = (row.index || "").toString().trim();
     const podVal  = (row.pod || "").toString().trim();
     const dateVal = (row.stuffingDate||"").toString().trim() || (row.etd||"").toString().trim();
 
-    // Dòng tổng (kết thúc lô): KHÔNG có Customer + KHÔNG có Contract + KHÔNG có ngày/POD
-    // nhưng CÓ text ở đâu đó (thường là Items/giữa, do merge). Đây là dòng quy cách đóng hàng.
-    const isTotalRow = !custVal && !contractVal && !podVal && !dateVal;
-    const rowText = [row.pod,row.customer,row.contract,row.index,row.items]
+    // Dòng đơn hàng THẬT phải có Items (mã hàng) HOẶC có Contract.
+    // Dòng tổng: KHÔNG có Items + KHÔNG có Contract + KHÔNG có Index + KHÔNG có ngày + KHÔNG có POD
+    //   (quy cách như "40F*1","AIR" thường nằm ở cột Customer, nên không xét custVal)
+    const isOrderRow = itemVal !== "" || contractVal !== "" || indexVal !== "";
+    const rowText = [row.customer,row.contract,row.index,row.items,row.pod]
       .map(v=>(v||"").toString().trim()).filter(Boolean).join(" ").trim();
 
-    if (isTotalRow) {
+    if (!isOrderRow) {
+      // dòng không phải đơn hàng → nếu có text (quy cách) thì đóng lô
       if (rowText && current && current.orders.length) {
         current.container = rowText;
         shipments.push(current);
@@ -184,9 +187,6 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
       }
       continue;
     }
-
-    // Dòng đơn hàng: phải có customer (hoặc contract)
-    if (!custVal && !contractVal) continue;
 
     if (row.stuffingDate) ctxStuff = parseDate2(row.stuffingDate);
     if (row.etd)          ctxEtd   = parseDate2(row.etd);
@@ -200,7 +200,7 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
     const o = computeRow({
       pod: row.pod ? String(row.pod).toUpperCase() : ctxPod,
       customer: custVal, contract: contractVal,
-      index: row.index||"", items: itemVal,
+      index: indexVal, items: itemVal,
       qty: parseFloat(String(row.qty||"").replace(/[,]/g,""))||0,
       ctns: parseFloat(String(row.ctns||"").replace(/[,]/g,""))||0,
       kgPerCtn: parseFloat(row.kgPerCtn)||0,

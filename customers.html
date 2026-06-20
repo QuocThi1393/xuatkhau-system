@@ -49,15 +49,9 @@
       </span>
     </div>
     <form id="form-customer">
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Tên khách hàng *</label>
-          <input class="form-input" id="fc-name" placeholder="TOYOTSU, FLEX JAPAN..." required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Người liên hệ (Dear ...)</label>
-          <input class="form-input" id="fc-contact" placeholder="Ms Thao, Mr Tanaka...">
-        </div>
+      <div class="form-group">
+        <label class="form-label">Tên khách hàng *</label>
+        <input class="form-input" id="fc-name" placeholder="TOYOTSU, FLEX JAPAN..." required>
       </div>
 
       <div class="form-group">
@@ -80,39 +74,24 @@ CHUO-KU OSAKA 541-0043 JAPAN"></textarea>
       </div>
 
       <div style="border-top:0.5px solid var(--border);margin:16px 0;padding-top:12px">
-        <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Email</div>
+        <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Email Booking</div>
         <div class="form-group">
-          <label class="form-label">Email Khách</label>
-          <input type="text" class="form-input" id="fc-email" placeholder="customer@example.com">
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Email Forwarder</label>
-            <input type="text" class="form-input" id="fc-fwd1" placeholder="forwarder1@...">
-          </div>
-          <div class="form-group">
-            <label class="form-label">Email Forwarder 2</label>
-            <input type="text" class="form-input" id="fc-fwd2" placeholder="forwarder2@...">
-          </div>
+          <label class="form-label">Mail To</label>
+          <input type="text" class="form-input" id="fc-mailto" placeholder="to@example.com (nhiều mail cách nhau dấu phẩy)">
         </div>
         <div class="form-group">
-          <label class="form-label">Email Forwarder 3</label>
-          <input type="text" class="form-input" id="fc-fwd3" placeholder="forwarder3@...">
+          <label class="form-label">Mail CC</label>
+          <input type="text" class="form-input" id="fc-mailcc" placeholder="cc@example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tên Consignee (cho Subject)</label>
+          <input type="text" class="form-input" id="fc-shortname" placeholder="FLEX THAILAND">
         </div>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label">Description (hàng hóa)</label>
-          <input class="form-input" id="fc-description" placeholder="SHIRTS, PANTS..." value="SHIRTS">
-        </div>
-        <div class="form-group">
-          <label class="form-label">C/O Form mặc định</label>
-          <select class="form-select" id="fc-coform">
-            <option value="">-- Chọn --</option>
-            ${["RCEP","AJ","AI","VK","VJ","EUR.1","CO-D"].map(v => `<option value="${v}">${v}</option>`).join("")}
-          </select>
-        </div>
+      <div class="form-group">
+        <label class="form-label">Description (hàng hóa)</label>
+        <input class="form-input" id="fc-description" placeholder="SHIRTS, PANTS..." value="SHIRTS">
       </div>
       <div class="form-group">
         <label class="form-label">Note cố định trong email</label>
@@ -203,16 +182,13 @@ document.getElementById("form-customer").addEventListener("submit", async e => {
   e.preventDefault();
   const data = {
     name:          document.getElementById("fc-name").value.trim(),
-    contactPerson: document.getElementById("fc-contact").value.trim(),
     hdgc:          document.getElementById("fc-hdgc").value.trim(),
     messrs:        document.getElementById("fc-messrs").value.trim(),
     consignee:     document.getElementById("fc-consignee").value.trim(),
-    email:         document.getElementById("fc-email").value.trim(),
-    fwd1:          document.getElementById("fc-fwd1").value.trim(),
-    fwd2:          document.getElementById("fc-fwd2").value.trim(),
-    fwd3:          document.getElementById("fc-fwd3").value.trim(),
+    mailTo:        document.getElementById("fc-mailto").value.trim(),
+    mailCc:        document.getElementById("fc-mailcc").value.trim(),
+    shortName:     document.getElementById("fc-shortname").value.trim(),
     description:   document.getElementById("fc-description").value.trim(),
-    coForm:        document.getElementById("fc-coform").value,
     note:          document.getElementById("fc-note").value.trim(),
   };
   try {
@@ -220,6 +196,9 @@ document.getElementById("form-customer").addEventListener("submit", async e => {
       await updateDoc(doc(db, "customers", editingId), data);
       showToast("Đã cập nhật khách hàng!");
     } else {
+      // Check trùng tên
+      const dup = allCustomers.find(c => (c.name||"").toLowerCase() === data.name.toLowerCase());
+      if (dup) { showToast("Tên khách hàng đã tồn tại! Đổi tên khác."); return; }
       await addDoc(collection(db, "customers"), { ...data, createdAt: serverTimestamp() });
       showToast("Đã thêm khách hàng!");
     }
@@ -243,17 +222,17 @@ function renderList() {
 
   container.innerHTML = "";
   allCustomers.forEach(c => {
-    const emails = [c.email, c.fwd1, c.fwd2, c.fwd3].filter(Boolean);
     const card = document.createElement("div");
     card.className = "shipment-card";
     card.innerHTML = `
       <div style="padding:14px 16px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:15px;font-weight:500;margin-bottom:4px">${c.name}</div>
-            <div style="font-size:12px;color:var(--text-muted)">Dear ${c.contactPerson || "—"}${c.hdgc?` · HDGC: ${c.hdgc}`:""}</div>
+            <div style="font-size:15px;font-weight:500;margin-bottom:4px">${c.name}${c.shortName?` <span style="font-size:12px;color:var(--text-muted)">(${c.shortName})</span>`:""}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${c.hdgc?`HDGC: ${c.hdgc}`:"—"}</div>
           </div>
           ${admin ? `<div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="copyCustomer('${c.id}')" title="Sao chép khách hàng này"><i class="ti ti-copy"></i></button>
             <button class="btn btn-sm" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
           </div>` : ""}
@@ -263,12 +242,10 @@ function renderList() {
           <div><span style="font-weight:500">CONSIGNEE:</span><br><span style="white-space:pre-line;font-size:11px">${c.consignee || "—"}</span></div>
         </div>
         <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">
-          <span style="font-weight:500">Email:</span> ${emails.length ? emails.join(" · ") : "—"}
+          <div><span style="font-weight:500">To:</span> ${c.mailTo || "—"}</div>
+          <div><span style="font-weight:500">CC:</span> ${c.mailCc || "—"}</div>
         </div>
-        <div style="margin-top:4px;font-size:11px;color:var(--text-muted);display:flex;gap:16px">
-          <span><b>Description:</b> ${c.description || "—"}</span>
-          <span><b>C/O:</b> ${c.coForm || "—"}</span>
-        </div>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-muted)"><b>Description:</b> ${c.description || "—"}</div>
         ${c.note ? `<div style="font-size:11px;color:var(--text-hint);margin-top:4px"><b>Note:</b> ${c.note}</div>` : ""}
       </div>`;
     container.appendChild(card);
@@ -281,18 +258,33 @@ window.editCustomer = function(id) {
   editingId = id;
   document.getElementById("customer-modal-title").textContent = "Sửa khách hàng";
   document.getElementById("fc-name").value      = c.name || "";
-  document.getElementById("fc-contact").value   = c.contactPerson || "";
   document.getElementById("fc-hdgc").value      = c.hdgc || "";
   document.getElementById("fc-messrs").value    = c.messrs || "";
   document.getElementById("fc-consignee").value = c.consignee || "";
-  document.getElementById("fc-email").value     = c.email || "";
-  document.getElementById("fc-fwd1").value      = c.fwd1 || "";
-  document.getElementById("fc-fwd2").value      = c.fwd2 || "";
-  document.getElementById("fc-fwd3").value      = c.fwd3 || "";
+  document.getElementById("fc-mailto").value    = c.mailTo || "";
+  document.getElementById("fc-mailcc").value    = c.mailCc || "";
+  document.getElementById("fc-shortname").value = c.shortName || "";
   document.getElementById("fc-description").value = c.description || "SHIRTS";
-  document.getElementById("fc-coform").value    = c.coForm || "";
   document.getElementById("fc-note").value      = c.note || "";
   openModal("modal-customer");
+};
+
+window.copyCustomer = function(id) {
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  editingId = null; // tạo mới
+  document.getElementById("customer-modal-title").textContent = "Sao chép khách hàng (đổi tên mới)";
+  document.getElementById("fc-name").value      = ""; // bắt buộc đổi tên
+  document.getElementById("fc-hdgc").value      = c.hdgc || "";
+  document.getElementById("fc-messrs").value    = c.messrs || "";
+  document.getElementById("fc-consignee").value = c.consignee || "";
+  document.getElementById("fc-mailto").value    = c.mailTo || "";
+  document.getElementById("fc-mailcc").value    = c.mailCc || "";
+  document.getElementById("fc-shortname").value = c.shortName || "";
+  document.getElementById("fc-description").value = c.description || "SHIRTS";
+  document.getElementById("fc-note").value      = c.note || "";
+  openModal("modal-customer");
+  showToast("Đã sao chép! Nhập tên mới rồi lưu.");
 };
 
 window.deleteCustomer = async function(id) {

@@ -164,15 +164,15 @@
 
 <!-- MODAL: Generate email -->
 <div class="modal-backdrop" id="modal-email">
-  <div class="modal" style="max-width:680px">
+  <div class="modal" style="max-width:720px">
     <div class="modal-title">
       Email Booking
       <span class="modal-close" onclick="closeModalById('modal-email')"><i class="ti ti-x"></i></span>
     </div>
-    <div id="email-body" style="white-space:pre-wrap;font-size:13px;line-height:1.7;background:var(--bg-secondary);padding:16px;border-radius:var(--radius-md);border:0.5px solid var(--border);max-height:420px;overflow-y:auto"></div>
+    <div id="email-body"></div>
     <div class="form-footer">
-      <button class="btn" id="btn-copy-email"><i class="ti ti-copy"></i> Copy</button>
-      <button class="btn btn-primary" onclick="closeModalById('modal-email')">Đóng</button>
+      <button class="btn" id="btn-copy-email"><i class="ti ti-copy"></i> Copy nội dung</button>
+      <button class="btn btn-primary" id="btn-open-mail"><i class="ti ti-mail"></i> Mở Mail</button>
     </div>
   </div>
 </div>

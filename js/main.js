@@ -32,6 +32,23 @@ const COLS = [
   { data: "note",         title: "Note",          width: 120 },
 ];
 
+// Cột cho bảng SỬA đơn hàng (bỏ STUFFING DATE/ETD/POD vì đã có ở thông tin lô)
+const EDIT_COLS = [
+  { data: "customer",     title: "Customer",      width: 110 },
+  { data: "contract",     title: "Contract",      width: 95 },
+  { data: "index",        title: "Index",         width: 95 },
+  { data: "items",        title: "Items",         width: 105 },
+  { data: "qty",          title: "Qty (PCS)",     width: 80, type: "numeric" },
+  { data: "ctns",         title: "Qty (CTNs)",    width: 80, type: "numeric" },
+  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 85, type: "numeric" },
+  { data: "kgTotal",      title: "Qty (Kgs)",     width: 85, type: "numeric", readOnly: true },
+  { data: "dimension",    title: "Dimension",     width: 100 },
+  { data: "cbm",          title: "CBM",           width: 75, type: "numeric", readOnly: true },
+  { data: "hsCode",       title: "HS CODE",       width: 85 },
+  { data: "coForm",       title: "C/O FORM",      width: 85 },
+  { data: "note",         title: "Note",          width: 130 },
+];
+
 // Tính kgTotal & cbm cho 1 dòng
 function computeRow(row) {
   const ctns = parseFloat(row.ctns) || 0;
@@ -374,7 +391,7 @@ function buildCard(s, admin) {
         <span><i class="ti ti-${isAir?"plane":"ship"}"></i>${s.vessel||"Chưa có tàu"}</span>
         <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd)||"—"}</span>
         <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta)||"—"}</span>
-        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}</span>
+        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}${s.cyCutTime?` ${s.cyCutTime}`:""}</span>
       </div>
       <div class="checklist" style="margin-top:8px">${dotsHTML}</div>
       <div class="progress-wrap" style="margin-top:6px">
@@ -463,8 +480,8 @@ window.openEditOrders = function(shipId) {
     while (data.length < 5) data.push({});
     editHot = new Handsontable(cont, {
       data,
-      columns: COLS,
-      colHeaders: COLS.map(c=>c.title),
+      columns: EDIT_COLS,
+      colHeaders: EDIT_COLS.map(c=>c.title),
       rowHeaders: true,
       height: 440,
       width: "100%",
@@ -473,7 +490,7 @@ window.openEditOrders = function(shipId) {
       contextMenu: true,
       licenseKey: "non-commercial-and-evaluation",
       cells: (row, col) => {
-        const cp = COLS[col];
+        const cp = EDIT_COLS[col];
         if (cp && cp.readOnly) return { className: "ht-readonly-cell", readOnly: true };
         return {};
       },
@@ -517,7 +534,7 @@ window.openEditShipment = function(id) {
     <form id="form-edit-ship">
       <div class="form-row">
         <div class="form-group"><label class="form-label">Ngày đóng hàng</label><input type="date" class="form-input" id="es-stuffing" value="${s.stuffingDate||""}"></div>
-        <div class="form-group"><label class="form-label">Ship Date *</label><input type="date" class="form-input" id="es-ship" value="${s.shipDate||""}" required></div>
+        <div class="form-group"><label class="form-label">ETD (Ngày tàu đi) *</label><input type="date" class="form-input" id="es-etd" value="${s.etd||""}" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Cảng (POD)</label><input class="form-input" id="es-port" value="${s.port||""}"></div>
@@ -525,11 +542,11 @@ window.openEditShipment = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Tên tàu / Hãng bay</label><input class="form-input" id="es-vessel" value="${s.vessel||""}"></div>
-        <div class="form-group"><label class="form-label">Ngày cắt máng</label><input type="date" class="form-input" id="es-cycut" value="${s.cyCut||""}"></div>
+        <div class="form-group"><label class="form-label">ETA (Ngày tàu đến)</label><input type="date" class="form-input" id="es-eta" value="${s.eta||""}"></div>
       </div>
       <div class="form-row">
-        <div class="form-group"><label class="form-label">ETD</label><input type="date" class="form-input" id="es-etd" value="${s.etd||""}"></div>
-        <div class="form-group"><label class="form-label">ETA</label><input type="date" class="form-input" id="es-eta" value="${s.eta||""}"></div>
+        <div class="form-group"><label class="form-label">Ngày cắt máng (Cut off)</label><input type="date" class="form-input" id="es-cycut" value="${s.cyCut||""}"></div>
+        <div class="form-group"><label class="form-label">Giờ cắt máng</label><input type="time" class="form-input" id="es-cycut-time" value="${s.cyCutTime||""}"></div>
       </div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
@@ -539,14 +556,16 @@ window.openEditShipment = function(id) {
   document.getElementById("form-edit-ship").addEventListener("submit", async e => {
     e.preventDefault();
     if (!confirm("Lưu thay đổi?")) return;
+    const etdVal = document.getElementById("es-etd").value;
     await updateDoc(doc(db,"shipments",id), {
       stuffingDate: document.getElementById("es-stuffing").value||null,
-      shipDate: document.getElementById("es-ship").value,
+      shipDate: etdVal,
+      etd: etdVal||null,
       port: document.getElementById("es-port").value.trim().toUpperCase(),
       container: document.getElementById("es-container").value.trim(),
       vessel: document.getElementById("es-vessel").value.trim()||null,
       cyCut: document.getElementById("es-cycut").value||null,
-      etd: document.getElementById("es-etd").value||null,
+      cyCutTime: document.getElementById("es-cycut-time").value||null,
       eta: document.getElementById("es-eta").value||null,
     });
     closeModal("modal-edit-shipment");

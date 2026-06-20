@@ -392,6 +392,9 @@ function buildCard(s, admin) {
         <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd)||"—"}</span>
         <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta)||"—"}</span>
         <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}${s.cyCutTime?` ${s.cyCutTime}`:""}</span>
+        ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
+        ${(!isAir && !(s.container||"").toUpperCase().includes("LCL") && (s.contNo||s.sealNo))
+          ? `<span><i class="ti ti-box"></i>Cont: ${s.contNo||"—"} / Seal: ${s.sealNo||"—"}</span>` : ""}
       </div>
       <div class="checklist" style="margin-top:8px">${dotsHTML}</div>
       <div class="progress-wrap" style="margin-top:6px">
@@ -408,6 +411,7 @@ function buildCard(s, admin) {
             <div class="action-row" style="margin-top:10px">
               ${admin ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
               <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+              <button class="btn btn-sm" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
               ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
             </div>
@@ -548,6 +552,11 @@ window.openEditShipment = function(id) {
         <div class="form-group"><label class="form-label">Ngày cắt máng (Cut off)</label><input type="date" class="form-input" id="es-cycut" value="${s.cyCut||""}"></div>
         <div class="form-group"><label class="form-label">Giờ cắt máng</label><input type="time" class="form-input" id="es-cycut-time" value="${s.cyCutTime||""}"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Số Booking</label><input class="form-input" id="es-booking" value="${s.booking||""}" placeholder="SITSGYKW506862"></div>
+        <div class="form-group"><label class="form-label">Số Container</label><input class="form-input" id="es-contno" value="${s.contNo||""}" placeholder="GAOU2267867"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Số Seal</label><input class="form-input" id="es-sealno" value="${s.sealNo||""}" placeholder="SITB004160"></div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
         <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Lưu</button>
@@ -567,6 +576,9 @@ window.openEditShipment = function(id) {
       cyCut: document.getElementById("es-cycut").value||null,
       cyCutTime: document.getElementById("es-cycut-time").value||null,
       eta: document.getElementById("es-eta").value||null,
+      booking: document.getElementById("es-booking").value.trim()||null,
+      contNo: document.getElementById("es-contno").value.trim()||null,
+      sealNo: document.getElementById("es-sealno").value.trim()||null,
     });
     closeModal("modal-edit-shipment");
     showToast("Đã cập nhật lô hàng!");
@@ -584,7 +596,7 @@ window.deleteShipment = async function(id) {
 window.openEmailModal = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  let contact="—", consigneeName="—", consigneeAddr="—", description="SHIRTS", note="";
+  let contact="—", consignee="—", description="SHIRTS", note="";
   const first = (s.orders||[])[0];
   if (first?.customer) {
     try {
@@ -592,8 +604,9 @@ window.openEmailModal = async function(shipId) {
       const snap = await getDocs(q(col(db,"customers"), where("name","==",first.customer)));
       if (!snap.empty) {
         const c = snap.docs[0].data();
-        contact=c.contactPerson||"—"; consigneeName=c.consigneeName||"—";
-        consigneeAddr=c.consigneeAddr||"—"; description=c.description||"SHIRTS"; note=c.note||"";
+        contact=c.contactPerson||"—";
+        consignee=c.consignee||c.consigneeName||"—";
+        description=c.description||"SHIRTS"; note=c.note||"";
       }
     } catch(e){}
   }
@@ -616,8 +629,7 @@ Description: ${description}
 Contract number: ${contracts}
 Quantity: ${tPcs.toLocaleString()} pcs = (about) ${tCtns} cartons = (about) ${tKg} kgs = (about) ${tCbm} cbm
 
-Consignee: ${consigneeName}
-           ${consigneeAddr}
+Consignee: ${consignee}
 ${note ? "\nNote: "+note : ""}
 
 Best regards,`;
@@ -630,6 +642,188 @@ document.getElementById("btn-copy-email").addEventListener("click", () => {
 });
 
 document.getElementById("filter-status").addEventListener("change", renderList);
+
+// ====== PACKING LIST ======
+window.openPackingList = function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const isAir = (s.container||"").toUpperCase().includes("AIR");
+  const isLcl = (s.container||"").toUpperCase().includes("LCL");
+  const showCont = !isAir && !isLcl;
+
+  document.getElementById("packing-form-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này. Số Cont/Seal sẽ được lưu lại vào lô hàng.</div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pk-invoice" placeholder="862/26 -NPT"></div>
+      <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-input" id="pk-invdate" value="${s.etd||""}"></div>
+    </div>
+    ${showCont ? `<div class="form-row">
+      <div class="form-group"><label class="form-label">Số Container</label><input class="form-input" id="pk-contno" value="${s.contNo||""}" placeholder="GAOU2267867"></div>
+      <div class="form-group"><label class="form-label">Số Seal</label><input class="form-input" id="pk-sealno" value="${s.sealNo||""}" placeholder="SITB004160"></div>
+    </div>` : `<input type="hidden" id="pk-contno" value=""><input type="hidden" id="pk-sealno" value="">`}
+    <div class="form-group">
+      <label class="form-label">Tare thùng (kg/thùng) — để tính Net Weight</label>
+      <div style="display:flex;gap:8px">
+        ${[1,1.5,2,2.5].map((t,i) => `<label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);cursor:pointer">
+          <input type="radio" name="pk-tare" value="${t}" ${i===0?"checked":""}> ${t}kg
+        </label>`).join("")}
+      </div>
+    </div>
+    ${showCont ? `<div class="form-group"><label class="form-label">TARE (trọng lượng vỏ container, kg)</label><input type="number" class="form-input" id="pk-tarecont" placeholder="2120"></div>` : `<input type="hidden" id="pk-tarecont" value="0">`}
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-packing')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="generatePackingList('${shipId}')"><i class="ti ti-printer"></i> Tạo & In</button>
+    </div>`;
+  openModal("modal-packing");
+};
+
+window.generatePackingList = async function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+
+  const invoice  = document.getElementById("pk-invoice").value.trim();
+  const invDate  = document.getElementById("pk-invdate").value;
+  const contNo   = document.getElementById("pk-contno").value.trim();
+  const sealNo   = document.getElementById("pk-sealno").value.trim();
+  const tarePerCtn = parseFloat(document.querySelector('input[name="pk-tare"]:checked')?.value)||0;
+  const tareCont = parseFloat(document.getElementById("pk-tarecont").value)||0;
+
+  // Lưu Cont/Seal vào lô
+  if (contNo || sealNo) {
+    await updateDoc(doc(db,"shipments",shipId), { contNo: contNo||null, sealNo: sealNo||null });
+  }
+
+  // Lấy thông tin khách hàng
+  const firstCust = (s.orders||[])[0]?.customer;
+  let cust = {};
+  if (firstCust) {
+    try {
+      const { collection:col, query:q, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDocs(q(col(db,"customers"), where("name","==",firstCust)));
+      if (!snap.empty) cust = snap.docs[0].data();
+    } catch(e){}
+  }
+
+  // Gộp đơn hàng theo Index (mã hàng) — hiển thị theo dòng
+  const orders = s.orders || [];
+  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const totalPcs  = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
+  const totalGW   = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);  // kgTotal = GW
+  const totalNW   = totalGW - (tarePerCtn * totalCtns);
+  const totalCBM  = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
+  const vgm = Math.round(totalGW + tareCont);
+
+  closeModal("modal-packing");
+  renderPackingA4(s, cust, { invoice, invDate, contNo, sealNo, tarePerCtn, tareCont,
+    totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
+};
+
+function renderPackingA4(s, cust, p) {
+  const fmtNum = (n, dec=2) => Number(n).toLocaleString("en-US",{minimumFractionDigits:dec, maximumFractionDigits:dec});
+  const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+  const dateStr = p.invDate ? new Date(p.invDate).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}).toUpperCase() : "";
+  const etdStr  = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"long",day:"2-digit",year:"numeric"}) : "";
+
+  // Rows đơn hàng
+  const rows = (s.orders||[]).map(o => `
+    <tr>
+      <td style="padding:2px 4px">${o.contract||""}</td>
+      <td style="padding:2px 4px">${o.index||o.items||""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.ctns?fmtInt(o.ctns):""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.qty?fmtInt(o.qty):""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum((parseFloat(o.kgTotal)||0)-(p.tarePerCtn*(parseFloat(o.ctns)||0))):""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum(o.kgTotal):""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.cbm?fmtNum(o.cbm):""}</td>
+    </tr>`).join("");
+
+  const contLine = (p.contNo || p.sealNo)
+    ? `${s.container||""} : ${p.contNo||""}/ ${p.sealNo||""}`
+    : `${s.container||""}`;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Packing List - ${fullPort(s.port)}</title>
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "Times New Roman", serif; font-size: 12px; color:#000; margin:0; }
+  .pl-header { text-align:center; position:relative; border-bottom:0; }
+  .company-name { font-size:15px; font-weight:bold; }
+  .company-info { font-size:10px; }
+  .logo { position:absolute; left:0; top:0; font-size:20px; font-weight:bold; font-style:italic; }
+  .title { text-align:center; font-size:20px; font-weight:bold; margin:10px 0; }
+  table.info { width:100%; border-collapse:collapse; }
+  table.info td { border:1px solid #000; padding:4px 6px; vertical-align:top; font-size:11px; }
+  .label { font-weight:bold; font-size:10px; }
+  table.goods { width:100%; border-collapse:collapse; margin-top:0; }
+  table.goods th, table.goods td { border:1px solid #000; font-size:11px; }
+  table.goods th { padding:3px; background:#f0f0f0; font-size:10px; }
+  .totals td { font-weight:bold; }
+  .footer-sign { margin-top:30px; text-align:right; padding-right:40px; }
+  @media print { .no-print { display:none; } }
+</style></head><body>
+
+<div class="pl-header">
+  <div class="logo">TOS GAMEX</div>
+  <div class="company-name">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+  <div class="company-info">LOT B1, LONG BINH TECHNO PARK(LOTECO)EPZ,LONG BINH WARD, DONG NAI PROVINCE, VIETNAM</div>
+  <div class="company-info">TEL: 84 - 61 - 3992537&nbsp;&nbsp;&nbsp;&nbsp;FAX: 84 - 61 - 3992540&nbsp;&nbsp;&nbsp;&nbsp;E-MAIL: tos2@tosg.vnn.vn</div>
+</div>
+
+<div class="title">PACKING LIST/ WEIGHT LIST</div>
+
+<table class="info">
+  <tr>
+    <td style="width:55%"><span class="label">MESSRS :</span><br><span style="white-space:pre-line">${cust.messrs||""}</span></td>
+    <td><span class="label">INVOICE NO. AND DATE</span><br>${p.invoice||""} &nbsp;&nbsp;&nbsp; ${dateStr}<br><br><span class="label">TERM OF PAYMENT</span><br>T/T</td>
+  </tr>
+  <tr>
+    <td><span class="label">CONSIGNEE:</span><br><span style="white-space:pre-line">${cust.consignee||""}</span></td>
+    <td><span class="label">BOOKING NO.</span> &nbsp; ${s.booking||""}<br><br><span class="label">HDGC:</span> ${cust.hdgc||""}</td>
+  </tr>
+  <tr>
+    <td><span class="label">FROM:</span> HOCHIMINH, VIETNAM &nbsp;&nbsp; <span class="label">TO:</span> ${fullPort(s.port)}, JAPAN</td>
+    <td><span class="label">VESSEL / FLIGHT NO.</span> ${s.vessel||""}<br><span class="label">DEPARTURE DATE:</span> ${etdStr}</td>
+  </tr>
+</table>
+
+<table class="goods">
+  <thead>
+    <tr>
+      <th colspan="2" style="width:48%">GOODS DESCRIPTION</th>
+      <th>NO. OF CTNS</th><th>Q'TY ( PCS )</th><th>N.W (KGS)</th><th>G.W (KGS)</th><th>CBM</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="2" style="font-weight:bold;padding:4px">${cust.description||"SHIRTS"}</td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td colspan="2" style="font-weight:bold;text-decoration:underline;padding:4px">${contLine}</td><td></td><td></td><td></td><td></td><td></td></tr>
+    ${rows}
+    <tr class="totals">
+      <td colspan="2" style="padding:4px">TOTAL</td>
+      <td style="text-align:right;padding:2px 4px">${fmtInt(p.totalCtns)}</td>
+      <td style="text-align:right;padding:2px 4px">${fmtInt(p.totalPcs)}</td>
+      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalNW)}</td>
+      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalGW)}</td>
+      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalCBM)}</td>
+    </tr>
+    <tr class="totals"><td colspan="2" style="padding:4px">TARE</td><td colspan="3"></td><td style="text-align:right;padding:2px 4px">${fmtNum(p.tareCont)}</td><td></td></tr>
+    <tr class="totals"><td colspan="2" style="padding:4px">VGM</td><td colspan="3"></td><td style="text-align:right;padding:2px 4px">${fmtInt(p.vgm)}</td><td></td></tr>
+  </tbody>
+</table>
+
+<div class="footer-sign">
+  <div style="font-weight:bold">TOMIYA SUMMIT GARMENT EXPORT CO.,LTD</div>
+  <div style="margin-top:40px;font-weight:bold">NGUYEN THI OANH</div>
+  <div style="font-weight:bold">IMP-EXP DEPT LEADER</div>
+</div>
+
+<div class="no-print" style="text-align:center;margin-top:20px">
+  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+}
 
 // ====== FIRESTORE REALTIME ======
 const q = query(collection(db,"shipments"), orderBy("createdAt","desc"));

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forwarder · Xuất Khẩu System</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo"><a href="index.html">Xuất Khẩu <span>System</span></a></div>
+  <div class="topbar-nav">
+    <a href="index.html" class="btn btn-sm"><i class="ti ti-package"></i> Lô hàng</a>
+    <a href="customers.html" class="btn btn-sm"><i class="ti ti-users"></i> Khách hàng</a>
+    <div id="admin-indicator" class="admin-indicator" style="display:none">
+      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
+    </div>
+    <button class="btn btn-sm" id="btn-login-toggle">
+      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span id="fwd-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" id="btn-add-fwd"><i class="ti ti-plus"></i> Thêm Forwarder</button>
+    </div>
+  </div>
+  <div id="fwd-list"><div class="spinner"></div></div>
+</div>
+
+<!-- MODAL: Thêm/sửa Forwarder -->
+<div class="modal-backdrop" id="modal-fwd">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="fwd-modal-title">Thêm Forwarder</span>
+      <span class="modal-close" onclick="closeModalById('modal-fwd')"><i class="ti ti-x"></i></span>
+    </div>
+    <form id="form-fwd">
+      <div class="form-group">
+        <label class="form-label">Tên Forwarder (keyword) *</label>
+        <input class="form-input" id="ff-name" placeholder="SITC, ONE, MAERSK..." required>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Email Booking (→ Mail To)</label>
+          <input class="form-input" id="ff-mailbooking" placeholder="booking@fwd.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email làm Doc (→ Mail CC)</label>
+          <input class="form-input" id="ff-maildoc" placeholder="doc@fwd.com">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Liên kết khách hàng (chọn nhiều)</label>
+        <div id="ff-customers" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);max-height:160px;overflow-y:auto"></div>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-fwd')">Hủy</button>
+        <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Lưu</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: Đăng nhập -->
+<div class="modal-backdrop" id="modal-login">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">Đăng nhập Admin
+      <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group"><label class="form-label">Mật khẩu</label>
+      <input type="password" class="form-input" id="f-admin-pw"></div>
+    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai mật khẩu!</div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="btn-do-login"><i class="ti ti-login"></i> Đăng nhập</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { db } from "./js/firebase-config.js";
+import { isAdmin, loginAdmin, logoutAdmin } from "./js/auth.js";
+import { showToast, openModal, closeModal } from "./js/utils.js";
+import {
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+window.closeModalById = closeModal;
+let allFwd = [], allCustomers = [], editingId = null;
+
+function updateAdminUI() {
+  const admin = isAdmin();
+  document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
+  document.getElementById("login-label").textContent = admin ? "Đăng xuất" : "Đăng nhập";
+  document.getElementById("btn-add-fwd").style.display = admin ? "flex" : "none";
+  renderList();
+}
+document.getElementById("btn-login-toggle").addEventListener("click", () => {
+  if (isAdmin()) { logoutAdmin(); showToast("Đã đăng xuất"); updateAdminUI(); }
+  else openModal("modal-login");
+});
+document.getElementById("btn-do-login").addEventListener("click", () => {
+  if (loginAdmin(document.getElementById("f-admin-pw").value)) {
+    closeModal("modal-login"); document.getElementById("f-admin-pw").value="";
+    document.getElementById("login-error").style.display="none";
+    showToast("Đăng nhập thành công!"); updateAdminUI();
+  } else document.getElementById("login-error").style.display="block";
+});
+
+function renderCustomerCheckboxes(selected=[]) {
+  const box = document.getElementById("ff-customers");
+  if (!allCustomers.length) { box.innerHTML = `<span style="font-size:12px;color:var(--text-muted)">Chưa có khách hàng nào</span>`; return; }
+  box.innerHTML = allCustomers.map(c => `
+    <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer;padding:4px 8px;border:0.5px solid var(--border);border-radius:var(--radius-md)">
+      <input type="checkbox" value="${c.name}" ${selected.includes(c.name)?"checked":""}> ${c.name}
+    </label>`).join("");
+}
+
+document.getElementById("btn-add-fwd").addEventListener("click", () => {
+  editingId = null;
+  document.getElementById("fwd-modal-title").textContent = "Thêm Forwarder";
+  document.getElementById("form-fwd").reset();
+  renderCustomerCheckboxes([]);
+  openModal("modal-fwd");
+});
+
+document.getElementById("form-fwd").addEventListener("submit", async e => {
+  e.preventDefault();
+  const linked = [...document.querySelectorAll('#ff-customers input:checked')].map(i=>i.value);
+  const data = {
+    name: document.getElementById("ff-name").value.trim(),
+    mailBooking: document.getElementById("ff-mailbooking").value.trim(),
+    mailDoc: document.getElementById("ff-maildoc").value.trim(),
+    customers: linked,
+  };
+  try {
+    if (editingId) { await updateDoc(doc(db,"forwarders",editingId), data); showToast("Đã cập nhật!"); }
+    else {
+      const dup = allFwd.find(f=>(f.name||"").toLowerCase()===data.name.toLowerCase());
+      if (dup) { showToast("Tên forwarder đã tồn tại!"); return; }
+      await addDoc(collection(db,"forwarders"), {...data, createdAt: serverTimestamp()});
+      showToast("Đã thêm!");
+    }
+    closeModal("modal-fwd"); e.target.reset(); editingId = null;
+  } catch(err){ showToast("Lỗi: "+err.message); }
+});
+
+function renderList() {
+  const admin = isAdmin();
+  document.getElementById("fwd-count").textContent = allFwd.length + " forwarder";
+  const cont = document.getElementById("fwd-list");
+  if (!allFwd.length) { cont.innerHTML = `<div class="empty-state"><i class="ti ti-truck-delivery"></i><p>Chưa có forwarder nào</p></div>`; return; }
+  cont.innerHTML = "";
+  allFwd.forEach(f => {
+    const card = document.createElement("div");
+    card.className = "shipment-card";
+    card.innerHTML = `
+      <div style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div style="font-size:15px;font-weight:500">${f.name}</div>
+          ${admin?`<div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="editFwd('${f.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="deleteFwd('${f.id}')"><i class="ti ti-trash"></i></button>
+          </div>`:""}
+        </div>
+        <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+          <div><b>Email Booking (To):</b> ${f.mailBooking||"—"}</div>
+          <div><b>Email Doc (CC):</b> ${f.mailDoc||"—"}</div>
+        </div>
+        <div style="margin-top:8px;font-size:11px">
+          <b style="color:var(--text-muted)">Khách hàng liên kết:</b>
+          ${(f.customers||[]).length ? (f.customers||[]).map(c=>`<span class="badge badge-blue" style="margin:2px">${c}</span>`).join("") : '<span style="color:var(--text-muted)">—</span>'}
+        </div>
+      </div>`;
+    cont.appendChild(card);
+  });
+}
+
+window.editFwd = function(id) {
+  const f = allFwd.find(x=>x.id===id);
+  if (!f) return;
+  editingId = id;
+  document.getElementById("fwd-modal-title").textContent = "Sửa Forwarder";
+  document.getElementById("ff-name").value = f.name||"";
+  document.getElementById("ff-mailbooking").value = f.mailBooking||"";
+  document.getElementById("ff-maildoc").value = f.mailDoc||"";
+  renderCustomerCheckboxes(f.customers||[]);
+  openModal("modal-fwd");
+};
+
+window.deleteFwd = async function(id) {
+  if (!confirm("Xóa forwarder này?")) return;
+  await deleteDoc(doc(db,"forwarders",id));
+  showToast("Đã xóa!");
+};
+
+// Load customers (cho checkbox) + forwarders
+onSnapshot(query(collection(db,"customers"), orderBy("name")), snap => {
+  allCustomers = snap.docs.map(d=>({id:d.id,...d.data()}));
+});
+onSnapshot(query(collection(db,"forwarders"), orderBy("name")), snap => {
+  allFwd = snap.docs.map(d=>({id:d.id,...d.data()}));
+  renderList();
+});
+
+updateAdminUI();
+</script>
+</body>
+</html>

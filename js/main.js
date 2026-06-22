@@ -44,6 +44,7 @@ const EDIT_COLS = [
   { data: "kgTotal",      title: "Qty (Kgs)",     width: 85, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 100 },
   { data: "cbm",          title: "CBM",           width: 75, type: "numeric", readOnly: true },
+  { data: "unitPrice",    title: "Giá GC (USD)",  width: 90, type: "numeric" },
   { data: "hsCode",       title: "HS CODE",       width: 85 },
   { data: "coForm",       title: "C/O FORM",      width: 85 },
   { data: "note",         title: "Note",          width: 130 },
@@ -553,6 +554,7 @@ document.getElementById("btn-save-edit-orders").addEventListener("click", async 
       items:o.items||"", qty:parseFloat(o.qty)||0, ctns:parseFloat(o.ctns)||0,
       kgPerCtn:parseFloat(o.kgPerCtn)||0, kgTotal:parseFloat(o.kgTotal)||0,
       dimension:o.dimension||"", cbm:parseFloat(o.cbm)||0,
+      unitPrice:parseFloat(o.unitPrice)||0,
       hsCode:o.hsCode||"", coForm:o.coForm||"", note:o.note||"",
       stuffingDate:o.stuffingDate||"", etd:o.etd||"",
     }));
@@ -592,6 +594,10 @@ window.openEditShipment = function(id) {
         <label class="form-label">Lô hàng thuộc tháng (MM/YYYY)</label>
         <input type="month" class="form-input" id="es-period" value="${s.period||""}">
       </div>
+      <div class="form-group">
+        <label class="form-label">Số hóa đơn (Invoice No.)</label>
+        <input class="form-input" id="es-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT">
+      </div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
         <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Lưu</button>
@@ -615,6 +621,7 @@ window.openEditShipment = function(id) {
       contNo: document.getElementById("es-contno").value.trim()||null,
       sealNo: document.getElementById("es-sealno").value.trim()||null,
       period: document.getElementById("es-period").value||null,
+      invoiceNo: document.getElementById("es-invoice").value.trim()||null,
     });
     closeModal("modal-edit-shipment");
     showToast("Đã cập nhật lô hàng!");
@@ -889,6 +896,234 @@ function renderPackingA4(s, cust, p) {
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
+}
+
+// ====== BÁO CÁO ======
+document.getElementById("btn-reports").addEventListener("click", () => {
+  const now = new Date();
+  document.getElementById("rp-month").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("rp-asof").value = now.toISOString().slice(0,10);
+  document.getElementById("rp-date-wrap").style.display = "block";
+  openModal("modal-reports");
+});
+
+function shipmentsOfMonth(month) {
+  // month = "YYYY-MM"; lọc theo period, nếu không có period thì theo stuffingDate
+  return allShipments.filter(s => {
+    if (s.period) return s.period === month;
+    if (s.stuffingDate) return s.stuffingDate.slice(0,7) === month;
+    return false;
+  });
+}
+
+function totalGW(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0); }
+function totalCBM(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.cbm)||0),0); }
+
+// --- BÁO CÁO BỐC XẾP ---
+window.reportBocXep = function() {
+  const month = document.getElementById("rp-month").value;
+  if (!month) { showToast("Chọn tháng!"); return; }
+  let list = shipmentsOfMonth(month);
+  if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
+  // sắp theo ngày đóng hàng
+  list = [...list].sort((a,b)=>(a.stuffingDate||"9999")<(b.stuffingDate||"9999")?-1:1);
+  const [y,mo] = month.split("-");
+
+  const rows = list.map((s,i) => {
+    const cont = (s.container||"").toUpperCase();
+    let hinhthuc = s.container || "—";
+    // Nếu là container thật → ghi loại + cont/seal
+    const isAir = cont.includes("AIR");
+    const isLcl = cont.includes("LCL");
+    if (!isAir && !isLcl && (s.contNo||s.sealNo)) {
+      hinhthuc = `${s.container||""}<br><span style="font-size:10px">Cont: ${s.contNo||"—"} / Seal: ${s.sealNo||"—"}</span>`;
+    }
+    const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ");
+    return `<tr>
+      <td style="text-align:center">${i+1}</td>
+      <td>${fmtDateVN(s.stuffingDate)}</td>
+      <td>${custs} — ${fullPort(s.port)}</td>
+      <td style="text-align:right">${Math.round(totalGW(s)).toLocaleString()}</td>
+      <td style="text-align:right">${(Math.round(totalCBM(s)*100)/100).toLocaleString()}</td>
+      <td>${hinhthuc}</td>
+    </tr>`;
+  }).join("");
+
+  const sumGW = Math.round(list.reduce((a,s)=>a+totalGW(s),0));
+  const sumCBM = Math.round(list.reduce((a,s)=>a+totalCBM(s),0)*100)/100;
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 12mm; }
+  body { font-family: "Times New Roman", serif; font-size: 13px; margin:0; }
+  h2 { text-align:center; margin:4px 0; }
+  .sub { text-align:center; font-size:12px; margin-bottom:14px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { border:1px solid #000; padding:5px 7px; }
+  th { background:#e8e8e8; font-size:12px; }
+  tfoot td { font-weight:bold; background:#f5f5f5; }
+  .company { font-size:12px; }
+  @media print { .no-print{display:none;} }
+</style></head><body>
+<div class="company"><b>CTY TNHH TOMIYA SUMMIT GARMENT EXPORT</b><br>Phòng Xuất Nhập Khẩu</div>
+<h2>BÁO CÁO BỐC XẾP</h2>
+<div class="sub">Tháng ${mo}/${y}</div>
+<table>
+  <thead><tr>
+    <th style="width:40px">STT</th><th style="width:110px">Ngày đóng hàng</th>
+    <th>Khách hàng — Cảng</th><th style="width:110px">G.W (KGS)</th>
+    <th style="width:90px">CBM</th><th style="width:200px">Hình thức xuất</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <td colspan="3" style="text-align:right">TỔNG CỘNG</td>
+    <td style="text-align:right">${sumGW.toLocaleString()}</td>
+    <td style="text-align:right">${sumCBM.toLocaleString()}</td>
+    <td></td>
+  </tr></tfoot>
+</table>
+<div style="margin-top:30px;text-align:right;padding-right:40px">
+  <div>Ngày ${new Date().getDate()} tháng ${new Date().getMonth()+1} năm ${new Date().getFullYear()}</div>
+  <div style="margin-top:6px">Lập bởi: Phòng XNK</div>
+  <div style="margin-top:40px;font-weight:bold">NGUYEN QUOC THI</div>
+</div>
+<div class="no-print" style="text-align:center;margin-top:20px">
+  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+</div>
+</body></html>`;
+  closeModal("modal-reports");
+  const w = window.open("","_blank"); w.document.write(html); w.document.close();
+};
+
+// --- BÁO CÁO NGUỒN THU ---
+window.reportNguonThu = function() {
+  const month = document.getElementById("rp-month").value;
+  const asOf  = document.getElementById("rp-asof").value;
+  if (!month) { showToast("Chọn tháng!"); return; }
+  let list = shipmentsOfMonth(month);
+  if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
+  const [y,mo] = month.split("-");
+
+  // Nhóm theo khách hàng
+  const byCustomer = {};
+  list.forEach(s => {
+    const cust = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))][0] || "KHÁC";
+    if (!byCustomer[cust]) byCustomer[cust] = [];
+    byCustomer[cust].push(s);
+  });
+
+  // Lô đã xuất = checklist bước 8 (tờ khai HQ) đã done
+  const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
+
+  let grandQty = 0, grandAmount = 0;
+  let bodyHTML = "";
+  let stt = 0;
+
+  Object.keys(byCustomer).sort().forEach(cust => {
+    stt++;
+    const shipments = byCustomer[cust];
+    // tách đã xuất / dự kiến
+    const exported = shipments.filter(isExported);
+    const planned  = shipments.filter(s=>!isExported(s));
+
+    let custQty = 0, custAmount = 0;
+    let rows = "";
+
+    const renderGroup = (groupShipments, label) => {
+      if (!groupShipments.length) return "";
+      let h = `<tr><td colspan="9" style="font-style:italic;padding:3px 6px;background:#fafafa">${label}</td></tr>`;
+      groupShipments.forEach(s => {
+        const orders = s.orders||[];
+        let invFirst = true;
+        const invoiceNo = s.invoiceNo || "";
+        orders.forEach((o,idx) => {
+          const qty = parseFloat(o.qty)||0;
+          const price = parseFloat(o.unitPrice)||0;
+          const amount = Math.round(qty*price*100)/100;
+          custQty += qty; custAmount += amount;
+          h += `<tr>
+            <td>${idx===0?"FOB":""}</td><td>${idx===0?"T/T":""}</td>
+            <td>${idx===0?(invoiceNo||s.booking||""):""}${idx===0&&s.stuffingDate?`<br><span style="font-size:9px">(Ngày ${fmtDateVN(s.stuffingDate)})</span>`:""}</td>
+            <td>${o.contract||""}</td>
+            <td>${o.items?`${o.items}${o.index?`(${o.index})`:""}`:(o.index||"")}</td>
+            <td style="text-align:right">${qty.toLocaleString()}</td>
+            <td style="text-align:right">${price?price.toFixed(4):""}</td>
+            <td style="text-align:right">${amount?amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):""}</td>
+            <td>${idx===0?fmtDateVN(s.stuffingDate):'"'}</td>
+          </tr>`;
+        });
+      });
+      return h;
+    };
+
+    rows += renderGroup(exported, "Đã xuất");
+    rows += renderGroup(planned, `Dự kiến xuất trong tháng ${mo}/${y}`);
+
+    grandQty += custQty; grandAmount += custAmount;
+    bodyHTML += `
+      <tr style="background:#eef3f8"><td colspan="9" style="font-weight:bold;padding:4px 6px">${stt}. ${cust}</td></tr>
+      ${rows}
+      <tr style="font-weight:bold;background:#f5f5f5">
+        <td colspan="5" style="text-align:right">CỘNG:</td>
+        <td style="text-align:right">${custQty.toLocaleString()}</td><td></td>
+        <td style="text-align:right">${custAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td></td>
+      </tr>`;
+  });
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { size: A4 portrait; margin: 10mm; }
+  body { font-family: "Times New Roman", serif; font-size: 11px; margin:0; }
+  h2 { text-align:center; margin:4px 0; }
+  .sub { text-align:center; font-size:11px; margin-bottom:12px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { border:1px solid #000; padding:3px 5px; }
+  th { background:#e8e8e8; font-size:10px; }
+  .company { font-size:11px; }
+  tr { page-break-inside: avoid; }
+  @media print { .no-print{display:none;} }
+</style></head><body>
+<div class="company"><b>CTY TNHH TOMIYA SUMMIT GARMENT EXPORT</b><br>Phòng Xuất Nhập Khẩu</div>
+<h2>BÁO CÁO NGUỒN THU</h2>
+<div class="sub">(Tháng ${mo}/${y}${asOf?` — tính đến ngày ${fmtDateVN(asOf)}`:""})</div>
+<table>
+  <thead><tr>
+    <th style="width:40px">P.thức giao</th><th style="width:40px">P.thức TT</th>
+    <th style="width:90px">Số & ngày hóa đơn</th><th style="width:70px">Hợp đồng</th>
+    <th>Mã hàng</th><th style="width:70px">Số lượng</th>
+    <th style="width:65px">Đơn giá (USD)</th><th style="width:85px">Thành tiền (USD)</th>
+    <th style="width:80px">Ngày xuất</th>
+  </tr></thead>
+  <tbody>
+    ${bodyHTML}
+    <tr style="font-weight:bold;background:#dde8f0">
+      <td colspan="5" style="text-align:right">TỔNG CỘNG</td>
+      <td style="text-align:right">${grandQty.toLocaleString()}</td><td></td>
+      <td style="text-align:right">${grandAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td></td>
+    </tr>
+  </tbody>
+</table>
+<div style="margin-top:24px;display:flex;justify-content:space-between">
+  <div>Duyệt bởi:</div>
+  <div style="text-align:right">
+    <div>Ngày ${new Date().getDate()} tháng ${new Date().getMonth()+1} năm ${new Date().getFullYear()}</div>
+    <div style="margin-top:4px">Lập bởi: Phòng XNK</div>
+    <div style="margin-top:36px;font-weight:bold">NGUYEN QUOC THI</div>
+  </div>
+</div>
+<div class="no-print" style="text-align:center;margin-top:20px">
+  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+</div>
+</body></html>`;
+  closeModal("modal-reports");
+  const w = window.open("","_blank"); w.document.write(html); w.document.close();
+};
+
+function fmtDateVN(str) {
+  if (!str) return "—";
+  const d = new Date(str);
+  if (isNaN(d)) return str;
+  return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
 }
 
 // ====== FIRESTORE REALTIME ======

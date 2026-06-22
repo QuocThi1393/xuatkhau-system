@@ -34,6 +34,8 @@
   </svg>
   <div class="topbar-nav">
     <a href="customers.html" class="btn btn-sm"><i class="ti ti-users"></i> Khách hàng</a>
+    <a href="forwarders.html" class="btn btn-sm"><i class="ti ti-truck-delivery"></i> Forwarder</a>
+    <button class="btn btn-sm" id="btn-reports"><i class="ti ti-report"></i> Báo cáo</button>
     <div id="admin-indicator" class="admin-indicator" style="display:none">
       <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
     </div>
@@ -200,6 +202,40 @@
       <span class="modal-close" onclick="closeModalById('modal-packing')"><i class="ti ti-x"></i></span>
     </div>
     <div id="packing-form-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Chọn báo cáo -->
+<div class="modal-backdrop" id="modal-reports">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">
+      Xuất Báo Cáo
+      <span class="modal-close" onclick="closeModalById('modal-reports')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chọn tháng báo cáo</label>
+      <input type="month" class="form-input" id="rp-month">
+    </div>
+    <div class="form-group" id="rp-date-wrap" style="display:none">
+      <label class="form-label">Tính đến ngày (cho báo cáo nguồn thu)</label>
+      <input type="date" class="form-input" id="rp-asof">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+      <button class="btn" onclick="reportBocXep()" style="justify-content:flex-start;padding:14px">
+        <i class="ti ti-forklift" style="font-size:18px"></i>
+        <div style="text-align:left">
+          <div style="font-weight:500">Báo cáo bốc xếp</div>
+          <div style="font-size:11px;color:var(--text-muted)">Tổng hợp lô hàng trong tháng theo ngày đóng hàng</div>
+        </div>
+      </button>
+      <button class="btn" onclick="reportNguonThu()" style="justify-content:flex-start;padding:14px">
+        <i class="ti ti-cash" style="font-size:18px"></i>
+        <div style="text-align:left">
+          <div style="font-weight:500">Báo cáo nguồn thu</div>
+          <div style="font-size:11px;color:var(--text-muted)">Doanh thu theo khách hàng, tách đã xuất / dự kiến</div>
+        </div>
+      </button>
+    </div>
   </div>
 </div>
 

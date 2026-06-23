@@ -54,24 +54,19 @@
     </div>
     <form id="form-lc">
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Tên LC *</label><input class="form-input" id="fl-name" required></div>
-        <div class="form-group"><label class="form-label">Chỉnh sửa (Amend)</label><input class="form-input" id="fl-amend" placeholder="Amend 1..."></div>
+        <div class="form-group"><label class="form-label">Tên LC (Số LC) *</label><input class="form-input" id="fl-name" required></div>
+        <div class="form-group" id="fl-amendname-wrap" style="display:none"><label class="form-label">Tên bản Amend</label><input class="form-input" id="fl-amendname" placeholder="Amend 1, Amend 2..."></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Ngày phát hành</label><input type="date" class="form-input" id="fl-issue"></div>
-        <div class="form-group"><label class="form-label">Amount gốc (USD) *</label><input type="number" step="any" class="form-input" id="fl-amount" required></div>
-      </div>
-      <div class="form-group" style="background:#FFF8E8;padding:10px 12px;border-radius:var(--radius-md);border:0.5px solid var(--amber-border)">
-        <label class="form-label">Số tiền Amend / tăng thêm (USD)</label>
-        <input type="number" step="any" class="form-input" id="fl-amendamount" placeholder="0">
-        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Khi LC được tu chỉnh tăng tiền, nhập số tiền cộng thêm vào đây (không tạo LC mới). Tổng LC = Amount gốc + Amend.</div>
+        <div class="form-group"><label class="form-label" id="fl-amount-label">Amount (USD) *</label><input type="number" step="any" class="form-input" id="fl-amount" required></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Hạn LC</label><input type="date" class="form-input" id="fl-expiry"></div>
         <div class="form-group"><label class="form-label">Hạn giao hàng (ETD)</label><input type="date" class="form-input" id="fl-shipdate"></div>
       </div>
       <div class="form-group"><label class="form-label">Ghi chú</label><textarea class="form-textarea" id="fl-note" rows="2"></textarea></div>
-      <div style="font-size:12px;color:var(--text-muted);background:var(--bg-secondary);padding:8px 12px;border-radius:var(--radius-md)">
+      <div id="fl-hint" style="font-size:12px;color:var(--text-muted);background:var(--bg-secondary);padding:8px 12px;border-radius:var(--radius-md)">
         💡 Thêm LC mới sẽ tự động chuyển LC cũ (đang hoạt động) thành "Đã kết thúc".
       </div>
       <div class="form-footer">
@@ -211,6 +206,19 @@ function getInvoicesForLC(lcObj) {
   });
 }
 
+// Tính thông tin LC hiệu lực: tổng tiền (gốc + các amend), hạn mới nhất
+function getEffectiveLC(lc) {
+  const amends = lc.amendments || [];
+  let totalAmount = parseFloat(lc.amount)||0;
+  let expiry = lc.expiry, shipDate = lc.shipDate;
+  amends.forEach(a => {
+    totalAmount += parseFloat(a.addAmount)||0;
+    if (a.expiry) expiry = a.expiry;       // amend mới nhất ghi đè hạn
+    if (a.shipDate) shipDate = a.shipDate;
+  });
+  return { totalAmount: Math.round(totalAmount*100)/100, expiry, shipDate };
+}
+
 function renderHistory(key) {
   const list = allLC.filter(x=>x.lcKey===key).sort((a,b)=>(b.issueDate||"").localeCompare(a.issueDate||""));
   const cont = document.getElementById("lc-history-list");
@@ -224,12 +232,14 @@ function renderHistory(key) {
     const manualInvoices = (lc.manualInvoices||[]).map((i,idx)=>({...i, manual:true, idx}));
     const invoices = [...manualInvoices, ...autoInvoices];
     const usedAmount = invoices.reduce((a,i)=>a+(parseFloat(i.amount)||0), 0);
-    const totalLC = (parseFloat(lc.amount)||0) + (parseFloat(lc.amendAmount)||0);
+    const eff = getEffectiveLC(lc);
+    const totalLC = eff.totalAmount;
     const remaining = Math.round((totalLC - usedAmount)*100)/100;
+    const amends = lc.amendments || [];
     const statusBadge = lc.status==="active"
       ? `<span class="badge badge-green">Đang hoạt động</span>`
       : `<span class="badge badge-gray">Đã kết thúc</span>`;
-    const invRows = invoices.length ? invoices.map((i,idx)=>`
+    const invRows = invoices.length ? invoices.map((i)=>`
       <tr>
         <td>${i.invoiceNo} ${i.manual?'<span style="font-size:9px;color:var(--blue-text)">(tay)</span>':''}</td>
         <td>${formatDate(i.date)||"—"}</td>
@@ -238,25 +248,47 @@ function renderHistory(key) {
       </tr>
     `).join("") : `<tr><td colspan="4" style="color:var(--text-muted);text-align:center">Chưa có INV nào</td></tr>`;
 
+    // Lịch sử amend
+    const amendHTML = amends.length ? `
+      <div style="margin-top:12px">
+        <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:4px">LỊCH SỬ TU CHỈNH (AMEND):</div>
+        <table class="data-table" style="font-size:11px">
+          <thead><tr><th>Bản</th><th>Ngày</th><th style="text-align:right">Tăng tiền</th><th>Hạn LC mới</th><th>Hạn giao mới</th><th>Ghi chú</th>${admin?'<th></th>':''}</tr></thead>
+          <tbody>
+            <tr style="background:#fafafa"><td>Gốc</td><td>${formatDate(lc.issueDate)||"—"}</td><td style="text-align:right">${(parseFloat(lc.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${formatDate(lc.expiry)||"—"}</td><td>${formatDate(lc.shipDate)||"—"}</td><td>${lc.note||""}</td>${admin?'<td></td>':''}</tr>
+            ${amends.map((a,ai)=>`<tr>
+              <td>${a.name||`Amend ${ai+1}`}</td>
+              <td>${formatDate(a.issueDate)||"—"}</td>
+              <td style="text-align:right;color:var(--green-text)">+${(parseFloat(a.addAmount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+              <td>${formatDate(a.expiry)||"—"}</td>
+              <td>${formatDate(a.shipDate)||"—"}</td>
+              <td>${a.note||""}</td>
+              ${admin?`<td style="text-align:center"><button onclick="deleteAmend('${lc.id}',${ai})" style="border:none;background:none;cursor:pointer;color:var(--red-text)">✕</button></td>`:''}
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>` : "";
+
     return `<div class="shipment-card" style="margin-bottom:14px">
       <div style="padding:16px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
           <div>
-            <div style="font-size:15px;font-weight:600">${lc.name} ${statusBadge}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">${lc.amend?`Amend: ${lc.amend} · `:""}Phát hành: ${formatDate(lc.issueDate)||"—"}</div>
+            <div style="font-size:15px;font-weight:600">${lc.name} ${statusBadge}${amends.length?`<span class="badge badge-blue" style="margin-left:4px">${amends.length} amend</span>`:""}</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Phát hành: ${formatDate(lc.issueDate)||"—"}</div>
           </div>
           ${admin?`<div style="display:flex;gap:6px">
-            <button class="btn btn-sm" onclick="editLC('${lc.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm" onclick="openAddAmend('${lc.id}')" title="Thêm bản tu chỉnh"><i class="ti ti-file-plus"></i> Amend</button>
+            <button class="btn btn-sm" onclick="editLC('${lc.id}')" title="Sửa bản gốc"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteLC('${lc.id}')"><i class="ti ti-trash"></i></button>
           </div>`:""}
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;font-size:12px">
-          <div><div style="color:var(--text-muted)">Amount${(parseFloat(lc.amendAmount)||0)>0?` + Amend`:""}</div><div style="font-weight:500">${totalLC.toLocaleString(undefined,{minimumFractionDigits:2})} USD${(parseFloat(lc.amendAmount)||0)>0?`<br><span style="font-size:10px;color:var(--text-muted)">(${(parseFloat(lc.amount)||0).toLocaleString()} + ${(parseFloat(lc.amendAmount)||0).toLocaleString()})</span>`:""}</div></div>
+          <div><div style="color:var(--text-muted)">Tổng LC${amends.length?" (gốc+amend)":""}</div><div style="font-weight:600">${totalLC.toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
           <div><div style="color:var(--text-muted)">Đã dùng</div><div style="font-weight:500;color:var(--amber-text)">${usedAmount.toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
           <div><div style="color:var(--text-muted)">Còn lại</div><div style="font-weight:600;color:${remaining<0?'var(--red-text)':'var(--green-text)'}">${remaining.toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
-          <div><div style="color:var(--text-muted)">Hạn LC / Giao hàng</div><div style="font-weight:500">${formatDate(lc.expiry)||"—"} / ${formatDate(lc.shipDate)||"—"}</div></div>
+          <div><div style="color:var(--text-muted)">Hạn LC / Giao (hiệu lực)</div><div style="font-weight:500">${formatDate(eff.expiry)||"—"} / ${formatDate(eff.shipDate)||"—"}</div></div>
         </div>
-        ${lc.note?`<div style="font-size:11px;color:var(--text-hint);margin-top:8px">Ghi chú: ${lc.note}</div>`:""}
+        ${amendHTML}
         <div style="margin-top:12px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
             <div style="font-size:11px;font-weight:500;color:var(--text-muted)">DANH SÁCH INV ĐÃ TRỪ:</div>
@@ -272,55 +304,94 @@ function renderHistory(key) {
   }).join("");
 }
 
+// formMode: "add" | "edit" | "amend"
+let formMode = "add";
+let formLcId = null;
+
 document.getElementById("btn-add-lc").addEventListener("click", () => {
-  editingLcId = null;
+  formMode = "add"; formLcId = null;
   document.getElementById("lc-modal-title").textContent = `Thêm LC mới — ${currentLcKey}`;
   document.getElementById("form-lc").reset();
+  document.getElementById("fl-name").readOnly = false;
+  document.getElementById("fl-amendname-wrap").style.display = "none";
+  document.getElementById("fl-amount-label").textContent = "Amount (USD) *";
+  document.getElementById("fl-hint").style.display = "block";
   openModal("modal-lc");
 });
 
-let editingLcId = null;
 window.editLC = function(id) {
   const lc = allLC.find(x=>x.id===id);
   if (!lc) return;
-  editingLcId = id;
-  document.getElementById("lc-modal-title").textContent = "Sửa LC";
+  formMode = "edit"; formLcId = id;
+  document.getElementById("lc-modal-title").textContent = "Sửa LC (bản gốc)";
   document.getElementById("fl-name").value = lc.name||"";
-  document.getElementById("fl-amend").value = lc.amend||"";
+  document.getElementById("fl-name").readOnly = false;
+  document.getElementById("fl-amendname-wrap").style.display = "none";
+  document.getElementById("fl-amount-label").textContent = "Amount (USD) *";
   document.getElementById("fl-issue").value = lc.issueDate||"";
   document.getElementById("fl-amount").value = lc.amount||"";
-  document.getElementById("fl-amendamount").value = lc.amendAmount||"";
   document.getElementById("fl-expiry").value = lc.expiry||"";
   document.getElementById("fl-shipdate").value = lc.shipDate||"";
   document.getElementById("fl-note").value = lc.note||"";
+  document.getElementById("fl-hint").style.display = "none";
+  openModal("modal-lc");
+};
+
+window.openAddAmend = function(id) {
+  const lc = allLC.find(x=>x.id===id);
+  if (!lc) return;
+  formMode = "amend"; formLcId = id;
+  const amendCount = (lc.amendments||[]).length;
+  document.getElementById("lc-modal-title").textContent = `Thêm Amend cho ${lc.name}`;
+  document.getElementById("form-lc").reset();
+  document.getElementById("fl-name").value = lc.name||"";
+  document.getElementById("fl-name").readOnly = true;  // khóa số LC
+  document.getElementById("fl-amendname-wrap").style.display = "block";
+  document.getElementById("fl-amendname").value = `Amend ${amendCount+1}`;
+  document.getElementById("fl-amount-label").textContent = "Số tiền tăng thêm (USD)";
+  document.getElementById("fl-amount").value = "";
+  document.getElementById("fl-amount").required = false;
+  // điền sẵn hạn hiện tại để dễ sửa
+  const eff = getEffectiveLC(lc);
+  document.getElementById("fl-expiry").value = eff.expiry||"";
+  document.getElementById("fl-shipdate").value = eff.shipDate||"";
+  document.getElementById("fl-hint").style.display = "none";
   openModal("modal-lc");
 };
 
 document.getElementById("form-lc").addEventListener("submit", async e => {
   e.preventDefault();
-  const data = {
-    lcKey: currentLcKey,
-    name: document.getElementById("fl-name").value.trim(),
-    amend: document.getElementById("fl-amend").value.trim(),
-    issueDate: document.getElementById("fl-issue").value||null,
-    amount: parseFloat(document.getElementById("fl-amount").value)||0,
-    amendAmount: parseFloat(document.getElementById("fl-amendamount").value)||0,
-    expiry: document.getElementById("fl-expiry").value||null,
-    shipDate: document.getElementById("fl-shipdate").value||null,
-    note: document.getElementById("fl-note").value.trim(),
-  };
+  const name = document.getElementById("fl-name").value.trim();
+  const issueDate = document.getElementById("fl-issue").value||null;
+  const amount = parseFloat(document.getElementById("fl-amount").value)||0;
+  const expiry = document.getElementById("fl-expiry").value||null;
+  const shipDate = document.getElementById("fl-shipdate").value||null;
+  const note = document.getElementById("fl-note").value.trim();
+
   try {
-    if (editingLcId) {
-      await updateDoc(doc(db,"lc",editingLcId), data);
+    if (formMode === "amend") {
+      const lc = allLC.find(x=>x.id===formLcId);
+      const amendName = document.getElementById("fl-amendname").value.trim() || `Amend ${(lc.amendments||[]).length+1}`;
+      const newAmend = { name: amendName, issueDate, addAmount: amount, expiry, shipDate, note };
+      const amendments = [...(lc.amendments||[]), newAmend];
+      await updateDoc(doc(db,"lc",formLcId), { amendments });
+      showToast("Đã thêm bản Amend!");
+    } else if (formMode === "edit") {
+      await updateDoc(doc(db,"lc",formLcId), { name, issueDate, amount, expiry, shipDate, note });
       showToast("Đã cập nhật LC!");
-    } else {
-      // Chuyển các LC active của khách này thành đã kết thúc
+    } else { // add
       const actives = allLC.filter(x=>x.lcKey===currentLcKey && x.status==="active");
       for (const a of actives) await updateDoc(doc(db,"lc",a.id), { status:"ended" });
-      await addDoc(collection(db,"lc"), {...data, status:"active", createdAt: serverTimestamp()});
+      await addDoc(collection(db,"lc"), {
+        lcKey: currentLcKey, name, issueDate, amount, expiry, shipDate, note,
+        amendments: [], status:"active", createdAt: serverTimestamp()
+      });
       showToast("Đã thêm LC mới! LC cũ chuyển sang Đã kết thúc.");
     }
-    closeModal("modal-lc"); e.target.reset(); editingLcId = null;
+    closeModal("modal-lc");
+    document.getElementById("fl-name").readOnly = false;
+    document.getElementById("fl-amount").required = true;
+    formMode = "add"; formLcId = null;
   } catch(err){ showToast("Lỗi: "+err.message); }
 });
 
@@ -351,6 +422,15 @@ window.deleteManualInv = async function(lcId, idx) {
   const manualInvoices = (lc.manualInvoices||[]).filter((_,i)=>i!==idx);
   await updateDoc(doc(db,"lc",lcId), { manualInvoices });
   showToast("Đã xóa INV!");
+};
+
+window.deleteAmend = async function(lcId, idx) {
+  const lc = allLC.find(x=>x.id===lcId);
+  if (!lc) return;
+  if (!confirm("Xóa bản amend này?")) return;
+  const amendments = (lc.amendments||[]).filter((_,i)=>i!==idx);
+  await updateDoc(doc(db,"lc",lcId), { amendments });
+  showToast("Đã xóa amend!");
 };
 
 window.deleteLC = async function(id) {

@@ -59,7 +59,12 @@
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Ngày phát hành</label><input type="date" class="form-input" id="fl-issue"></div>
-        <div class="form-group"><label class="form-label">Amount (USD) *</label><input type="number" step="any" class="form-input" id="fl-amount" required></div>
+        <div class="form-group"><label class="form-label">Amount gốc (USD) *</label><input type="number" step="any" class="form-input" id="fl-amount" required></div>
+      </div>
+      <div class="form-group" style="background:#FFF8E8;padding:10px 12px;border-radius:var(--radius-md);border:0.5px solid var(--amber-border)">
+        <label class="form-label">Số tiền Amend / tăng thêm (USD)</label>
+        <input type="number" step="any" class="form-input" id="fl-amendamount" placeholder="0">
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Khi LC được tu chỉnh tăng tiền, nhập số tiền cộng thêm vào đây (không tạo LC mới). Tổng LC = Amount gốc + Amend.</div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Hạn LC</label><input type="date" class="form-input" id="fl-expiry"></div>
@@ -246,7 +251,7 @@ function renderHistory(key) {
           </div>`:""}
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px;font-size:12px">
-          <div><div style="color:var(--text-muted)">Amount</div><div style="font-weight:500">${(parseFloat(lc.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
+          <div><div style="color:var(--text-muted)">Amount${(parseFloat(lc.amendAmount)||0)>0?` + Amend`:""}</div><div style="font-weight:500">${totalLC.toLocaleString(undefined,{minimumFractionDigits:2})} USD${(parseFloat(lc.amendAmount)||0)>0?`<br><span style="font-size:10px;color:var(--text-muted)">(${(parseFloat(lc.amount)||0).toLocaleString()} + ${(parseFloat(lc.amendAmount)||0).toLocaleString()})</span>`:""}</div></div>
           <div><div style="color:var(--text-muted)">Đã dùng</div><div style="font-weight:500;color:var(--amber-text)">${usedAmount.toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
           <div><div style="color:var(--text-muted)">Còn lại</div><div style="font-weight:600;color:${remaining<0?'var(--red-text)':'var(--green-text)'}">${remaining.toLocaleString(undefined,{minimumFractionDigits:2})} USD</div></div>
           <div><div style="color:var(--text-muted)">Hạn LC / Giao hàng</div><div style="font-weight:500">${formatDate(lc.expiry)||"—"} / ${formatDate(lc.shipDate)||"—"}</div></div>
@@ -284,6 +289,7 @@ window.editLC = function(id) {
   document.getElementById("fl-amend").value = lc.amend||"";
   document.getElementById("fl-issue").value = lc.issueDate||"";
   document.getElementById("fl-amount").value = lc.amount||"";
+  document.getElementById("fl-amendamount").value = lc.amendAmount||"";
   document.getElementById("fl-expiry").value = lc.expiry||"";
   document.getElementById("fl-shipdate").value = lc.shipDate||"";
   document.getElementById("fl-note").value = lc.note||"";
@@ -298,6 +304,7 @@ document.getElementById("form-lc").addEventListener("submit", async e => {
     amend: document.getElementById("fl-amend").value.trim(),
     issueDate: document.getElementById("fl-issue").value||null,
     amount: parseFloat(document.getElementById("fl-amount").value)||0,
+    amendAmount: parseFloat(document.getElementById("fl-amendamount").value)||0,
     expiry: document.getElementById("fl-expiry").value||null,
     shipDate: document.getElementById("fl-shipdate").value||null,
     note: document.getElementById("fl-note").value.trim(),

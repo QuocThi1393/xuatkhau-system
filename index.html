@@ -10,6 +10,7 @@
 <!-- Handsontable: Excel trên web -->
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@13.1.0/dist/handsontable.full.min.css">
 <script src="https://cdn.jsdelivr.net/npm/handsontable@13.1.0/dist/handsontable.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   .ht-wrap { margin: 4px 0 12px; }
   .handsontable { font-size: 12px; font-family: inherit; }
@@ -34,6 +35,7 @@
   </svg>
   <div class="topbar-nav">
     <a href="customers.html" class="btn btn-sm"><i class="ti ti-users"></i> Khách hàng</a>
+    <a href="lc.html" class="btn btn-sm"><i class="ti ti-credit-card"></i> LC</a>
     <a href="forwarders.html" class="btn btn-sm"><i class="ti ti-truck-delivery"></i> Forwarder</a>
     <button class="btn btn-sm" id="btn-reports"><i class="ti ti-report"></i> Báo cáo</button>
     <div id="admin-indicator" class="admin-indicator" style="display:none">
@@ -236,6 +238,17 @@
         </div>
       </button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: Gán LC -->
+<div class="modal-backdrop" id="modal-assign-lc">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">
+      Gán lô hàng vào LC
+      <span class="modal-close" onclick="closeModalById('modal-assign-lc')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="assign-lc-body"></div>
   </div>
 </div>
 

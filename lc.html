@@ -159,7 +159,13 @@ function renderCustomerCards() {
   const box = document.getElementById("lc-customer-cards");
   box.innerHTML = LC_CUSTOMERS.map(lc => {
     const count = allLC.filter(x=>x.lcKey===lc.key).length;
-    const active = allLC.find(x=>x.lcKey===lc.key && x.status==="active");
+    const today = new Date(); today.setHours(0,0,0,0);
+    const active = allLC.find(x=>{
+      if (x.lcKey!==lc.key || x.status==="ended") return false;
+      const eff = getEffectiveLC(x);
+      const expired = eff.expiry && new Date(eff.expiry) < today;
+      return !expired;
+    });
     return `<div class="shipment-card" style="cursor:pointer;border-top:4px solid ${lc.color}" onclick="openHistory('${lc.key}')">
       <div style="padding:16px">
         <div style="font-size:17px;font-weight:600;color:${lc.color}">${lc.key}</div>
@@ -236,9 +242,16 @@ function renderHistory(key) {
     const totalLC = eff.totalAmount;
     const remaining = Math.round((totalLC - usedAmount)*100)/100;
     const amends = lc.amendments || [];
-    const statusBadge = lc.status==="active"
+
+    // Trạng thái động: ended nếu (a) bị đánh dấu ended (do có LC mới) hoặc (b) quá hạn hiệu lực
+    const today = new Date(); today.setHours(0,0,0,0);
+    const expired = eff.expiry && new Date(eff.expiry) < today;
+    const isEnded = lc.status === "ended" || expired;
+    const statusBadge = !isEnded
       ? `<span class="badge badge-green">Đang hoạt động</span>`
-      : `<span class="badge badge-gray">Đã kết thúc</span>`;
+      : (expired && lc.status!=="ended"
+          ? `<span class="badge badge-gray">Hết hạn (${formatDate(eff.expiry)})</span>`
+          : `<span class="badge badge-gray">Đã kết thúc</span>`);
     const invRows = invoices.length ? invoices.map((i)=>`
       <tr>
         <td>${i.invoiceNo} ${i.manual?'<span style="font-size:9px;color:var(--blue-text)">(tay)</span>':''}</td>
@@ -277,6 +290,7 @@ function renderHistory(key) {
             <div style="font-size:12px;color:var(--text-muted);margin-top:2px">Phát hành: ${formatDate(lc.issueDate)||"—"}</div>
           </div>
           ${admin?`<div style="display:flex;gap:6px">
+            ${lc.status==="ended"?`<button class="btn btn-sm" onclick="reactivateLC('${lc.id}')" title="Kích hoạt lại"><i class="ti ti-rotate"></i></button>`:""}
             <button class="btn btn-sm" onclick="openAddAmend('${lc.id}')" title="Thêm bản tu chỉnh"><i class="ti ti-file-plus"></i> Amend</button>
             <button class="btn btn-sm" onclick="editLC('${lc.id}')" title="Sửa bản gốc"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteLC('${lc.id}')"><i class="ti ti-trash"></i></button>
@@ -422,6 +436,17 @@ window.deleteManualInv = async function(lcId, idx) {
   const manualInvoices = (lc.manualInvoices||[]).filter((_,i)=>i!==idx);
   await updateDoc(doc(db,"lc",lcId), { manualInvoices });
   showToast("Đã xóa INV!");
+};
+
+window.reactivateLC = async function(id) {
+  if (!confirm("Kích hoạt lại LC này? Các LC khác đang hoạt động của khách sẽ được chuyển thành kết thúc.")) return;
+  const lc = allLC.find(x=>x.id===id);
+  if (!lc) return;
+  // ngừng các LC active khác cùng khách
+  const actives = allLC.filter(x=>x.lcKey===lc.lcKey && x.status!=="ended" && x.id!==id);
+  for (const a of actives) await updateDoc(doc(db,"lc",a.id), { status:"ended" });
+  await updateDoc(doc(db,"lc",id), { status:"active" });
+  showToast("Đã kích hoạt lại LC!");
 };
 
 window.deleteAmend = async function(lcId, idx) {

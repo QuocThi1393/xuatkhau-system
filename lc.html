@@ -77,6 +77,27 @@
   </div>
 </div>
 
+<!-- MODAL: Thêm INV nhập tay -->
+<div class="modal-backdrop" id="modal-addinv">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">
+      Thêm INV (nhập tay)
+      <span class="modal-close" onclick="closeModalById('modal-addinv')"><i class="ti ti-x"></i></span>
+    </div>
+    <form id="form-addinv">
+      <div class="form-group"><label class="form-label">Số INV *</label><input class="form-input" id="fi-invno" required placeholder="858/26-NPT"></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Ngày INV</label><input type="date" class="form-input" id="fi-date"></div>
+        <div class="form-group"><label class="form-label">Số tiền (USD) *</label><input type="number" step="any" class="form-input" id="fi-amount" required></div>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-addinv')">Hủy</button>
+        <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Thêm</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- MODAL: Đăng nhập -->
 <div class="modal-backdrop" id="modal-login">
   <div class="modal" style="max-width:360px">
@@ -194,16 +215,23 @@ function renderHistory(key) {
     return;
   }
   cont.innerHTML = list.map(lc => {
-    const invoices = getInvoicesForLC(lc);
-    const usedAmount = invoices.reduce((a,i)=>a+i.amount, 0);
+    const autoInvoices = getInvoicesForLC(lc).map(i=>({...i, manual:false}));
+    const manualInvoices = (lc.manualInvoices||[]).map((i,idx)=>({...i, manual:true, idx}));
+    const invoices = [...manualInvoices, ...autoInvoices];
+    const usedAmount = invoices.reduce((a,i)=>a+(parseFloat(i.amount)||0), 0);
     const totalLC = (parseFloat(lc.amount)||0) + (parseFloat(lc.amendAmount)||0);
     const remaining = Math.round((totalLC - usedAmount)*100)/100;
     const statusBadge = lc.status==="active"
       ? `<span class="badge badge-green">Đang hoạt động</span>`
       : `<span class="badge badge-gray">Đã kết thúc</span>`;
-    const invRows = invoices.length ? invoices.map(i=>`
-      <tr><td>${i.invoiceNo}</td><td>${formatDate(i.date)||"—"}</td><td style="text-align:right">${i.amount.toLocaleString(undefined,{minimumFractionDigits:2})}</td></tr>
-    `).join("") : `<tr><td colspan="3" style="color:var(--text-muted);text-align:center">Chưa có INV nào</td></tr>`;
+    const invRows = invoices.length ? invoices.map((i,idx)=>`
+      <tr>
+        <td>${i.invoiceNo} ${i.manual?'<span style="font-size:9px;color:var(--blue-text)">(tay)</span>':''}</td>
+        <td>${formatDate(i.date)||"—"}</td>
+        <td style="text-align:right">${(parseFloat(i.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td>
+        <td style="text-align:center;width:30px">${(i.manual && isAdmin())?`<button onclick="deleteManualInv('${lc.id}',${i.idx})" style="border:none;background:none;cursor:pointer;color:var(--red-text)">✕</button>`:''}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" style="color:var(--text-muted);text-align:center">Chưa có INV nào</td></tr>`;
 
     return `<div class="shipment-card" style="margin-bottom:14px">
       <div style="padding:16px">
@@ -225,9 +253,12 @@ function renderHistory(key) {
         </div>
         ${lc.note?`<div style="font-size:11px;color:var(--text-hint);margin-top:8px">Ghi chú: ${lc.note}</div>`:""}
         <div style="margin-top:12px">
-          <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:4px">DANH SÁCH INV ĐÃ TRỪ:</div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <div style="font-size:11px;font-weight:500;color:var(--text-muted)">DANH SÁCH INV ĐÃ TRỪ:</div>
+            ${admin?`<button class="btn btn-sm" onclick="openAddInv('${lc.id}')" style="padding:2px 8px;font-size:11px"><i class="ti ti-plus"></i> Thêm INV (nhập tay)</button>`:""}
+          </div>
           <table class="data-table" style="font-size:11px">
-            <thead><tr><th>Inv No.</th><th>Ngày Inv</th><th style="text-align:right">Số tiền (USD)</th></tr></thead>
+            <thead><tr><th>Inv No.</th><th>Ngày Inv</th><th style="text-align:right">Số tiền (USD)</th><th></th></tr></thead>
             <tbody>${invRows}</tbody>
           </table>
         </div>
@@ -285,6 +316,35 @@ document.getElementById("form-lc").addEventListener("submit", async e => {
     closeModal("modal-lc"); e.target.reset(); editingLcId = null;
   } catch(err){ showToast("Lỗi: "+err.message); }
 });
+
+let addInvLcId = null;
+window.openAddInv = function(lcId) {
+  addInvLcId = lcId;
+  document.getElementById("form-addinv").reset();
+  openModal("modal-addinv");
+};
+document.getElementById("form-addinv").addEventListener("submit", async e => {
+  e.preventDefault();
+  const lc = allLC.find(x=>x.id===addInvLcId);
+  if (!lc) return;
+  const newInv = {
+    invoiceNo: document.getElementById("fi-invno").value.trim(),
+    date: document.getElementById("fi-date").value||null,
+    amount: parseFloat(document.getElementById("fi-amount").value)||0,
+  };
+  const manualInvoices = [...(lc.manualInvoices||[]), newInv];
+  await updateDoc(doc(db,"lc",addInvLcId), { manualInvoices });
+  closeModal("modal-addinv");
+  showToast("Đã thêm INV vào LC!");
+});
+window.deleteManualInv = async function(lcId, idx) {
+  const lc = allLC.find(x=>x.id===lcId);
+  if (!lc) return;
+  if (!confirm("Xóa INV này?")) return;
+  const manualInvoices = (lc.manualInvoices||[]).filter((_,i)=>i!==idx);
+  await updateDoc(doc(db,"lc",lcId), { manualInvoices });
+  showToast("Đã xóa INV!");
+};
 
 window.deleteLC = async function(id) {
   if (!confirm("Xóa LC này?")) return;

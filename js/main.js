@@ -414,6 +414,8 @@ function buildCard(s, admin) {
         ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
         ${(!isAir && !(s.container||"").toUpperCase().includes("LCL") && (s.contNo||s.sealNo))
           ? `<span><i class="ti ti-box"></i>Cont: ${s.contNo||"—"} / Seal: ${s.sealNo||"—"}</span>` : ""}
+        ${s.invoiceNo?`<span><i class="ti ti-file-invoice"></i>INV: ${s.invoiceNo}</span>`:""}
+        ${s.lcId?`<span><i class="ti ti-credit-card"></i>Đã gán LC</span>`:""}
       </div>
       <div class="checklist" style="margin-top:8px">${dotsHTML}</div>
       <div class="progress-wrap" style="margin-top:6px">
@@ -431,6 +433,7 @@ function buildCard(s, admin) {
               ${admin ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
               <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
               <button class="btn btn-sm" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
+              ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
               ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
             </div>
@@ -716,6 +719,70 @@ document.getElementById("btn-open-mail").addEventListener("click", () => {
 document.getElementById("filter-status").addEventListener("change", renderList);
 document.getElementById("filter-month").addEventListener("change", renderList);
 
+// ====== GÁN LC ======
+window.openAssignLC = async function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+
+  // Lấy danh sách LC từ Firestore
+  let lcList = [];
+  try {
+    const { collection:col, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDocs(col(db,"lc"));
+    lcList = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  } catch(e){}
+
+  // Map tên khách LC ↔ key
+  const LC_MAP = { "MITSUWA":"MITSUWA", "SANMARINO":"SANMARINO", "HEMD (OGITA)":"NPT", "ACROS":"ACROS" };
+  const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
+  const lcKey = custs.map(c=>LC_MAP[c]).find(Boolean);
+
+  let body;
+  if (!lcKey) {
+    body = `<div style="font-size:13px;color:var(--text-muted);padding:8px 0">
+      Lô này không thuộc khách hàng dùng LC (MITSUWA, SANMARINO, NPT/HEMD, ACROS).
+    </div>
+    <div class="form-footer"><button class="btn" onclick="closeModalById('modal-assign-lc')">Đóng</button></div>`;
+  } else {
+    const relevant = lcList.filter(x=>x.lcKey===lcKey).sort((a,b)=>(b.issueDate||"").localeCompare(a.issueDate||""));
+    if (!relevant.length) {
+      body = `<div style="font-size:13px;color:var(--text-muted);padding:8px 0">
+        Khách <b>${lcKey}</b> chưa có LC nào. Vào trang LC để tạo trước.
+      </div>
+      <div class="form-footer"><button class="btn" onclick="closeModalById('modal-assign-lc')">Đóng</button></div>`;
+    } else {
+      const opts = relevant.map(lc => {
+        const checked = s.lcId === lc.id ? "checked" : "";
+        const statusTxt = lc.status==="active" ? "Đang hoạt động" : "Đã kết thúc";
+        return `<label style="display:flex;align-items:center;gap:8px;padding:10px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);cursor:pointer;margin-bottom:6px">
+          <input type="radio" name="assign-lc" value="${lc.id}" ${checked}>
+          <div><div style="font-weight:500">${lc.name} <span style="font-size:11px;color:var(--text-muted)">(${statusTxt})</span></div>
+          <div style="font-size:11px;color:var(--text-muted)">Amount: ${(parseFloat(lc.amount)||0).toLocaleString()} USD · Hạn: ${formatDate(lc.expiry)||"—"}</div></div>
+        </label>`;
+      }).join("");
+      body = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Khách LC: <b>${lcKey}</b>. Chọn LC để gán lô này (số tiền INV sẽ trừ vào LC đó):</div>
+        ${opts}
+        <label style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer;color:var(--text-muted)">
+          <input type="radio" name="assign-lc" value="" ${!s.lcId?"checked":""}> Không gán LC
+        </label>
+        <div class="form-footer">
+          <button class="btn" onclick="closeModalById('modal-assign-lc')">Hủy</button>
+          <button class="btn btn-primary" onclick="saveAssignLC('${shipId}')"><i class="ti ti-check"></i> Lưu</button>
+        </div>`;
+    }
+  }
+  document.getElementById("assign-lc-body").innerHTML = body;
+  openModal("modal-assign-lc");
+};
+
+window.saveAssignLC = async function(shipId) {
+  const sel = document.querySelector('input[name="assign-lc"]:checked');
+  const lcId = sel ? sel.value : "";
+  await updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null });
+  closeModal("modal-assign-lc");
+  showToast(lcId ? "Đã gán LC cho lô hàng!" : "Đã bỏ gán LC.");
+};
+
 // ====== PACKING LIST ======
 window.openPackingList = function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
@@ -995,7 +1062,7 @@ window.reportBocXep = function() {
   const w = window.open("","_blank"); w.document.write(html); w.document.close();
 };
 
-// --- BÁO CÁO NGUỒN THU ---
+// --- BÁO CÁO NGUỒN THU (xuất Excel) ---
 window.reportNguonThu = function() {
   const month = document.getElementById("rp-month").value;
   const asOf  = document.getElementById("rp-asof").value;
@@ -1003,6 +1070,8 @@ window.reportNguonThu = function() {
   let list = shipmentsOfMonth(month);
   if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
   const [y,mo] = month.split("-");
+
+  const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
 
   // Nhóm theo khách hàng
   const byCustomer = {};
@@ -1012,111 +1081,73 @@ window.reportNguonThu = function() {
     byCustomer[cust].push(s);
   });
 
-  // Lô đã xuất = checklist bước 8 (tờ khai HQ) đã done
-  const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
+  // Xây mảng AOA (array of arrays) cho Excel
+  const aoa = [];
+  aoa.push(["CTY TNHH TOMIYA SUMMIT GARMENT EXPORT"]);
+  aoa.push(["Phòng Xuất Nhập Khẩu"]);
+  aoa.push([`BÁO CÁO NGUỒN THU - Tháng ${mo}/${y}${asOf?` (tính đến ${fmtDateVN(asOf)})`:""}`]);
+  aoa.push([]);
+  aoa.push(["Stt","P.thức giao","P.thức TT","Số & ngày hóa đơn","Hợp đồng","Mã hàng","ĐVT","Số lượng","Đơn giá (USD)","Thành tiền (USD)","Ngày xuất","Ngày tàu chạy"]);
 
-  let grandQty = 0, grandAmount = 0;
-  let bodyHTML = "";
-  let stt = 0;
+  let stt = 0, grandQty = 0, grandAmount = 0;
 
   Object.keys(byCustomer).sort().forEach(cust => {
     stt++;
     const shipments = byCustomer[cust];
-    // tách đã xuất / dự kiến
+    aoa.push([stt, `${cust}`]);
+
     const exported = shipments.filter(isExported);
     const planned  = shipments.filter(s=>!isExported(s));
-
     let custQty = 0, custAmount = 0;
-    let rows = "";
+    const multiShip = shipments.length > 1;
 
     const renderGroup = (groupShipments, label) => {
-      if (!groupShipments.length) return "";
-      let h = `<tr><td colspan="9" style="font-style:italic;padding:3px 6px;background:#fafafa">${label}</td></tr>`;
+      if (!groupShipments.length) return;
+      aoa.push(["", label]);
       groupShipments.forEach(s => {
         const orders = s.orders||[];
-        let invFirst = true;
-        const invoiceNo = s.invoiceNo || "";
+        let shipQty = 0, shipAmount = 0;
         orders.forEach((o,idx) => {
           const qty = parseFloat(o.qty)||0;
           const price = parseFloat(o.unitPrice)||0;
-          const amount = Math.round(qty*price*100)/100;
-          custQty += qty; custAmount += amount;
-          h += `<tr>
-            <td>${idx===0?"FOB":""}</td><td>${idx===0?"T/T":""}</td>
-            <td>${idx===0?(invoiceNo||s.booking||""):""}${idx===0&&s.stuffingDate?`<br><span style="font-size:9px">(Ngày ${fmtDateVN(s.stuffingDate)})</span>`:""}</td>
-            <td>${o.contract||""}</td>
-            <td>${o.items?`${o.items}${o.index?`(${o.index})`:""}`:(o.index||"")}</td>
-            <td style="text-align:right">${qty.toLocaleString()}</td>
-            <td style="text-align:right">${price?price.toFixed(4):""}</td>
-            <td style="text-align:right">${amount?amount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):""}</td>
-            <td>${idx===0?fmtDateVN(s.stuffingDate):'"'}</td>
-          </tr>`;
+          const amount = Math.round(qty*price*100)/100;  // ROUND(x,2)
+          shipQty += qty; shipAmount = Math.round((shipAmount+amount)*100)/100;
+          custQty += qty; custAmount = Math.round((custAmount+amount)*100)/100;
+          aoa.push([
+            "", idx===0?"FOB":"", idx===0?"T/T":"",
+            idx===0?`${s.invoiceNo||s.booking||""}${s.stuffingDate?` (${fmtDateVN(s.stuffingDate)})`:""}`:"",
+            o.contract||"", `${o.items||""}${o.index?`(${o.index})`:""}`, "Cái",
+            qty, price||"", amount||"",
+            idx===0?fmtDateVN(s.stuffingDate):'"', idx===0?fmtDateVN(s.etd):'"'
+          ]);
         });
+        // dòng tổng từng lô (nếu khách có nhiều lô)
+        if (multiShip) {
+          aoa.push(["","","","","","Tổng lô","",shipQty,"",shipAmount,"",""]);
+        }
       });
-      return h;
     };
+    renderGroup(exported, "Đã xuất");
+    renderGroup(planned, `Dự kiến xuất trong tháng ${mo}/${y}`);
 
-    rows += renderGroup(exported, "Đã xuất");
-    rows += renderGroup(planned, `Dự kiến xuất trong tháng ${mo}/${y}`);
-
-    grandQty += custQty; grandAmount += custAmount;
-    bodyHTML += `
-      <tr style="background:#eef3f8"><td colspan="9" style="font-weight:bold;padding:4px 6px">${stt}. ${cust}</td></tr>
-      ${rows}
-      <tr style="font-weight:bold;background:#f5f5f5">
-        <td colspan="5" style="text-align:right">CỘNG:</td>
-        <td style="text-align:right">${custQty.toLocaleString()}</td><td></td>
-        <td style="text-align:right">${custAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td></td>
-      </tr>`;
+    aoa.push(["","","","","","CỘNG "+cust,"",custQty,"",custAmount,"",""]);
+    grandQty += custQty; grandAmount = Math.round((grandAmount+custAmount)*100)/100;
   });
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-  @page { size: A4 portrait; margin: 10mm; }
-  body { font-family: "Times New Roman", serif; font-size: 11px; margin:0; }
-  h2 { text-align:center; margin:4px 0; }
-  .sub { text-align:center; font-size:11px; margin-bottom:12px; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { border:1px solid #000; padding:3px 5px; }
-  th { background:#e8e8e8; font-size:10px; }
-  .company { font-size:11px; }
-  tr { page-break-inside: avoid; }
-  @media print { .no-print{display:none;} }
-</style></head><body>
-<div class="company"><b>CTY TNHH TOMIYA SUMMIT GARMENT EXPORT</b><br>Phòng Xuất Nhập Khẩu</div>
-<h2>BÁO CÁO NGUỒN THU</h2>
-<div class="sub">(Tháng ${mo}/${y}${asOf?` — tính đến ngày ${fmtDateVN(asOf)}`:""})</div>
-<table>
-  <thead><tr>
-    <th style="width:40px">P.thức giao</th><th style="width:40px">P.thức TT</th>
-    <th style="width:90px">Số & ngày hóa đơn</th><th style="width:70px">Hợp đồng</th>
-    <th>Mã hàng</th><th style="width:70px">Số lượng</th>
-    <th style="width:65px">Đơn giá (USD)</th><th style="width:85px">Thành tiền (USD)</th>
-    <th style="width:80px">Ngày xuất</th>
-  </tr></thead>
-  <tbody>
-    ${bodyHTML}
-    <tr style="font-weight:bold;background:#dde8f0">
-      <td colspan="5" style="text-align:right">TỔNG CỘNG</td>
-      <td style="text-align:right">${grandQty.toLocaleString()}</td><td></td>
-      <td style="text-align:right">${grandAmount.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td></td>
-    </tr>
-  </tbody>
-</table>
-<div style="margin-top:24px;display:flex;justify-content:space-between">
-  <div>Duyệt bởi:</div>
-  <div style="text-align:right">
-    <div>Ngày ${new Date().getDate()} tháng ${new Date().getMonth()+1} năm ${new Date().getFullYear()}</div>
-    <div style="margin-top:4px">Lập bởi: Phòng XNK</div>
-    <div style="margin-top:36px;font-weight:bold">NGUYEN QUOC THI</div>
-  </div>
-</div>
-<div class="no-print" style="text-align:center;margin-top:20px">
-  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
-</div>
-</body></html>`;
+  aoa.push(["","","","","","TỔNG CỘNG","",grandQty,"",grandAmount,"",""]);
+  aoa.push([]);
+  aoa.push(["","","","","","","","","","Lập bởi: Phòng XNK","",""]);
+  aoa.push(["","","","","","","","","","NGUYEN QUOC THI","",""]);
+
+  // Tạo workbook
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:5},{wch:11},{wch:9},{wch:22},{wch:12},{wch:26},{wch:6},{wch:10},{wch:11},{wch:13},{wch:12},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Nguồn thu");
+  XLSX.writeFile(wb, `BaoCao_NguonThu_${mo}-${y}.xlsx`);
+
   closeModal("modal-reports");
-  const w = window.open("","_blank"); w.document.write(html); w.document.close();
+  showToast("Đã xuất file Excel! Mở file để sửa & in.");
 };
 
 function fmtDateVN(str) {

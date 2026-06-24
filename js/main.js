@@ -799,6 +799,23 @@ window.openAssignLC = async function(shipId) {
         </label>`;
       }).join("");
       body = `<div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Khách LC: <b>${lcKey}</b>. Chọn LC để gán lô này (số tiền INV sẽ trừ vào LC đó):</div>
+        ${(() => {
+          // Bảng kiểm điều kiện để INV được cộng vào LC
+          const exported = (s.checklist||{})[8]==="done" || (s.checklist||{})[8]==="skip";
+          const hasInv = !!s.invoiceNo, hasInvDate = !!s.invoiceDate;
+          const hasPrice = (s.orders||[]).length>0 && (s.orders||[]).every(o => parseFloat(o.unitPrice)>0);
+          const chk = (ok,label) => `<div style="font-size:12px;display:flex;align-items:center;gap:6px;color:${ok?'var(--green-text)':'var(--red-text)'}">
+            <i class="ti ti-${ok?'circle-check':'circle-x'}"></i> ${label}</div>`;
+          const allOk = exported && hasInv && hasInvDate && hasPrice;
+          return `<div style="background:${allOk?'var(--green-bg)':'#FFF8E8'};border-radius:var(--radius-md);padding:10px 12px;margin-bottom:12px">
+            <div style="font-size:11px;font-weight:500;margin-bottom:6px;color:var(--text-muted)">ĐIỀU KIỆN ĐỂ INV CỘNG VÀO LC:</div>
+            ${chk(exported,"Đã làm tờ khai Hải quan (bước 8)")}
+            ${chk(hasInv,"Có Số hóa đơn (Invoice No.)")}
+            ${chk(hasInvDate,"Có Ngày hóa đơn")}
+            ${chk(hasPrice,"Tất cả mã hàng có Giá gia công")}
+            ${allOk?'<div style="font-size:11px;color:var(--green-text);margin-top:6px">✓ Đủ điều kiện — INV sẽ tự cộng vào LC</div>':'<div style="font-size:11px;color:var(--amber-text);margin-top:6px">⚠ Còn thiếu — vẫn gán được nhưng INV chưa cộng vào LC</div>'}
+          </div>`;
+        })()}
         ${opts}
         <label style="display:flex;align-items:center;gap:8px;padding:8px;cursor:pointer;color:var(--text-muted)">
           <input type="radio" name="assign-lc" value="" ${!s.lcId?"checked":""}> Không gán LC
@@ -816,6 +833,28 @@ window.openAssignLC = async function(shipId) {
 window.saveAssignLC = async function(shipId) {
   const sel = document.querySelector('input[name="assign-lc"]:checked');
   const lcId = sel ? sel.value : "";
+  const s = allShipments.find(x=>x.id===shipId);
+
+  // Nếu gán LC (không phải bỏ gán) → kiểm tra điều kiện để INV được cộng vào LC
+  if (lcId && s) {
+    const missing = [];
+    const exported = (s.checklist||{})[8]==="done" || (s.checklist||{})[8]==="skip";
+    if (!exported) missing.push("Lô chưa làm tờ khai Hải quan (bước 8)");
+    if (!s.invoiceNo) missing.push("Chưa có Số hóa đơn (Invoice No.)");
+    if (!s.invoiceDate) missing.push("Chưa có Ngày hóa đơn");
+    const noPrice = (s.orders||[]).some(o => !(parseFloat(o.unitPrice)>0));
+    if (noPrice) missing.push("Có mã hàng chưa nhập Giá gia công");
+
+    if (missing.length) {
+      const ok = confirm(
+        "⚠️ Lô này được gán LC nhưng INV CHƯA được cộng vào LC vì còn thiếu:\n\n• " +
+        missing.join("\n• ") +
+        "\n\nINV sẽ tự động cộng vào LC khi bổ sung đủ các thông tin trên.\n\nVẫn lưu việc gán LC?"
+      );
+      if (!ok) return;
+    }
+  }
+
   await updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null });
   closeModal("modal-assign-lc");
   showToast(lcId ? "Đã gán LC cho lô hàng!" : "Đã bỏ gán LC.");

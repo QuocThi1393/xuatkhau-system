@@ -1,4 +1,4 @@
-const ADMIN_PASSWORD = "xuatkhau2024";
+const ADMIN_PASSWORD = "1Cvxr2cc";
 const ADMIN_KEY = "xk_admin_session";
 
 export function isAdmin() {

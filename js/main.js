@@ -412,8 +412,12 @@ function buildCard(s, admin) {
         <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta)||"—"}</span>
         <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}${s.cyCutTime?` ${s.cyCutTime}`:""}</span>
         ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
-        ${(!isAir && !(s.container||"").toUpperCase().includes("LCL") && (s.contNo||s.sealNo))
-          ? `<span><i class="ti ti-box"></i>Cont: ${s.contNo||"—"} / Seal: ${s.sealNo||"—"}</span>` : ""}
+        ${(() => {
+          const conts = (s.containers && s.containers.length) ? s.containers
+                      : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+          if (isAir || (s.container||"").toUpperCase().includes("LCL") || !conts.length) return "";
+          return conts.map(c => `<span><i class="ti ti-box"></i>${c.type?c.type+" ":""}Cont: ${c.no||"—"} / Seal: ${c.seal||"—"}</span>`).join("");
+        })()}
         ${s.invoiceNo?`<span><i class="ti ti-file-invoice"></i>INV: ${s.invoiceNo}</span>`:""}
         ${s.lcId?`<span><i class="ti ti-credit-card"></i>Đã gán LC</span>`:""}
       </div>
@@ -590,16 +594,20 @@ window.openEditShipment = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Số Booking</label><input class="form-input" id="es-booking" value="${s.booking||""}" placeholder="SITSGYKW506862"></div>
-        <div class="form-group"><label class="form-label">Số Container</label><input class="form-input" id="es-contno" value="${s.contNo||""}" placeholder="GAOU2267867"></div>
+        <div class="form-group"></div>
       </div>
-      <div class="form-group"><label class="form-label">Số Seal</label><input class="form-input" id="es-sealno" value="${s.sealNo||""}" placeholder="SITB004160"></div>
+      <div class="form-group">
+        <label class="form-label">Danh sách Container</label>
+        <div id="es-cont-list"></div>
+        <button type="button" class="btn btn-sm" id="es-add-cont" style="margin-top:6px"><i class="ti ti-plus"></i> Thêm container</button>
+      </div>
       <div class="form-group">
         <label class="form-label">Lô hàng thuộc tháng (MM/YYYY)</label>
         <input type="month" class="form-input" id="es-period" value="${s.period||""}">
       </div>
-      <div class="form-group">
-        <label class="form-label">Số hóa đơn (Invoice No.)</label>
-        <input class="form-input" id="es-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Số hóa đơn (Invoice No.)</label><input class="form-input" id="es-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT"></div>
+        <div class="form-group"><label class="form-label">Ngày hóa đơn</label><input type="date" class="form-input" id="es-invdate" value="${s.invoiceDate||""}"></div>
       </div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
@@ -610,6 +618,14 @@ window.openEditShipment = function(id) {
     e.preventDefault();
     if (!confirm("Lưu thay đổi?")) return;
     const etdVal = document.getElementById("es-etd").value;
+    // Thu thập danh sách container
+    const containers = [];
+    document.querySelectorAll("#es-cont-list .es-cont-row").forEach(row => {
+      const type = row.querySelector(".ec-type").value;
+      const no   = row.querySelector(".ec-no").value.trim();
+      const seal = row.querySelector(".ec-seal").value.trim();
+      if (no || seal) containers.push({ type, no, seal });
+    });
     await updateDoc(doc(db,"shipments",id), {
       stuffingDate: document.getElementById("es-stuffing").value||null,
       shipDate: etdVal,
@@ -621,14 +637,36 @@ window.openEditShipment = function(id) {
       cyCutTime: document.getElementById("es-cycut-time").value||null,
       eta: document.getElementById("es-eta").value||null,
       booking: document.getElementById("es-booking").value.trim()||null,
-      contNo: document.getElementById("es-contno").value.trim()||null,
-      sealNo: document.getElementById("es-sealno").value.trim()||null,
+      containers: containers,
       period: document.getElementById("es-period").value||null,
       invoiceNo: document.getElementById("es-invoice").value.trim()||null,
+      invoiceDate: document.getElementById("es-invdate").value||null,
     });
     closeModal("modal-edit-shipment");
     showToast("Đã cập nhật lô hàng!");
   });
+
+  // Khởi tạo danh sách container
+  const contListEl = document.getElementById("es-cont-list");
+  function addContRow(c = {}) {
+    const row = document.createElement("div");
+    row.className = "es-cont-row";
+    row.style.cssText = "display:flex;gap:6px;margin-bottom:6px;align-items:center";
+    row.innerHTML = `
+      <select class="form-select ec-type" style="width:90px;flex-shrink:0">
+        ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
+      </select>
+      <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1">
+      <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1">
+      <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
+    row.querySelector(".ec-del").addEventListener("click", () => row.remove());
+    contListEl.appendChild(row);
+  }
+  // Nạp dữ liệu cũ: ưu tiên mảng containers, fallback contNo/sealNo cũ
+  const existing = (s.containers && s.containers.length) ? s.containers
+                 : (s.contNo||s.sealNo) ? [{type:"20GP", no:s.contNo||"", seal:s.sealNo||""}] : [];
+  if (existing.length) existing.forEach(addContRow); else addContRow();
+  document.getElementById("es-add-cont").addEventListener("click", () => addContRow());
   openModal("modal-edit-shipment");
 };
 
@@ -792,15 +830,12 @@ window.openPackingList = function(shipId) {
   const showCont = !isAir && !isLcl;
 
   document.getElementById("packing-form-body").innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này. Số Cont/Seal sẽ được lưu lại vào lô hàng.</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này.${showCont?" Container lấy tự động từ lô hàng (sửa ở 'Sửa lô hàng').":""}</div>
     <div class="form-row">
-      <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pk-invoice" placeholder="862/26 -NPT"></div>
-      <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-input" id="pk-invdate" value="${s.etd||""}"></div>
+      <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pk-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT"></div>
+      <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-input" id="pk-invdate" value="${s.invoiceDate||s.etd||""}"></div>
     </div>
-    ${showCont ? `<div class="form-row">
-      <div class="form-group"><label class="form-label">Số Container</label><input class="form-input" id="pk-contno" value="${s.contNo||""}" placeholder="GAOU2267867"></div>
-      <div class="form-group"><label class="form-label">Số Seal</label><input class="form-input" id="pk-sealno" value="${s.sealNo||""}" placeholder="SITB004160"></div>
-    </div>` : `<input type="hidden" id="pk-contno" value=""><input type="hidden" id="pk-sealno" value="">`}
+    <input type="hidden" id="pk-contno" value=""><input type="hidden" id="pk-sealno" value="">
     <div class="form-group">
       <label class="form-label">Tare thùng (kg/thùng) — để tính Net Weight</label>
       <div style="display:flex;gap:8px">
@@ -823,14 +858,13 @@ window.generatePackingList = async function(shipId) {
 
   const invoice  = document.getElementById("pk-invoice").value.trim();
   const invDate  = document.getElementById("pk-invdate").value;
-  const contNo   = document.getElementById("pk-contno").value.trim();
-  const sealNo   = document.getElementById("pk-sealno").value.trim();
   const tarePerCtn = parseFloat(document.querySelector('input[name="pk-tare"]:checked')?.value)||0;
   const tareCont = parseFloat(document.getElementById("pk-tarecont").value)||0;
 
-  // Lưu Cont/Seal vào lô
-  if (contNo || sealNo) {
-    await updateDoc(doc(db,"shipments",shipId), { contNo: contNo||null, sealNo: sealNo||null });
+  // Lưu Invoice vào lô (cont/seal đã nhập ở form sửa lô)
+  const invVal = document.getElementById("pk-invoice").value.trim();
+  if (invVal && invVal !== s.invoiceNo) {
+    await updateDoc(doc(db,"shipments",shipId), { invoiceNo: invVal, invoiceDate: invDate||null });
   }
 
   // Lấy thông tin khách hàng
@@ -854,7 +888,7 @@ window.generatePackingList = async function(shipId) {
   const vgm = Math.round(totalGW + tareCont);
 
   closeModal("modal-packing");
-  renderPackingA4(s, cust, { invoice, invDate, contNo, sealNo, tarePerCtn, tareCont,
+  renderPackingA4(s, cust, { invoice: invVal, invDate, tarePerCtn, tareCont,
     totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
 };
 
@@ -876,8 +910,10 @@ function renderPackingA4(s, cust, p) {
       <td style="text-align:right;padding:2px 4px">${o.cbm?fmtNum(o.cbm):""}</td>
     </tr>`).join("");
 
-  const contLine = (p.contNo || p.sealNo)
-    ? `${s.container||""} : ${p.contNo||""}/ ${p.sealNo||""}`
+  const conts = (s.containers && s.containers.length) ? s.containers
+              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+  const contLine = conts.length
+    ? conts.map(c => `${c.type||s.container||""} : ${c.no||""}/ ${c.seal||""}`).join("<br>")
     : `${s.container||""}`;
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1002,8 +1038,12 @@ window.reportBocXep = function() {
     // Nếu là container thật → ghi loại + cont/seal
     const isAir = cont.includes("AIR");
     const isLcl = cont.includes("LCL");
-    if (!isAir && !isLcl && (s.contNo||s.sealNo)) {
-      hinhthuc = `${s.container||""}<br><span style="font-size:10px">Cont: ${s.contNo||"—"} / Seal: ${s.sealNo||"—"}</span>`;
+    if (!isAir && !isLcl) {
+      const conts = (s.containers && s.containers.length) ? s.containers
+                  : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+      if (conts.length) {
+        hinhthuc = `${s.container||""}<br><span style="font-size:10px">${conts.map(c=>`${c.type?c.type+" ":""}${c.no||"—"}/${c.seal||"—"}`).join("<br>")}</span>`;
+      }
     }
     const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ");
     return `<tr>
@@ -1157,11 +1197,133 @@ function fmtDateVN(str) {
   return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
 }
 
+// ====== LỊCH (TRANG CHỦ) ======
+let calMonth = new Date().getFullYear() + "-" + String(new Date().getMonth()+1).padStart(2,"0");
+
+function showCalendar() {
+  document.getElementById("calendar-view").style.display = "block";
+  document.getElementById("list-view").style.display = "none";
+  renderCalendar();
+}
+function showListView() {
+  document.getElementById("calendar-view").style.display = "none";
+  document.getElementById("list-view").style.display = "block";
+  renderList();
+}
+
+document.getElementById("btn-home").addEventListener("click", showCalendar);
+document.getElementById("btn-show-list").addEventListener("click", showListView);
+document.getElementById("btn-back-calendar").addEventListener("click", showCalendar);
+
+function renderCalendar() {
+  const [y, m] = calMonth.split("-").map(Number);
+  const box = document.getElementById("calendar-box");
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  // Gom sự kiện theo ngày: đóng hàng (stuffingDate) + tàu chạy (etd)
+  const events = {}; // "YYYY-MM-DD" -> [{type, ship}]
+  allShipments.forEach(s => {
+    if (s.stuffingDate) { (events[s.stuffingDate]=events[s.stuffingDate]||[]).push({type:"pack", s}); }
+    if (s.etd)          { (events[s.etd]=events[s.etd]||[]).push({type:"ship", s}); }
+  });
+
+  const firstDay = new Date(y, m-1, 1);
+  const startDow = firstDay.getDay(); // 0=CN
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const prevDays = new Date(y, m-1, 0).getDate();
+
+  const dows = ["CN","T2","T3","T4","T5","T6","T7"];
+  let cells = "";
+
+  // Ô tháng trước
+  for (let i=0; i<startDow; i++) {
+    const d = prevDays - startDow + i + 1;
+    cells += `<div class="cal-cell other"><div class="cal-daynum other">${d}</div></div>`;
+  }
+  // Ô trong tháng
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const dow = new Date(y, m-1, d).getDay();
+    const isToday = dateStr === todayStr;
+    const evs = events[dateStr] || [];
+    const tags = evs.map(e => {
+      const custs = [...new Set((e.s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ") || "—";
+      const inv = e.s.invoiceNo || e.s.booking || "";
+      const icon = e.type==="pack" ? "package" : "ship";
+      return `<div class="cal-tag ${e.type}" onclick="openShipmentPopup('${e.s.id}')">
+        <i class="ti ti-${icon}"></i> ${custs}${inv?`<br><span style="opacity:0.85">${inv}</span>`:""}
+      </div>`;
+    }).join("");
+    const numHTML = isToday ? `<div class="cal-today-num">${d}</div>`
+                  : `<div class="cal-daynum ${dow===0?'sun':''}">${d}</div>`;
+    cells += `<div class="cal-cell ${isToday?'today':''}">${numHTML}${tags}</div>`;
+  }
+  // Ô tháng sau cho đủ lưới
+  const totalCells = startDow + daysInMonth;
+  const trailing = (7 - (totalCells % 7)) % 7;
+  for (let i=1; i<=trailing; i++) {
+    cells += `<div class="cal-cell other"><div class="cal-daynum other">${i}</div></div>`;
+  }
+
+  box.innerHTML = `
+    <div class="cal-wrap">
+      <div class="cal-header">
+        <button id="cal-prev"><i class="ti ti-chevron-left"></i></button>
+        <div style="text-align:center">
+          <div style="font-size:22px;font-weight:500;letter-spacing:1px">THÁNG ${m}</div>
+          <div style="font-size:13px;opacity:0.85">${y}</div>
+        </div>
+        <button id="cal-next"><i class="ti ti-chevron-right"></i></button>
+      </div>
+      <div class="cal-legend">
+        <span><i class="ti ti-package" style="color:#BA7517"></i> Đóng hàng</span>
+        <span><i class="ti ti-ship" style="color:#185FA5"></i> Tàu chạy (ETD)</span>
+        <button class="btn btn-sm" id="cal-today" style="margin-left:auto;padding:3px 10px">Hôm nay</button>
+      </div>
+      <div class="cal-grid">
+        ${dows.map((dw,i)=>`<div class="cal-dow ${i===0?'sun':''}">${dw}</div>`).join("")}
+        ${cells}
+      </div>
+    </div>`;
+
+  document.getElementById("cal-prev").addEventListener("click", () => { calMonth = shiftMonth(calMonth,-1); renderCalendar(); });
+  document.getElementById("cal-next").addEventListener("click", () => { calMonth = shiftMonth(calMonth,1); renderCalendar(); });
+  document.getElementById("cal-today").addEventListener("click", () => {
+    calMonth = new Date().getFullYear()+"-"+String(new Date().getMonth()+1).padStart(2,"0"); renderCalendar();
+  });
+}
+
+function shiftMonth(ym, delta) {
+  let [y,m] = ym.split("-").map(Number);
+  m += delta;
+  if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+  return `${y}-${String(m).padStart(2,"0")}`;
+}
+
+// Popup chi tiết lô từ lịch — chuyển sang danh sách và mở card
+window.openShipmentPopup = function(shipId) {
+  showListView();
+  setTimeout(() => {
+    const card = document.getElementById("card-"+shipId);
+    if (card) {
+      const detail = document.getElementById("detail-"+shipId);
+      const cv = document.getElementById("cv-"+shipId);
+      if (detail && !detail.classList.contains("open")) { detail.classList.add("open"); cv?.classList.add("open"); }
+      card.scrollIntoView({behavior:"smooth", block:"center"});
+      card.style.transition = "box-shadow .3s";
+      card.style.boxShadow = "0 0 0 3px #185FA5";
+      setTimeout(()=>{ card.style.boxShadow = ""; }, 1600);
+    }
+  }, 100);
+};
+
 // ====== FIRESTORE REALTIME ======
 const q = query(collection(db,"shipments"), orderBy("createdAt","desc"));
 onSnapshot(q, snap => {
   allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
   renderList();
+  if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
 });
 
 updateAdminUI();
+showCalendar();  // trang chủ là lịch

@@ -1212,7 +1212,7 @@ function showListView() {
 }
 
 document.getElementById("btn-home").addEventListener("click", showCalendar);
-document.getElementById("btn-show-list").addEventListener("click", showListView);
+document.getElementById("btn-nav-list").addEventListener("click", showListView);
 document.getElementById("btn-back-calendar").addEventListener("click", showCalendar);
 
 function renderCalendar() {
@@ -1235,18 +1235,10 @@ function renderCalendar() {
   const dows = ["CN","T2","T3","T4","T5","T6","T7"];
   let cells = "";
 
-  // Ô tháng trước
-  for (let i=0; i<startDow; i++) {
-    const d = prevDays - startDow + i + 1;
-    cells += `<div class="cal-cell other"><div class="cal-daynum other">${d}</div></div>`;
-  }
-  // Ô trong tháng
-  for (let d=1; d<=daysInMonth; d++) {
-    const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
-    const dow = new Date(y, m-1, d).getDay();
-    const isToday = dateStr === todayStr;
+  // Hàm tạo nhãn sự kiện cho 1 ngày
+  function tagsFor(dateStr) {
     const evs = events[dateStr] || [];
-    const tags = evs.map(e => {
+    return evs.map(e => {
       const custs = [...new Set((e.s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ") || "—";
       const inv = e.s.invoiceNo || e.s.booking || "";
       const icon = e.type==="pack" ? "package" : "ship";
@@ -1254,15 +1246,31 @@ function renderCalendar() {
         <i class="ti ti-${icon}"></i> ${custs}${inv?`<br><span style="opacity:0.85">${inv}</span>`:""}
       </div>`;
     }).join("");
+  }
+
+  // Ô tháng trước (vẫn hiện sự kiện nếu có)
+  for (let i=0; i<startDow; i++) {
+    const d = prevDays - startDow + i + 1;
+    const pm = m-1<1 ? 12 : m-1, py = m-1<1 ? y-1 : y;
+    const dateStr = `${py}-${String(pm).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    cells += `<div class="cal-cell other"><div class="cal-daynum other">${d}</div>${tagsFor(dateStr)}</div>`;
+  }
+  // Ô trong tháng
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    const dow = new Date(y, m-1, d).getDay();
+    const isToday = dateStr === todayStr;
     const numHTML = isToday ? `<div class="cal-today-num">${d}</div>`
                   : `<div class="cal-daynum ${dow===0?'sun':''}">${d}</div>`;
-    cells += `<div class="cal-cell ${isToday?'today':''}">${numHTML}${tags}</div>`;
+    cells += `<div class="cal-cell ${isToday?'today':''}">${numHTML}${tagsFor(dateStr)}</div>`;
   }
-  // Ô tháng sau cho đủ lưới
+  // Ô tháng sau (vẫn hiện sự kiện nếu có)
   const totalCells = startDow + daysInMonth;
   const trailing = (7 - (totalCells % 7)) % 7;
   for (let i=1; i<=trailing; i++) {
-    cells += `<div class="cal-cell other"><div class="cal-daynum other">${i}</div></div>`;
+    const nm = m+1>12 ? 1 : m+1, ny = m+1>12 ? y+1 : y;
+    const dateStr = `${ny}-${String(nm).padStart(2,"0")}-${String(i).padStart(2,"0")}`;
+    cells += `<div class="cal-cell other"><div class="cal-daynum other">${i}</div>${tagsFor(dateStr)}</div>`;
   }
 
   box.innerHTML = `

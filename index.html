@@ -16,13 +16,35 @@
   .handsontable { font-size: 12px; font-family: inherit; }
   .handsontable th { font-weight: 500; background: var(--bg-secondary); }
   .ht-readonly-cell { background: #faf9f6 !important; color: var(--text-muted) !important; }
+
+  /* Lịch tháng */
+  .cal-wrap { background:#fff; border-radius:12px; border:0.5px solid var(--border-md); overflow:hidden; }
+  .cal-header { background:#155A2C; color:#fff; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+  .cal-header button { background:rgba(255,255,255,0.15); color:#fff; border:none; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:14px; }
+  .cal-header button:hover { background:rgba(255,255,255,0.28); }
+  .cal-legend { display:flex; gap:16px; font-size:12px; color:var(--text-muted); padding:10px 20px; border-bottom:0.5px solid var(--border); }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+  .cal-dow { text-align:center; font-size:12px; font-weight:500; color:var(--text-muted); padding:8px 0; border-bottom:0.5px solid var(--border); }
+  .cal-dow.sun { color:#993556; }
+  .cal-cell { min-height:96px; border-right:0.5px solid var(--border); border-bottom:0.5px solid var(--border); padding:5px 6px; overflow:hidden; }
+  .cal-cell:nth-child(7n+7) { border-right:none; }
+  .cal-cell.other { background:#FAFAF8; }
+  .cal-daynum { font-size:13px; color:var(--text-primary); margin-bottom:3px; }
+  .cal-daynum.sun { color:#993556; }
+  .cal-daynum.other { color:var(--text-hint); }
+  .cal-cell.today { background:#E6F1FB; outline:2px solid #185FA5; outline-offset:-2px; }
+  .cal-today-num { font-size:13px; font-weight:600; color:#fff; background:#185FA5; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:3px; }
+  .cal-tag { font-size:10px; padding:2px 4px; margin-bottom:2px; border-radius:0 3px 3px 0; line-height:1.25; cursor:pointer; }
+  .cal-tag.pack { background:#FAEEDA; color:#854F0B; border-left:2px solid #BA7517; }
+  .cal-tag.ship { background:#E6F1FB; color:#0C447C; border-left:2px solid #185FA5; }
+  .cal-tag:hover { filter:brightness(0.95); }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <div class="topbar-logo">Xuất Khẩu <span>System</span></div>
-  <svg width="280" height="52" viewBox="0 0 280 52" style="flex-shrink:0">
+  <svg width="280" height="52" viewBox="0 0 280 52" style="flex-shrink:0;cursor:pointer" id="btn-home" title="Về trang chủ (Lịch)">
     <defs>
       <linearGradient id="tosgrad" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0%" stop-color="#155A2C"/>
@@ -48,32 +70,44 @@
 </div>
 
 <div class="container">
-  <div class="toolbar">
-    <div class="toolbar-left">
-      <span id="shipment-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
-      <select class="form-select" id="filter-status" style="width:140px;padding:6px 8px">
-        <option value="">Tất cả</option>
-        <option value="pending">Chờ xử lý</option>
-        <option value="booking">Chờ booking</option>
-        <option value="processing">Đang xử lý</option>
-        <option value="done">Hoàn tất</option>
-      </select>
-      <select class="form-select" id="filter-month" style="width:160px;padding:6px 8px">
-        <option value="">Tất cả tháng</option>
-      </select>
+  <!-- VIEW LỊCH (trang chủ) -->
+  <div id="calendar-view">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <span style="font-size:15px;font-weight:500"><i class="ti ti-calendar-event"></i> Lịch xuất hàng</span>
+      <button class="btn btn-sm" id="btn-show-list"><i class="ti ti-list"></i> Xem danh sách lô</button>
     </div>
-    <div class="toolbar-right">
-      <button class="btn" id="btn-import-plan" style="display:none">
-        <i class="ti ti-file-import"></i> Import kế hoạch
-      </button>
-      <button class="btn btn-primary" id="btn-add-shipment" style="display:none">
-        <i class="ti ti-plus"></i> Thêm lô hàng
-      </button>
-    </div>
+    <div id="calendar-box"></div>
   </div>
 
-  <div id="shipment-list" style="position:relative;min-height:300px">
-    <div class="spinner"></div>
+  <!-- VIEW DANH SÁCH LÔ -->
+  <div id="list-view" style="display:none">
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <button class="btn btn-sm" id="btn-back-calendar"><i class="ti ti-calendar"></i> Về lịch</button>
+        <span id="shipment-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+        <select class="form-select" id="filter-status" style="width:140px;padding:6px 8px">
+          <option value="">Tất cả</option>
+          <option value="pending">Chờ xử lý</option>
+          <option value="booking">Chờ booking</option>
+          <option value="processing">Đang xử lý</option>
+          <option value="done">Hoàn tất</option>
+        </select>
+        <select class="form-select" id="filter-month" style="width:160px;padding:6px 8px">
+          <option value="">Tất cả tháng</option>
+        </select>
+      </div>
+      <div class="toolbar-right">
+        <button class="btn" id="btn-import-plan" style="display:none">
+          <i class="ti ti-file-import"></i> Import kế hoạch
+        </button>
+        <button class="btn btn-primary" id="btn-add-shipment" style="display:none">
+          <i class="ti ti-plus"></i> Thêm lô hàng
+        </button>
+      </div>
+    </div>
+    <div id="shipment-list" style="position:relative;min-height:300px">
+      <div class="spinner"></div>
+    </div>
   </div>
 </div>
 

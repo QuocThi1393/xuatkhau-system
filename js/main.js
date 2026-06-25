@@ -369,13 +369,49 @@ function buildCard(s, admin) {
   // Card hoàn tất → nền xanh nhẹ
   if (isDone) card.style.background = "#EBF3FB";
 
-  const dotsHTML = CHECKLIST_STEPS.map(step => {
+  // === Lộ trình vận chuyển: 4 mốc ===
+  const routeNodes = [
+    { ic:"building-warehouse", color:"blue", date:formatDate(s.stuffingDate), label:"Đóng hàng" },
+    { ic:"scissors",           color:"pink", date:formatDate(s.cyCut),        label:"Cắt máng" },
+    { ic:"plane-departure",    color:"blue", date:formatDate(s.etd),          label:"ETD" },
+    { ic:"ship",               color:"blue", date:formatDate(s.eta),          label:"Arrival" },
+  ];
+  let timelineHTML = "";
+  routeNodes.forEach((n,i) => {
+    if (i>0) timelineHTML += `<div class="ch-tl-line${(i===1||i===2)?" pink":""}"></div>`;
+    timelineHTML += `<div class="ch-tl-node"><div class="ch-tl-ic ${n.color}"><i class="ti ti-${n.ic}"></i></div><div class="ch-tl-date">${n.date}</div><div class="ch-tl-lbl">${n.label}</div></div>`;
+  });
+
+  // === Tàu + container / hình thức xuất ===
+  const C = (s.container||"").toUpperCase();
+  let bigMode = null;
+  if (C.includes("AIR")) bigMode = { txt:"AIR", color:"blue" };
+  else if (C.includes("LCL")) bigMode = { txt:"LCL", color:"teal" };
+  else if (C.includes("CPN")) bigMode = { txt:"CPN", color:"amber" };
+  else if (C.includes("KNQ")) bigMode = { txt:"KNQ", color:"purple" };
+  const conts = (s.containers && s.containers.length) ? s.containers
+              : (s.contNo||s.sealNo) ? [{type:"", no:s.contNo, seal:s.sealNo}] : [];
+  let contHTML;
+  if (!bigMode && conts.length) {
+    const rows = conts.map(c => {
+      const tcls = (c.type||"").includes("40") ? "ch-cont-type t40" : "ch-cont-type";
+      return `<div class="ch-cont-row"><span class="${tcls}">${c.type||"CONT"}</span><div class="ch-cont-ns"><span class="ch-cont-no">${c.no||"—"}</span><span class="ch-cont-seal">Seal: ${c.seal||"—"}</span></div></div>`;
+    }).join("");
+    const tri = conts.length > 2 ? `<span class="ch-cont-tri" title="Lô có ${conts.length} container"></span>` : "";
+    contHTML = `<div class="ch-cont-box">${rows}${tri}</div>`;
+  } else {
+    const big = bigMode || { txt:(s.container||"—"), color:"gray" };
+    contHTML = `<div class="ch-cont-box ch-cont-big"><span class="ch-big ${big.color}">${big.txt}</span></div>`;
+  }
+
+  // === Thanh 11 bước (bấm để đổi trạng thái nếu là admin) ===
+  const stepbarHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
-    let cls = "ck" + (state==="done"?" done":state==="skip"?" skip":"");
-    const inner = state==="done"?`<i class="ti ti-check" style="font-size:11px"></i>`
-                : state==="skip"?`<i class="ti ti-minus" style="font-size:11px"></i>`:step.short;
-    return `<div class="${cls}" title="${step.label}" ${admin?"style='cursor:pointer'":""} onclick="${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:''}">${inner}</div>`;
+    const cls = state==="done"?"done":state==="skip"?"skip":"pending";
+    return `<div class="ch-step ${cls}" title="${step.label}" ${admin?`style="cursor:pointer" onclick="ckToggle('${s.id}',${step.id},'${state}',${step.skippable})"`:""}><span class="ch-step-num">${step.short}</span><span class="ch-step-bar"></span></div>`;
   }).join("");
+
+  const ordersCount = (s.orders||[]).length;
 
   const listHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
@@ -390,42 +426,37 @@ function buildCard(s, admin) {
   const periodLabel = s.period ? (() => { const [y,mo]=s.period.split("-"); return `Tháng ${mo}/${y}`; })() : "";
 
   card.innerHTML = `
-    <div style="padding:14px 16px">
-      <div class="card-row1">
-        <div>
-          <div class="card-title">${custLabel}${fullPort(s.port)}
-            <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container||"?"}</span>
-          </div>
-          <div class="card-meta">Đóng hàng: ${formatDate(s.stuffingDate)||"—"} · Ship: ${formatDate(s.shipDate)} · ${(s.orders||[]).length} đơn hàng</div>
-        </div>
-        <div class="card-right" style="display:flex;flex-direction:row;align-items:center;gap:10px">
-          <span class="period-label" ${admin?`onclick="editPeriod('${s.id}')" style="cursor:pointer;font-size:12px;font-weight:500;color:var(--blue-text);border:0.5px dashed var(--blue-border);padding:3px 8px;border-radius:var(--radius-md)" title="Bấm để sửa tháng"`:`style="font-size:12px;font-weight:500;color:var(--blue-text)"`}>${periodLabel || (admin?"+ Gán tháng":"")}</span>
+    <div class="card-head">
+      <div class="ch-id">
+        <div class="ch-title"><i class="ti ti-world ch-globe"></i><span>${custLabel}${fullPort(s.port)}</span></div>
+        <div class="ch-pills">
+          <span class="badge ${isAir?"badge-gray":"badge-blue"}">${s.container||"?"}</span>
+          <span class="badge badge-gray"><i class="ti ti-package"></i> ${ordersCount} đơn hàng</span>
           <span class="badge ${status.cls}">${status.label}</span>
-          <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">
-            <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i>
-          </button>
+        </div>
+        <div class="ch-meta">
+          ${s.invoiceNo?`<span><i class="ti ti-file-invoice"></i>INV: ${s.invoiceNo}</span>`:""}
+          ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
+          ${s.lcId?`<span><i class="ti ti-credit-card"></i>Đã gán LC</span>`:""}
         </div>
       </div>
-      <div class="vessel-info" style="margin-top:6px">
-        <span><i class="ti ti-${isAir?"plane":"ship"}"></i>${s.vessel||"Chưa có tàu"}</span>
-        <span><i class="ti ti-calendar"></i>ETD ${formatDate(s.etd)||"—"}</span>
-        <span><i class="ti ti-map-pin"></i>ETA ${formatDate(s.eta)||"—"}</span>
-        <span><i class="ti ti-cut"></i>Cắt máng ${formatDate(s.cyCut)||"—"}${s.cyCutTime?` ${s.cyCutTime}`:""}</span>
-        ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
-        ${(() => {
-          const conts = (s.containers && s.containers.length) ? s.containers
-                      : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
-          if (isAir || (s.container||"").toUpperCase().includes("LCL") || !conts.length) return "";
-          return conts.map(c => `<span><i class="ti ti-box"></i>${c.type?c.type+" ":""}Cont: ${c.no||"—"} / Seal: ${c.seal||"—"}</span>`).join("");
-        })()}
-        ${s.invoiceNo?`<span><i class="ti ti-file-invoice"></i>INV: ${s.invoiceNo}</span>`:""}
-        ${s.lcId?`<span><i class="ti ti-credit-card"></i>Đã gán LC</span>`:""}
+      <div class="ch-route">
+        <div class="ch-sec-label"><i class="ti ti-route"></i>Lộ trình vận chuyển</div>
+        <div class="ch-timeline">${timelineHTML}</div>
       </div>
-      <div class="checklist" style="margin-top:8px">${dotsHTML}</div>
-      <div class="progress-wrap" style="margin-top:6px">
-        <span class="prog-label">${done} / ${total} bước</span>
-        <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${progColor(pct)}"></div></div>
-        <span class="prog-label">${pct}%</span>
+      <div class="ch-vessel">
+        <div class="ch-sec-label2"><i class="ti ti-${isAir?"plane":"ship"}"></i><span>${s.vessel||"Chưa có tàu"}</span></div>
+        ${contHTML}
+      </div>
+      <div class="ch-status">
+        <div class="ch-status-top">
+          <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">Chi tiết <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i></button>
+        </div>
+        <div class="ch-prog">
+          <div class="ch-prog-head"><span>${done} / ${total} bước</span><span class="ch-pct">${pct}%</span></div>
+          <div class="ch-stepbar">${stepbarHTML}</div>
+        </div>
+        <div class="ch-period"><span class="period-label" ${admin?`onclick="editPeriod('${s.id}')" style="cursor:pointer;font-size:12px;font-weight:500;color:var(--blue-text);border:0.5px dashed var(--blue-border);padding:3px 8px;border-radius:var(--radius-md)" title="Bấm để sửa tháng"`:`style="font-size:12px;font-weight:500;color:var(--blue-text)"`}>${periodLabel || (admin?"+ Gán tháng":"")}</span></div>
       </div>
     </div>
     <div class="card-detail" id="detail-${s.id}">

@@ -390,3 +390,6 @@ a { text-decoration: none; color: inherit; }
   .card-head > div { border-left: none; border-top: 0.5px solid var(--border); }
   .ch-id { border-top: none; }
 }
+
+/* Cột Amount trong bảng chi tiết lô hàng */
+.data-table .amount-cell { text-align: right; color: var(--green-text); font-weight: 500; }

@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backup dữ liệu — Xuất Khẩu System</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; background: #f5f5f3; margin: 0; padding: 40px 16px; color: #1a1a1a; }
+  .box { max-width: 560px; margin: 0 auto; background: #fff; border: 1px solid rgba(0,0,0,0.1); border-radius: 14px; padding: 28px 26px; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { font-size: 14px; color: #555; line-height: 1.5; margin: 6px 0; }
+  button { margin-top: 16px; width: 100%; padding: 14px; font-size: 16px; font-weight: 600; color: #fff; background: #155A2C; border: none; border-radius: 10px; cursor: pointer; }
+  button:hover { background: #1d7a3c; }
+  button:disabled { background: #9bbfa6; cursor: default; }
+  #log { margin-top: 18px; font-size: 13px; font-family: ui-monospace, Menlo, Consolas, monospace; background: #f1efea; border-radius: 8px; padding: 12px 14px; white-space: pre-wrap; min-height: 22px; }
+  .ok { color: #1f7a3a; }
+  .err { color: #b22; }
+  a.again { display:inline-block; margin-top:14px; font-size:13px; color:#155A2C; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>📦 Backup dữ liệu</h1>
+  <p>Bấm nút bên dưới để tải về một file <b>.json</b> chứa toàn bộ dữ liệu (lô hàng, khách hàng, LC, forwarder). Trang này chỉ <b>đọc</b> dữ liệu, không sửa/xóa gì.</p>
+  <p style="font-size:12px;color:#888">Lưu ý: phải mở trang này ngay trên web của bạn (cùng địa chỉ <code>QuocThi1393.github.io/xuatkhau-system/</code>). Nếu hệ thống đã bật bảo mật, hãy đăng nhập ở trang chủ trước trong cùng trình duyệt.</p>
+  <button id="btn">⬇️ Tải backup về máy</button>
+  <div id="log">Sẵn sàng.</div>
+</div>
+
+<script type="module">
+import { db } from "./js/firebase-config.js";
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const COLLECTIONS = ["shipments", "customers", "lc", "forwarders"];
+const logEl = document.getElementById("log");
+const btn = document.getElementById("btn");
+
+function log(msg, cls) {
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = msg;
+  logEl.appendChild(line);
+}
+
+btn.addEventListener("click", async () => {
+  btn.disabled = true;
+  logEl.innerHTML = "";
+  log("Đang tải dữ liệu...");
+  const backup = {};
+  let total = 0;
+  try {
+    for (const name of COLLECTIONS) {
+      const snap = await getDocs(collection(db, name));
+      backup[name] = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      total += backup[name].length;
+      log(`✓ ${name}: ${backup[name].length} bản ghi`, "ok");
+    }
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup-xuatkhau-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    log(`✅ XONG! Tổng ${total} bản ghi. File đã tải về thư mục Downloads.`, "ok");
+    log("Mở thư mục Downloads kiểm tra file backup-xuatkhau-....json (dung lượng > 0 KB).");
+  } catch (e) {
+    log("❌ Lỗi: " + e.message, "err");
+    log("Nếu lỗi 'permission' hoặc 'Missing or insufficient permissions': hãy đăng nhập ở trang chủ trước (cùng trình duyệt) rồi quay lại bấm nút này.", "err");
+  } finally {
+    const again = document.createElement("a");
+    again.className = "again"; again.href = "#"; again.textContent = "↻ Tải lại lần nữa";
+    again.onclick = (ev) => { ev.preventDefault(); btn.disabled = false; logEl.innerHTML = "Sẵn sàng."; };
+    logEl.appendChild(again);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 import { db } from "./firebase-config.js";
-import { isAdmin, loginAdmin, logoutAdmin } from "./auth.js";
+import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange } from "./auth.js";
 import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal } from "./utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
@@ -68,32 +68,48 @@ function computeRow(row) {
 
 // ====== AUTH UI ======
 function updateAdminUI() {
-  const admin = isAdmin();
-  document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
-  document.getElementById("login-label").textContent = admin ? "Đăng xuất" : "Đăng nhập";
-  document.getElementById("btn-add-shipment").style.display = admin ? "flex" : "none";
-  document.getElementById("btn-import-plan").style.display = admin ? "flex" : "none";
+  const on = isLoggedIn();
+  document.getElementById("admin-indicator").style.display = on ? "flex" : "none";
+  document.getElementById("login-label").textContent = on ? "Đăng xuất" : "Đăng nhập";
+  // Các mục cần dữ liệu -> chỉ hiện khi đã đăng nhập
+  ["btn-nav-list","nav-customers","nav-lc","nav-forwarders","btn-reports"].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none";
+  });
+  document.getElementById("btn-add-shipment").style.display = on ? "flex" : "none";
+  document.getElementById("btn-import-plan").style.display = on ? "flex" : "none";
+  if (!on) {
+    document.getElementById("list-view").style.display = "none";
+    document.getElementById("calendar-view").style.display = "";
+  }
   renderList();
 }
 
-document.getElementById("btn-login-toggle").addEventListener("click", () => {
-  if (isAdmin()) { logoutAdmin(); showToast("Đã đăng xuất"); updateAdminUI(); }
+document.getElementById("btn-login-toggle").addEventListener("click", async () => {
+  if (isLoggedIn()) { await logout(); showToast("Đã đăng xuất"); }
   else openModal("modal-login");
 });
-document.getElementById("btn-do-login").addEventListener("click", () => {
+
+async function doLogin() {
+  const email = document.getElementById("f-login-email").value;
   const pw = document.getElementById("f-admin-pw").value;
-  if (loginAdmin(pw)) {
+  const errEl = document.getElementById("login-error");
+  errEl.style.display = "none";
+  try {
+    await loginUser(email, pw);
     closeModal("modal-login");
     document.getElementById("f-admin-pw").value = "";
-    document.getElementById("login-error").style.display = "none";
     showToast("Đăng nhập thành công!");
-    updateAdminUI();
-  } else {
-    document.getElementById("login-error").style.display = "block";
+    // onAuthChange sẽ tự cập nhật giao diện + tải dữ liệu
+  } catch (e) {
+    errEl.style.display = "block";
   }
-});
+}
+document.getElementById("btn-do-login").addEventListener("click", doLogin);
 document.getElementById("f-admin-pw").addEventListener("keydown", e => {
-  if (e.key === "Enter") document.getElementById("btn-do-login").click();
+  if (e.key === "Enter") doLogin();
+});
+document.getElementById("f-login-email").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("f-admin-pw").focus();
 });
 
 // ====== IMPORT / THÊM LÔ (bảng Excel trống) ======
@@ -1449,13 +1465,32 @@ window.openShipmentPopup = function(shipId) {
   }, 100);
 };
 
-// ====== FIRESTORE REALTIME ======
-const q = query(collection(db,"shipments"), orderBy("createdAt","desc"));
-onSnapshot(q, snap => {
-  allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
-  renderList();
-  if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
+// ====== FIRESTORE REALTIME (chỉ chạy khi đã đăng nhập) ======
+let _unsubShipments = null;
+function startData() {
+  if (_unsubShipments) return;
+  const q = query(collection(db,"shipments"), orderBy("createdAt","desc"));
+  _unsubShipments = onSnapshot(q, snap => {
+    allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
+    renderList();
+    if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
+  }, err => { console.warn("Firestore:", err.message); });
+}
+function stopData() {
+  if (_unsubShipments) { _unsubShipments(); _unsubShipments = null; }
+  allShipments = [];
+}
+
+onAuthChange(user => {
+  updateAdminUI();
+  if (user) {
+    startData();
+  } else {
+    stopData();
+    showCalendar();   // về lịch trống
+    renderCalendar();
+  }
 });
 
-updateAdminUI();
-showCalendar();  // trang chủ là lịch
+showCalendar();       // hiện lịch ngay khi tải trang (trống nếu chưa đăng nhập)
+renderCalendar();

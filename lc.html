@@ -125,7 +125,7 @@
 
 <script type="module">
 import { db } from "./js/firebase-config.js";
-import { isAdmin, loginAdmin, logoutAdmin } from "./js/auth.js";
+import { isAdmin, isLoggedIn, logout, onAuthChange } from "./js/auth.js";
 import { showToast, openModal, closeModal, formatDate } from "./js/utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
@@ -153,16 +153,9 @@ function updateAdminUI() {
   renderCustomerCards();
   if (currentLcKey) renderHistory(currentLcKey);
 }
-document.getElementById("btn-login-toggle").addEventListener("click", () => {
-  if (isAdmin()) { logoutAdmin(); showToast("Đã đăng xuất"); updateAdminUI(); }
-  else openModal("modal-login");
-});
-document.getElementById("btn-do-login").addEventListener("click", () => {
-  if (loginAdmin(document.getElementById("f-admin-pw").value)) {
-    closeModal("modal-login"); document.getElementById("f-admin-pw").value="";
-    document.getElementById("login-error").style.display="none";
-    showToast("Đăng nhập thành công!"); updateAdminUI();
-  } else document.getElementById("login-error").style.display="block";
+document.getElementById("btn-login-toggle").addEventListener("click", async () => {
+  if (isLoggedIn()) { await logout(); location.href = "index.html"; }
+  else location.href = "index.html";   // Đăng nhập tại trang chủ
 });
 
 function renderCustomerCards() {
@@ -474,18 +467,26 @@ window.deleteLC = async function(id) {
   showToast("Đã xóa LC!");
 };
 
-// Realtime
-onSnapshot(query(collection(db,"shipments"), orderBy("createdAt","desc")), snap => {
-  allShipments = snap.docs.map(d=>({id:d.id,...d.data()}));
-  if (currentLcKey) renderHistory(currentLcKey);
-});
-onSnapshot(collection(db,"lc"), snap => {
-  allLC = snap.docs.map(d=>({id:d.id,...d.data()}));
-  renderCustomerCards();
-  if (currentLcKey) renderHistory(currentLcKey);
-});
+// Realtime (chỉ chạy khi đã đăng nhập)
+let _unsub1=null,_unsub2=null;
+function startData() {
+  if (_unsub1) return;
+  _unsub1 = onSnapshot(query(collection(db,"shipments"), orderBy("createdAt","desc")), snap => {
+    allShipments = snap.docs.map(d=>({id:d.id,...d.data()}));
+    if (currentLcKey) renderHistory(currentLcKey);
+  }, err => { console.warn("Firestore:", err.message); });
+  _unsub2 = onSnapshot(collection(db,"lc"), snap => {
+    allLC = snap.docs.map(d=>({id:d.id,...d.data()}));
+    renderCustomerCards();
+    if (currentLcKey) renderHistory(currentLcKey);
+  }, err => { console.warn("Firestore:", err.message); });
+}
 
-updateAdminUI();
+onAuthChange(user => {
+  if (!user) { location.href = "index.html"; return; }
+  updateAdminUI();
+  startData();
+});
 </script>
 </body>
 </html>

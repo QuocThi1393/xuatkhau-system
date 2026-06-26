@@ -56,11 +56,11 @@
     <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
   </svg>
   <div class="topbar-nav">
-    <button class="btn btn-sm" id="btn-nav-list"><i class="ti ti-package"></i> Lô hàng</button>
-    <a href="customers.html" class="btn btn-sm"><i class="ti ti-users"></i> Khách hàng</a>
-    <a href="lc.html" class="btn btn-sm"><i class="ti ti-credit-card"></i> LC</a>
-    <a href="forwarders.html" class="btn btn-sm"><i class="ti ti-truck-delivery"></i> Forwarder</a>
-    <button class="btn btn-sm" id="btn-reports"><i class="ti ti-report"></i> Báo cáo</button>
+    <button class="btn btn-sm" id="btn-nav-list" style="display:none"><i class="ti ti-package"></i> Lô hàng</button>
+    <a href="customers.html" class="btn btn-sm" id="nav-customers" style="display:none"><i class="ti ti-users"></i> Khách hàng</a>
+    <a href="lc.html" class="btn btn-sm" id="nav-lc" style="display:none"><i class="ti ti-credit-card"></i> LC</a>
+    <a href="forwarders.html" class="btn btn-sm" id="nav-forwarders" style="display:none"><i class="ti ti-truck-delivery"></i> Forwarder</a>
+    <button class="btn btn-sm" id="btn-reports" style="display:none"><i class="ti ti-report"></i> Báo cáo</button>
     <div id="admin-indicator" class="admin-indicator" style="display:none">
       <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
     </div>
@@ -189,14 +189,18 @@
 <div class="modal-backdrop" id="modal-login">
   <div class="modal" style="max-width:360px">
     <div class="modal-title">
-      Đăng nhập Admin
+      Đăng nhập
       <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span>
     </div>
     <div class="form-group">
-      <label class="form-label">Mật khẩu</label>
-      <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu admin">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="f-login-email" placeholder="email@congty.com" autocomplete="username">
     </div>
-    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai mật khẩu!</div>
+    <div class="form-group">
+      <label class="form-label">Mật khẩu</label>
+      <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu" autocomplete="current-password">
+    </div>
+    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai email hoặc mật khẩu!</div>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
       <button type="button" class="btn btn-primary" id="btn-do-login"><i class="ti ti-login"></i> Đăng nhập</button>

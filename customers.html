@@ -142,7 +142,7 @@ CHUO-KU OSAKA 541-0043 JAPAN"></textarea>
 
 <script type="module">
 import { db } from "./js/firebase-config.js";
-import { isAdmin, loginAdmin, logoutAdmin } from "./js/auth.js";
+import { isAdmin, isLoggedIn, logout, onAuthChange } from "./js/auth.js";
 import { showToast, openModal, closeModal } from "./js/utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
@@ -161,22 +161,9 @@ function updateAdminUI() {
   renderList();
 }
 
-document.getElementById("btn-login-toggle").addEventListener("click", () => {
-  if (isAdmin()) { logoutAdmin(); showToast("Đã đăng xuất"); updateAdminUI(); }
-  else openModal("modal-login");
-});
-
-document.getElementById("btn-do-login").addEventListener("click", () => {
-  const pw = document.getElementById("f-admin-pw").value;
-  if (loginAdmin(pw)) {
-    closeModal("modal-login");
-    document.getElementById("f-admin-pw").value = "";
-    document.getElementById("login-error").style.display = "none";
-    showToast("Đăng nhập thành công!");
-    updateAdminUI();
-  } else {
-    document.getElementById("login-error").style.display = "block";
-  }
+document.getElementById("btn-login-toggle").addEventListener("click", async () => {
+  if (isLoggedIn()) { await logout(); location.href = "index.html"; }
+  else location.href = "index.html";   // Đăng nhập tại trang chủ
 });
 
 document.getElementById("btn-add-customer").addEventListener("click", () => {
@@ -303,13 +290,21 @@ window.deleteCustomer = async function(id) {
   showToast("Đã xóa khách hàng!");
 };
 
-const q = query(collection(db, "customers"), orderBy("name"));
-onSnapshot(q, snap => {
-  allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  renderList();
-});
+let _unsub = null;
+function startData() {
+  if (_unsub) return;
+  const q = query(collection(db, "customers"), orderBy("name"));
+  _unsub = onSnapshot(q, snap => {
+    allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderList();
+  }, err => { console.warn("Firestore:", err.message); });
+}
 
-updateAdminUI();
+onAuthChange(user => {
+  if (!user) { location.href = "index.html"; return; }  // chưa đăng nhập -> về trang chủ
+  updateAdminUI();
+  startData();
+});
 </script>
 </body>
 </html>

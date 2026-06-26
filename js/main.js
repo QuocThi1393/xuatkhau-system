@@ -489,22 +489,28 @@ function buildReadonlyTable(orders) {
   const tCtns= orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
   const tKg  = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
   const tCbm = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
-  const rows = orders.map(o => `<tr>
+  const tAmt = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0)*(parseFloat(o.unitPrice)||0),0);
+  const fmtAmt = n => n ? Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}) : "—";
+  const rows = orders.map(o => {
+    const amt = (parseFloat(o.qty)||0)*(parseFloat(o.unitPrice)||0);
+    return `<tr>
     <td>${o.customer||"—"}</td><td>${o.contract||"—"}</td><td>${o.index||"—"}</td><td>${o.items||"—"}</td>
     <td class="qty-pcs">${(parseFloat(o.qty)||0).toLocaleString()}</td><td>${parseFloat(o.ctns)||0}</td>
     <td>${parseFloat(o.kgTotal)||0}</td><td>${parseFloat(o.cbm)||0}</td>
+    <td class="amount-cell">${fmtAmt(amt)}</td>
     <td>${o.hsCode||"—"}</td><td>${o.coForm||"—"}</td><td style="font-size:11px;color:var(--text-muted)">${o.note||""}</td>
-  </tr>`).join("");
+  </tr>`;}).join("");
   return `<table class="data-table">
     <colgroup><col style="width:90px"><col style="width:80px"><col style="width:85px"><col style="width:90px">
     <col style="width:65px"><col style="width:50px"><col style="width:60px"><col style="width:55px">
-    <col style="width:65px"><col style="width:65px"><col style="width:auto"></colgroup>
+    <col style="width:85px"><col style="width:65px"><col style="width:65px"><col style="width:auto"></colgroup>
     <thead><tr><th>Customer</th><th>Contract</th><th>Index</th><th>Items</th>
-    <th>Qty PCS</th><th>CTNs</th><th>Qty Kgs</th><th>CBM</th><th>HS Code</th><th>C/O Form</th><th>Note</th></tr></thead>
+    <th>Qty PCS</th><th>CTNs</th><th>Qty Kgs</th><th>CBM</th><th>Amount (USD)</th><th>HS Code</th><th>C/O Form</th><th>Note</th></tr></thead>
     <tbody>${rows}</tbody>
     <tfoot><tr><td colspan="4" style="color:var(--text-muted)">Tổng (${orders.length} đơn)</td>
     <td class="qty-pcs">${tPcs.toLocaleString()}</td><td>${tCtns}</td>
-    <td>${Math.round(tKg*10)/10}</td><td>${Math.round(tCbm*100)/100}</td><td colspan="3"></td></tr></tfoot>
+    <td>${Math.round(tKg*10)/10}</td><td>${Math.round(tCbm*100)/100}</td>
+    <td class="amount-cell">${fmtAmt(tAmt)}</td><td colspan="3"></td></tr></tfoot>
   </table>`;
 }
 
@@ -895,12 +901,30 @@ window.saveAssignLC = async function(shipId) {
 window.openPackingList = function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  const isAir = (s.container||"").toUpperCase().includes("AIR");
-  const isLcl = (s.container||"").toUpperCase().includes("LCL");
-  const showCont = !isAir && !isLcl;
+  const conts = (s.containers && s.containers.length) ? s.containers
+              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+
+  let contSection;
+  if (conts.length <= 1) {
+    const hasCont = conts.length === 1;
+    contSection = `<div class="form-group"><label class="form-label">TARE (trọng lượng vỏ container, kg)</label><input type="number" class="form-input" id="pk-tarecont" placeholder="2120">
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${hasCont?"Lô có 1 container → G.W tự động lấy = tổng G.W lô hàng.":"Lô AIR / LCL / CPN / KNQ → không có container."}</div></div>`;
+  } else {
+    contSection = `<input type="hidden" id="pk-tarecont" value="0">
+      <div class="form-group"><label class="form-label">Lô có ${conts.length} container → nhập G.W và Tare cho từng cont</label>
+      <div style="display:flex;flex-direction:column;gap:8px">
+      ${conts.map((c,i)=>`<div style="border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:8px">
+        <div style="font-size:12px;font-weight:500;margin-bottom:6px">${String(i+1).padStart(2,"0")} — ${c.type||""} ${c.no||""}${c.seal?" / "+c.seal:""}</div>
+        <div class="form-row">
+          <div class="form-group" style="margin:0"><label class="form-label">G.W (kg)</label><input type="number" class="form-input" id="pk-gw-${i}" placeholder="0"></div>
+          <div class="form-group" style="margin:0"><label class="form-label">Tare vỏ cont (kg)</label><input type="number" class="form-input" id="pk-tare-${i}" placeholder="2120"></div>
+        </div>
+      </div>`).join("")}
+      </div></div>`;
+  }
 
   document.getElementById("packing-form-body").innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này.${showCont?" Container lấy tự động từ lô hàng (sửa ở 'Sửa lô hàng').":""}</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này. Container lấy tự động từ lô hàng (sửa ở 'Sửa lô hàng').</div>
     <div class="form-row">
       <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pk-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT"></div>
       <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-input" id="pk-invdate" value="${s.invoiceDate||s.etd||""}"></div>
@@ -914,7 +938,7 @@ window.openPackingList = function(shipId) {
         </label>`).join("")}
       </div>
     </div>
-    ${showCont ? `<div class="form-group"><label class="form-label">TARE (trọng lượng vỏ container, kg)</label><input type="number" class="form-input" id="pk-tarecont" placeholder="2120"></div>` : `<input type="hidden" id="pk-tarecont" value="0">`}
+    ${contSection}
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-packing')">Hủy</button>
       <button type="button" class="btn btn-primary" onclick="generatePackingList('${shipId}')"><i class="ti ti-printer"></i> Tạo & In</button>
@@ -957,8 +981,34 @@ window.generatePackingList = async function(shipId) {
   const totalCBM  = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
   const vgm = Math.round(totalGW + tareCont);
 
+  // Container: 1 cont → GW = tổng lô; nhiều cont → nhập tay GW & Tare từng cont
+  const conts = (s.containers && s.containers.length) ? s.containers
+              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+  let contData;
+  if (conts.length > 1) {
+    contData = conts.map((c,i) => {
+      const gw = parseFloat(document.getElementById(`pk-gw-${i}`)?.value)||0;
+      const tare = parseFloat(document.getElementById(`pk-tare-${i}`)?.value)||0;
+      return { label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw, vgm: Math.round(gw+tare) };
+    });
+  } else if (conts.length === 1) {
+    const c = conts[0];
+    contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare: tareCont, gw: totalGW, vgm: Math.round(totalGW+tareCont) }];
+  } else {
+    contData = [{ label:`${s.container||""}`, tare: 0, gw: totalGW, vgm: 0 }];
+  }
+
+  // TERM OF PAYMENT: mặc định T/T; khách có L/C thì hỏi
+  const U = (firstCust||"").toUpperCase();
+  const isLcCust = ["MITSUWA","SANMARINO","ACROS","HEMD"].some(n => U.includes(n));
+  let term = "T/T";
+  if (isLcCust) {
+    const useLC = confirm(`Khách hàng "${firstCust}" có L/C.\n\nLô này có thanh toán bằng L/C không?\n\n• OK = L/C\n• Cancel = T/T`);
+    term = useLC ? "L/C" : "T/T";
+  }
+
   closeModal("modal-packing");
-  renderPackingA4(s, cust, { invoice: invVal, invDate, tarePerCtn, tareCont,
+  renderPackingA4(s, cust, { invoice: invVal, invDate, tarePerCtn, tareCont, term, contData,
     totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
 };
 
@@ -979,12 +1029,6 @@ function renderPackingA4(s, cust, p) {
       <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum(o.kgTotal):""}</td>
       <td style="text-align:right;padding:2px 4px">${o.cbm?fmtNum(o.cbm):""}</td>
     </tr>`).join("");
-
-  const conts = (s.containers && s.containers.length) ? s.containers
-              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
-  const contLine = conts.length
-    ? conts.map(c => `${c.type||s.container||""} : ${c.no||""}/ ${c.seal||""}`).join("<br>")
-    : `${s.container||""}`;
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
@@ -1010,8 +1054,8 @@ function renderPackingA4(s, cust, p) {
 <div class="pl-header">
   <div class="logo">TOS GAMEX</div>
   <div class="company-name">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
-  <div class="company-info">LOT B1, LONG BINH TECHNO PARK(LOTECO)EPZ,LONG BINH WARD, DONG NAI PROVINCE, VIETNAM</div>
-  <div class="company-info">TEL: 84 - 61 - 3992537&nbsp;&nbsp;&nbsp;&nbsp;FAX: 84 - 61 - 3992540&nbsp;&nbsp;&nbsp;&nbsp;E-MAIL: tos2@tosg.vnn.vn</div>
+  <div class="company-info">LOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+  <div class="company-info">TEL: 84 - 251- 3992537&nbsp;&nbsp;&nbsp;&nbsp;FAX: 84 - 251- 3992540</div>
 </div>
 
 <div class="title">PACKING LIST/ WEIGHT LIST</div>
@@ -1019,11 +1063,11 @@ function renderPackingA4(s, cust, p) {
 <table class="info">
   <tr>
     <td style="width:55%"><span class="label">MESSRS :</span><br><span style="white-space:pre-line">${cust.messrs||""}</span></td>
-    <td><span class="label">INVOICE NO. AND DATE</span><br>${p.invoice||""} &nbsp;&nbsp;&nbsp; ${dateStr}<br><br><span class="label">TERM OF PAYMENT</span><br>T/T</td>
+    <td><span class="label">INVOICE NO. AND DATE</span><br>${p.invoice||""} &nbsp;&nbsp;&nbsp; ${dateStr}<br><br><span class="label">TERM OF PAYMENT</span><br>${p.term||"T/T"}</td>
   </tr>
   <tr>
     <td><span class="label">CONSIGNEE:</span><br><span style="white-space:pre-line">${cust.consignee||""}</span></td>
-    <td><span class="label">BOOKING NO.</span> &nbsp; ${s.booking||""}<br><br><span class="label">HDGC:</span> ${cust.hdgc||""}</td>
+    <td><span class="label">REFERENCE:</span><br>${cust.hdgc||""}<br><br><span class="label">BK NO.:</span> ${s.booking||""}</td>
   </tr>
   <tr>
     <td><span class="label">FROM:</span> HOCHIMINH, VIETNAM &nbsp;&nbsp; <span class="label">TO:</span> ${fullPort(s.port)}, JAPAN</td>
@@ -1040,7 +1084,6 @@ function renderPackingA4(s, cust, p) {
   </thead>
   <tbody>
     <tr><td colspan="2" style="font-weight:bold;padding:4px">${cust.description||"SHIRTS"}</td><td></td><td></td><td></td><td></td><td></td></tr>
-    <tr><td colspan="2" style="font-weight:bold;text-decoration:underline;padding:4px">${contLine}</td><td></td><td></td><td></td><td></td><td></td></tr>
     ${rows}
     <tr class="totals">
       <td colspan="2" style="padding:4px">TOTAL</td>
@@ -1050,8 +1093,19 @@ function renderPackingA4(s, cust, p) {
       <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalGW)}</td>
       <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalCBM)}</td>
     </tr>
-    <tr class="totals"><td colspan="2" style="padding:4px">TARE</td><td colspan="3"></td><td style="text-align:right;padding:2px 4px">${fmtNum(p.tareCont)}</td><td></td></tr>
-    <tr class="totals"><td colspan="2" style="padding:4px">VGM</td><td colspan="3"></td><td style="text-align:right;padding:2px 4px">${fmtInt(p.vgm)}</td><td></td></tr>
+  </tbody>
+</table>
+
+<table class="goods" style="margin-top:10px">
+  <thead><tr><th style="width:55%;text-align:left;padding:3px 6px">CTN NO.</th><th>Tare</th><th>GW</th><th>VGM</th></tr></thead>
+  <tbody>
+    ${(p.contData||[]).map(cd => `<tr>
+      <td style="font-weight:bold;padding:3px 6px">${cd.label}</td>
+      <td style="text-align:right;padding:2px 4px">${cd.tare?fmtNum(cd.tare):""}</td>
+      <td style="text-align:right;padding:2px 4px">${cd.gw?fmtNum(cd.gw):""}</td>
+      <td style="text-align:right;padding:2px 4px">${cd.vgm?fmtInt(cd.vgm):""}</td>
+    </tr>`).join("")}
+    ${(p.contData||[]).length>1?`<tr class="totals"><td style="padding:3px 6px">TOTAL</td><td style="text-align:right;padding:2px 4px">${fmtNum(p.contData.reduce((a,c)=>a+c.tare,0))}</td><td style="text-align:right;padding:2px 4px">${fmtNum(p.contData.reduce((a,c)=>a+c.gw,0))}</td><td style="text-align:right;padding:2px 4px">${fmtInt(p.contData.reduce((a,c)=>a+c.vgm,0))}</td></tr>`:""}
   </tbody>
 </table>
 

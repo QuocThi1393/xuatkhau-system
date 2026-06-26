@@ -61,6 +61,8 @@
     <a href="lc.html" class="btn btn-sm" id="nav-lc" style="display:none"><i class="ti ti-credit-card"></i> LC</a>
     <a href="forwarders.html" class="btn btn-sm" id="nav-forwarders" style="display:none"><i class="ti ti-truck-delivery"></i> Forwarder</a>
     <button class="btn btn-sm" id="btn-reports" style="display:none"><i class="ti ti-report"></i> Báo cáo</button>
+    <a href="users.html" class="btn btn-sm" id="nav-users" style="display:none"><i class="ti ti-user-cog"></i> Tài khoản</a>
+    <span id="user-greeting" style="display:none;font-size:13px;color:var(--text-muted);margin:0 4px"></span>
     <div id="admin-indicator" class="admin-indicator" style="display:none">
       <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
     </div>
@@ -201,6 +203,8 @@
       <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu" autocomplete="current-password">
     </div>
     <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai email hoặc mật khẩu!</div>
+    <div id="login-info" style="color:var(--green-text);font-size:12px;margin-bottom:8px;display:none"></div>
+    <div style="margin-bottom:10px"><a href="#" id="link-forgot" style="font-size:12px;color:var(--blue-text)">Quên mật khẩu?</a></div>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
       <button type="button" class="btn btn-primary" id="btn-do-login"><i class="ti ti-login"></i> Đăng nhập</button>

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tài khoản · Xuất Khẩu System</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo"><a href="index.html">Xuất Khẩu <span>System</span></a></div>
+  <a href="index.html" title="Về trang chủ" style="flex-shrink:0;line-height:0">
+  <svg width="280" height="52" viewBox="0 0 280 52">
+    <defs><linearGradient id="tosgrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#155A2C"/><stop offset="100%" stop-color="#2E9E54"/>
+    </linearGradient></defs>
+    <rect x="0" y="2" width="280" height="48" rx="8" fill="url(#tosgrad)"/>
+    <text x="140" y="28" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">TOSGAMEX</text>
+    <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
+  </svg></a>
+  <div class="topbar-nav">
+    <a href="index.html" class="btn btn-sm"><i class="ti ti-package"></i> Lô hàng</a>
+    <span id="user-greeting" style="font-size:13px;color:var(--text-muted);margin:0 4px"></span>
+    <div id="admin-indicator" class="admin-indicator" style="display:none">
+      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
+    </div>
+    <button class="btn btn-sm" id="btn-login-toggle">
+      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span style="font-size:15px;font-weight:500"><i class="ti ti-user-cog"></i> Quản lý tài khoản</span>
+      <span id="user-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" id="btn-add-user"><i class="ti ti-user-plus"></i> Thêm tài khoản</button>
+    </div>
+  </div>
+
+  <div style="background:#FFF8E6;border:0.5px solid #FAC775;border-radius:8px;padding:10px 14px;font-size:12.5px;color:#6b4e0b;margin-bottom:14px">
+    <b>Vai trò:</b> <b>Admin</b> = toàn quyền · <b>Sửa giá</b> = chỉ sửa cột Giá GC · <b>Sửa Dimension</b> = chỉ sửa cột Dimension · <b>Chỉ xem</b> = không sửa được gì.
+    <br>Tài khoản admin gốc (email của bạn) luôn là Admin, không cần và không thể đổi tại đây.
+  </div>
+
+  <div id="user-list" style="position:relative;min-height:120px"></div>
+</div>
+
+<!-- MODAL: Thêm / sửa tài khoản -->
+<div class="modal-backdrop" id="modal-user">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-title">
+      <span id="user-modal-title">Thêm tài khoản</span>
+      <span class="modal-close" onclick="closeModalById('modal-user')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="user-form-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Đăng nhập (giữ để chuyển hướng) -->
+<div class="modal-backdrop" id="modal-login"><div class="modal" style="max-width:360px"><div class="modal-title">Đăng nhập <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span></div><div style="font-size:13px;color:var(--text-muted)">Vui lòng đăng nhập tại trang chủ.</div></div></div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { isAdmin, isLoggedIn, logout, onAuthChange, nickname,
+         createAccount, saveUserProfile, getAllUsers, deleteUserProfile, ROLE_LABELS }
+  from "./js/auth.js";
+import { showToast, openModal, closeModal } from "./js/utils.js";
+
+window.closeModalById = closeModal;
+
+let allUsers = [];
+const ROLES = ["price", "dimension", "viewer"]; // admin không gán tay (admin gốc theo email)
+
+function updateTopUI() {
+  document.getElementById("admin-indicator").style.display = isAdmin() ? "flex" : "none";
+  document.getElementById("login-label").textContent = isLoggedIn() ? "Đăng xuất" : "Đăng nhập";
+  const g = document.getElementById("user-greeting");
+  if (isLoggedIn()) { g.textContent = "Xin chào " + (nickname() || "") + "!"; } else { g.textContent = ""; }
+}
+
+document.getElementById("btn-login-toggle").addEventListener("click", async () => {
+  if (isLoggedIn()) { await logout(); location.href = "index.html"; }
+  else location.href = "index.html";
+});
+
+function renderList() {
+  const box = document.getElementById("user-list");
+  document.getElementById("user-count").textContent = `${allUsers.length} tài khoản (chưa tính admin gốc)`;
+  if (!allUsers.length) {
+    box.innerHTML = `<p style="color:var(--text-muted);font-size:13px;padding:8px 0">Chưa có tài khoản nhân viên nào. Bấm "Thêm tài khoản" để tạo.</p>`;
+    return;
+  }
+  box.innerHTML = `<table class="data-table">
+    <thead><tr><th>Biệt danh</th><th>Email</th><th>Vai trò</th><th style="width:140px">Thao tác</th></tr></thead>
+    <tbody>${allUsers.map(u => `<tr>
+      <td>${u.nickname || "—"}</td>
+      <td>${u.email || "—"}</td>
+      <td>${ROLE_LABELS[u.role] || u.role || "—"}</td>
+      <td>
+        <button class="btn btn-sm" onclick="editUser('${u.uid}')"><i class="ti ti-edit"></i> Sửa</button>
+        <button class="btn btn-sm btn-danger" onclick="removeUser('${u.uid}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`).join("")}</tbody>
+  </table>`;
+}
+
+function roleOptions(sel) {
+  return ROLES.map(r => `<option value="${r}" ${r===sel?"selected":""}>${ROLE_LABELS[r]}</option>`).join("");
+}
+
+// THÊM tài khoản mới
+document.getElementById("btn-add-user").addEventListener("click", () => {
+  document.getElementById("user-modal-title").textContent = "Thêm tài khoản";
+  document.getElementById("user-form-body").innerHTML = `
+    <div class="form-group"><label class="form-label">Email (dùng để đăng nhập, nên là email thật)</label>
+      <input type="email" class="form-input" id="u-email" placeholder="nhanvien@gmail.com"></div>
+    <div class="form-group"><label class="form-label">Mật khẩu (tối thiểu 6 ký tự)</label>
+      <input type="text" class="form-input" id="u-pass" placeholder="Mật khẩu ban đầu"></div>
+    <div class="form-group"><label class="form-label">Biệt danh (hiển thị khi đăng nhập)</label>
+      <input class="form-input" id="u-nick" placeholder="VD: ThiXNK"></div>
+    <div class="form-group"><label class="form-label">Vai trò</label>
+      <select class="form-select" id="u-role">${roleOptions("viewer")}</select></div>
+    <div id="u-err" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none"></div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-user')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="u-create"><i class="ti ti-user-plus"></i> Tạo tài khoản</button>
+    </div>`;
+  document.getElementById("u-create").addEventListener("click", createNew);
+  openModal("modal-user");
+});
+
+async function createNew() {
+  const email = document.getElementById("u-email").value.trim();
+  const pass = document.getElementById("u-pass").value;
+  const nick = document.getElementById("u-nick").value.trim();
+  const role = document.getElementById("u-role").value;
+  const err = document.getElementById("u-err");
+  err.style.display = "none";
+  if (!email || !pass) { err.textContent = "Nhập đủ email và mật khẩu."; err.style.display = "block"; return; }
+  if (pass.length < 6) { err.textContent = "Mật khẩu tối thiểu 6 ký tự."; err.style.display = "block"; return; }
+  const btn = document.getElementById("u-create");
+  btn.disabled = true; btn.textContent = "Đang tạo...";
+  try {
+    const uid = await createAccount(email, pass);
+    await saveUserProfile(uid, { email, nickname: nick || email, role });
+    closeModal("modal-user");
+    showToast("Đã tạo tài khoản " + (nick || email));
+    await load();
+  } catch (e) {
+    let msg = e.message || "Lỗi không rõ";
+    if (msg.includes("email-already-in-use")) msg = "Email này đã có tài khoản.";
+    else if (msg.includes("invalid-email")) msg = "Email không hợp lệ.";
+    else if (msg.includes("weak-password")) msg = "Mật khẩu quá yếu (tối thiểu 6 ký tự).";
+    err.textContent = msg; err.style.display = "block";
+    btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-plus"></i> Tạo tài khoản';
+  }
+}
+
+// SỬA biệt danh / vai trò
+window.editUser = function(uid) {
+  const u = allUsers.find(x => x.uid === uid);
+  if (!u) return;
+  document.getElementById("user-modal-title").textContent = "Sửa tài khoản";
+  document.getElementById("user-form-body").innerHTML = `
+    <div class="form-group"><label class="form-label">Email</label>
+      <input class="form-input" value="${u.email||""}" disabled></div>
+    <div class="form-group"><label class="form-label">Biệt danh</label>
+      <input class="form-input" id="u-nick" value="${u.nickname||""}"></div>
+    <div class="form-group"><label class="form-label">Vai trò</label>
+      <select class="form-select" id="u-role">${roleOptions(u.role)}</select></div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Đổi mật khẩu: nhân viên tự bấm "Quên mật khẩu?" ở màn đăng nhập, hoặc admin đặt lại trong Firebase Console.</div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-user')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="u-save"><i class="ti ti-device-floppy"></i> Lưu</button>
+    </div>`;
+  document.getElementById("u-save").addEventListener("click", async () => {
+    const nick = document.getElementById("u-nick").value.trim();
+    const role = document.getElementById("u-role").value;
+    await saveUserProfile(uid, { nickname: nick || u.email, role });
+    closeModal("modal-user");
+    showToast("Đã cập nhật!");
+    await load();
+  });
+  openModal("modal-user");
+};
+
+// XÓA vai trò (gỡ quyền). Tài khoản đăng nhập gốc vẫn còn trong Firebase Console.
+window.removeUser = async function(uid) {
+  const u = allUsers.find(x => x.uid === uid);
+  if (!confirm(`Gỡ tài khoản "${u?.nickname||u?.email||''}" khỏi hệ thống?\n\nNgười này sẽ về mức "Chỉ xem" cho tới khi bạn xóa hẳn họ trong Firebase Console (Authentication → Users).`)) return;
+  await deleteUserProfile(uid);
+  showToast("Đã gỡ tài khoản!");
+  await load();
+};
+
+async function load() {
+  try { allUsers = await getAllUsers(); }
+  catch (e) { allUsers = []; }
+  renderList();
+}
+
+// Chỉ ADMIN mới vào được trang này
+onAuthChange(user => {
+  if (!user) { location.href = "index.html"; return; }
+  updateTopUI();
+  if (!isAdmin()) { alert("Bạn không có quyền truy cập trang quản lý tài khoản."); location.href = "index.html"; return; }
+  load();
+});
+</script>
+</body>
+</html>

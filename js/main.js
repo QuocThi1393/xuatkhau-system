@@ -1,5 +1,5 @@
 import { db } from "./firebase-config.js";
-import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange } from "./auth.js";
+import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
 import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal } from "./utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
@@ -69,14 +69,24 @@ function computeRow(row) {
 // ====== AUTH UI ======
 function updateAdminUI() {
   const on = isLoggedIn();
-  document.getElementById("admin-indicator").style.display = on ? "flex" : "none";
+  const admin = isAdmin();
+  const p = perms();
+  document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
   document.getElementById("login-label").textContent = on ? "Đăng xuất" : "Đăng nhập";
-  // Các mục cần dữ liệu -> chỉ hiện khi đã đăng nhập
+  // Lời chào
+  const g = document.getElementById("user-greeting");
+  if (on) { g.style.display = ""; g.textContent = "Xin chào " + (nickname() || "") + "!"; }
+  else { g.style.display = "none"; }
+  // Nav cần đăng nhập
   ["btn-nav-list","nav-customers","nav-lc","nav-forwarders","btn-reports"].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none";
   });
-  document.getElementById("btn-add-shipment").style.display = on ? "flex" : "none";
-  document.getElementById("btn-import-plan").style.display = on ? "flex" : "none";
+  // Nút quản lý tài khoản: chỉ admin
+  const navUsers = document.getElementById("nav-users");
+  if (navUsers) navUsers.style.display = admin ? "" : "none";
+  // Thêm / Import lô: chỉ vai trò được thêm-xóa (admin)
+  document.getElementById("btn-add-shipment").style.display = p.addDelete ? "flex" : "none";
+  document.getElementById("btn-import-plan").style.display = p.addDelete ? "flex" : "none";
   if (!on) {
     document.getElementById("list-view").style.display = "none";
     document.getElementById("calendar-view").style.display = "";
@@ -94,6 +104,7 @@ async function doLogin() {
   const pw = document.getElementById("f-admin-pw").value;
   const errEl = document.getElementById("login-error");
   errEl.style.display = "none";
+  document.getElementById("login-info").style.display = "none";
   try {
     await loginUser(email, pw);
     closeModal("modal-login");
@@ -110,6 +121,24 @@ document.getElementById("f-admin-pw").addEventListener("keydown", e => {
 });
 document.getElementById("f-login-email").addEventListener("keydown", e => {
   if (e.key === "Enter") document.getElementById("f-admin-pw").focus();
+});
+
+// Quên mật khẩu: gửi link đặt lại qua email
+document.getElementById("link-forgot").addEventListener("click", async (ev) => {
+  ev.preventDefault();
+  const email = (document.getElementById("f-login-email").value || "").trim();
+  const errEl = document.getElementById("login-error");
+  const infoEl = document.getElementById("login-info");
+  errEl.style.display = "none"; infoEl.style.display = "none";
+  if (!email) { errEl.textContent = "Nhập email vào ô trên rồi bấm Quên mật khẩu."; errEl.style.display = "block"; return; }
+  try {
+    await resetPassword(email);
+    infoEl.textContent = "Đã gửi link đặt lại mật khẩu tới " + email + ". Kiểm tra hộp thư (cả mục Spam).";
+    infoEl.style.display = "block";
+  } catch (e) {
+    errEl.textContent = "Không gửi được. Kiểm tra lại email.";
+    errEl.style.display = "block";
+  }
 });
 
 // ====== IMPORT / THÊM LÔ (bảng Excel trống) ======
@@ -481,7 +510,7 @@ function buildCard(s, admin) {
           <div class="detail-inner">
             ${buildReadonlyTable(s.orders||[])}
             <div class="action-row" style="margin-top:10px">
-              ${admin ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
+              ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
               <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
               <button class="btn btn-sm" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
               ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
@@ -588,6 +617,12 @@ window.openEditOrders = function(shipId) {
       cells: (row, col) => {
         const cp = EDIT_COLS[col];
         if (cp && cp.readOnly) return { className: "ht-readonly-cell", readOnly: true };
+        // Khóa cột theo vai trò: admin (editCols="all") sửa hết; vai trò khác chỉ sửa cột được phép
+        const pr = perms();
+        if (pr.editCols !== "all") {
+          const allow = Array.isArray(pr.editCols) ? pr.editCols : [];
+          if (!cp || !allow.includes(cp.data)) return { className: "ht-readonly-cell", readOnly: true };
+        }
         return {};
       },
       afterChange: (changes, source) => {

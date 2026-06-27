@@ -528,12 +528,6 @@ function buildCard(s, admin) {
             <button class="btn btn-sm btn-export" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
           </div>
         </div>
-          </div>
-        </div>
-        <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary)">
-          <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
-          <div class="ck-list">${listHTML}</div>
-        </div>
       </div>
     </div>`;
   return card;

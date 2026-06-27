@@ -510,13 +510,18 @@ function buildCard(s, admin) {
         <div style="flex:1;min-width:0;overflow-x:auto">
           <div class="detail-inner">
             ${buildReadonlyTable(s.orders||[])}
-            <div class="action-row" style="margin-top:10px">
-              ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
-              <button class="btn btn-sm" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
-              <button class="btn btn-sm" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
-              ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
-              ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
-              ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
+            <div class="action-row" style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
+                ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
+                ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
+                ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
+              </div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+                <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
+                ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
+              </div>
             </div>
           </div>
         </div>
@@ -716,9 +721,10 @@ window.openEditShipment = function(id) {
       const no   = row.querySelector(".ec-no").value.trim().toUpperCase();
       const seal = row.querySelector(".ec-seal").value.trim();
       const tare = parseFloat(row.querySelector(".ec-tare").value) || 0;
+      const gw   = parseFloat(row.querySelector(".ec-gw").value) || 0;
       // Quy tắc số cont: 4 chữ cái + 7 chữ số (vd ABCD1234567)
       if (no && !/^[A-Z]{4}[0-9]{7}$/.test(no)) contError = no;
-      if (no || seal) containers.push({ type, no, seal, tare });
+      if (no || seal) containers.push({ type, no, seal, tare, gw });
     });
     if (contError) {
       alert(`Số cont "${contError}" không đúng quy tắc.\n\nĐúng phải là 4 chữ cái + 7 chữ số (ví dụ: ABCD1234567).\n\nVui lòng kiểm tra lại số cont.`);
@@ -746,20 +752,32 @@ window.openEditShipment = function(id) {
 
   // Khởi tạo danh sách container
   const contListEl = document.getElementById("es-cont-list");
+  function refreshGwState() {
+    const rows = contListEl.querySelectorAll(".es-cont-row");
+    const multi = rows.length > 1;
+    rows.forEach(r => {
+      const gw = r.querySelector(".ec-gw");
+      gw.disabled = !multi;
+      gw.placeholder = multi ? "G.W cont" : "= tổng lô";
+      gw.style.opacity = multi ? "1" : "0.45";
+    });
+  }
   function addContRow(c = {}) {
     const row = document.createElement("div");
     row.className = "es-cont-row";
     row.style.cssText = "display:flex;gap:6px;margin-bottom:6px;align-items:center";
     row.innerHTML = `
-      <select class="form-select ec-type" style="width:90px;flex-shrink:0">
+      <select class="form-select ec-type" style="width:82px;flex-shrink:0">
         ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
       </select>
-      <input class="form-input ec-no" placeholder="Số cont (ABCD1234567)" value="${c.no||""}" style="flex:1.2">
-      <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1">
-      <input class="form-input ec-tare" type="number" placeholder="Tare (kg)" value="${c.tare||""}" style="width:90px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
+      <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1.1;min-width:0">
+      <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1;min-width:0">
+      <input class="form-input ec-tare" type="number" placeholder="Tare" value="${c.tare||""}" style="width:74px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
+      <input class="form-input ec-gw" type="number" placeholder="G.W cont" value="${c.gw||""}" style="width:86px;flex-shrink:0" title="G.W riêng cont này (chỉ cần khi lô có từ 2 cont)">
       <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
-    row.querySelector(".ec-del").addEventListener("click", () => row.remove());
+    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); refreshGwState(); });
     contListEl.appendChild(row);
+    refreshGwState();
   }
   // Nạp dữ liệu cũ: ưu tiên mảng containers, fallback contNo/sealNo cũ
   const existing = (s.containers && s.containers.length) ? s.containers
@@ -996,8 +1014,14 @@ window.openPackingList = async function(shipId) {
     const tare = parseFloat(c.tare)||0;
     contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: totalGW, vgm: Math.round(totalGW+tare) }];
   } else if (conts.length > 1) {
-    contData = conts.map((c,i) => ({ label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare:parseFloat(c.tare)||0, gw:null, vgm:null }));
-    contData.push({ label:"TOTAL", tare: totalTareCont, gw: totalGW, vgm: Math.round(totalGW+totalTareCont), isTotal:true });
+    contData = conts.map((c,i) => {
+      const tare = parseFloat(c.tare)||0;
+      const gw = parseFloat(c.gw)||0;
+      return { label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: gw||null, vgm: gw?Math.round(gw+tare):null };
+    });
+    const sumGw = conts.reduce((a,c)=>a+(parseFloat(c.gw)||0),0);
+    const gwTot = sumGw || totalGW;
+    contData.push({ label:"TOTAL", tare: totalTareCont, gw: gwTot, vgm: Math.round(gwTot+totalTareCont), isTotal:true });
   } else {
     contData = [{ label:`${s.container||""}`, tare:0, gw: totalGW, vgm:0 }];
   }
@@ -1127,6 +1151,110 @@ function renderPackingA4(s, cust, p) {
   w.document.write(html);
   w.document.close();
 }
+
+// ====== XUẤT VGM ======
+window.openVGM = function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const C = (s.container||"").toUpperCase();
+  if (C.includes("AIR") || C.includes("CPN") || C.includes("KNQ")) { showToast("Hàng AIR/CPN/KNQ không cần VGM."); return; }
+  const isLcl = C.includes("LCL");
+
+  const orders = s.orders || [];
+  const totalGW   = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
+  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const now = new Date();
+  const dateStr = `Long Bình, ngày ${now.getDate()} tháng ${now.getMonth()+1} năm ${now.getFullYear()}`;
+  const fmt = n => Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const css = `@page{size:A4;margin:14mm;} *{box-sizing:border-box;}
+    body{font-family:"Times New Roman",serif;font-size:13px;color:#1f3864;margin:0;}
+    .center{text-align:center;} .title{font-weight:bold;font-size:15px;margin-top:6px;}
+    .title-en{font-weight:bold;font-style:italic;font-size:14px;}
+    table.vgm{width:100%;border-collapse:collapse;margin-top:10px;}
+    table.vgm th,table.vgm td{border:1px solid #1f3864;padding:5px;font-size:12px;vertical-align:middle;height:26px;}
+    table.vgm th{font-weight:bold;text-align:center;} td.c{text-align:center;}
+    @media print{.no-print{display:none;}}`;
+  const printBtn = `<div class="no-print center" style="margin-top:20px"><button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button></div>`;
+  const signCont = `<table style="width:100%;margin-top:14px"><tr>
+    <td class="center" style="width:50%"><b>ĐƠN VỊ CÂN<br>WEIGHING SCALE</b><br><span style="font-style:italic">(ký, ghi rõ họ tên)<br>(signed full name, stamped)</span><div style="margin-top:50px"><b>NGUYEN QUOC THI</b><br><b>IMP-EXP DEPT</b></div></td>
+    <td class="center" style="width:50%"><b>NGƯỜI GỬI HÀNG<br>SHIPPER</b><br><span style="font-style:italic">(ký, ghi rõ họ tên)<br>(signed full name, stamped)</span><div style="margin-top:50px"><b>NGUYEN QUOC THI</b><br><b>IMP-EXP DEPT</b></div></td>
+  </tr></table>`;
+
+  let html;
+  if (isLcl) {
+    html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>
+<div class="center title">BẢN XÁC NHẬN KHỐI LƯỢNG HÀNG HÓA VẬN CHUYỂN QUỐC TẾ</div>
+<div class="center title-en">VERIFIED GROSS MASS OF LCL CARGO ON INTERNATIONAL TRANSPORT</div>
+<p style="margin-top:16px"><b>1. Tên người gửi hàng:</b> CÔNG TY TNHH TOMIYA SUMMIT GARMENT EXPORT<br><span style="font-style:italic">&nbsp;&nbsp;&nbsp;Name of shipper:</span></p>
+<p><b>2. Khai báo thông tin và khối lượng toàn bộ LÔ HÀNG LCL đã đóng hàng:</b><br><span style="font-style:italic">LCL Cargo declaration/VGM of packed shipment</span></p>
+<table class="vgm">
+<thead><tr>
+  <th style="width:12%">Số thứ tự<br>No.</th><th style="width:28%">Số booking<br>Booking no</th>
+  <th style="width:20%">Loại bao bì<br>Package type</th><th style="width:18%">Số kiện<br>Number of Package</th>
+  <th style="width:22%">Tổng trọng lượng<br>VGM (KG)</th>
+</tr></thead>
+<tbody>
+  <tr><td class="c">1</td><td class="c"><b>${s.booking||""}</b></td><td class="c">CARTON</td><td class="c">${totalCtns}</td><td class="c">${fmt(totalGW)}</td></tr>
+  <tr><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td class="c">...</td><td></td><td></td><td></td><td></td></tr>
+  <tr><td class="c"><b>Total</b></td><td></td><td></td><td></td><td class="c"><b>${fmt(totalGW)}</b></td></tr>
+</tbody>
+</table>
+<p style="margin-top:14px">Chúng tôi cam kết và chịu trách nhiệm việc xác nhận khối lượng toàn bộ lô hàng trên là đúng sự thật.<br>We are committed to and responsible for VGM of the above mentioned LCL shipment (s) is true.</p>
+<p style="margin:14px 0 0">Ghi chú/Note:</p>
+<p style="margin:4px 0">1. Thời hạn cung cấp VGM :</p>
+<p style="margin:4px 0">2. Thời hạn chỉnh sửa VGM:</p>
+${signCont}
+${printBtn}
+</body></html>`;
+  } else {
+    const conts = (s.containers && s.containers.length) ? s.containers
+                : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,tare:0}] : [];
+    const sizeMap = { "20GP":"20'GP", "40HC":"40'HC", "40DC":"40'DC" };
+    const maxMap  = { "20GP":30480, "40HC":32500, "40DC":32500 };
+    const rows = conts.map((c,i) => {
+      const gw   = conts.length === 1 ? totalGW : (parseFloat(c.gw)||0);
+      const tare = parseFloat(c.tare)||0;
+      const vgm  = gw + tare;
+      const size = sizeMap[c.type] || c.type || "";
+      const mx   = maxMap[c.type] || 0;
+      return `<tr><td class="c">${i+1}</td><td class="c">${c.no||""}</td><td class="c">${size}</td><td class="c">${mx?fmt(mx)+" KGS":""}</td><td class="c">${fmt(vgm)} KGS</td><td></td></tr>`;
+    }).join("");
+    let extra = "";
+    for (let k = conts.length; k < 3; k++) extra += `<tr><td class="c">${k+1}</td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    extra += `<tr><td class="c">...</td><td></td><td></td><td></td><td></td><td></td></tr>`;
+    html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>
+<div class="center">Biểu mẫu</div>
+<div class="center">(Ban hành kèm theo Văn bản số 2428/CHHVN-VTDVHH</div>
+<div class="center">Ngày 15 tháng 6 năm 2016 của Cục Hàng hải Việt Nam</div>
+<div class="center">--------------------</div>
+<div class="center title">XÁC NHẬN KHỐI LƯỢNG TOÀN BỘ CÔNG-TE-NƠ VẬN CHUYỂN QUỐC TẾ</div>
+<div class="center title-en">VERIFIED GROSS MASS OF CONTAINER ON INTERNATIONAL TRANSPORT (VGM)</div>
+<div style="text-align:right;margin-top:10px">${dateStr}</div>
+<p style="margin-top:8px"><b>1. Tên người gửi hàng, địa chỉ, số điện thoại /Name of Shipper, address, phone number:</b></p>
+<div style="padding-left:16px">CÔNG TY TNHH TOMIYA SUMMIT GARMENT EXPORT<br>LÔ B1, KCX LONG BÌNH, PHƯỜNG LONG BÌNH, THÀNH PHỐ ĐỒNG NAI.<br>ĐIỆN THOẠI: 0251.3992537</div>
+<p style="margin-top:10px"><b>2. Thông số công-te-nơ/ Container's particular :</b></p>
+<table class="vgm">
+<thead><tr>
+  <th style="width:6%">Stt<br>Seq</th>
+  <th style="width:18%">Số Công-te-nơ<br>Container no.</th>
+  <th style="width:16%">Kích cỡ công-te-nơ<br>Size of container<br>(20'/40'/other)</th>
+  <th style="width:20%">Khối lượng sử dụng lớn nhất<br>Max gross weight (kg)</th>
+  <th style="width:22%">Xác nhận khối lượng toàn bộ công-te-nơ<br>Verified gross mass of a packed container (kg)</th>
+  <th style="width:18%">Tên đơn vị, địa chỉ cân<br>Name of weighing scale, Address</th>
+</tr></thead>
+<tbody>${rows}${extra}</tbody>
+</table>
+<p style="margin-top:12px">Chúng tôi cam kết và chịu trách nhiệm việc xác nhận khối lượng toàn bộ công-te-nơ trên là đúng sự thật.<br>We are committed to and responsible for VGM of the above mentioned container(s) is true.</p>
+${signCont}
+${printBtn}
+</body></html>`;
+  }
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+};
 
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {

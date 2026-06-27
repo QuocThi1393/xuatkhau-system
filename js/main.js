@@ -510,19 +510,24 @@ function buildCard(s, admin) {
         <div style="flex:1;min-width:0;overflow-x:auto">
           <div class="detail-inner">
             ${buildReadonlyTable(s.orders||[])}
-            <div class="action-row" style="margin-top:10px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
-                ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
-                ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
-                ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
-              </div>
-              <div style="display:flex;gap:6px;flex-wrap:wrap">
-                <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
-                <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
-                ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
-              </div>
+            <div class="action-row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+              ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
+              ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
+              ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
+              ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
             </div>
+          </div>
+        </div>
+        <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary);display:flex;flex-direction:column">
+          <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
+          <div class="ck-list">${listHTML}</div>
+          <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);display:flex;flex-direction:column;gap:6px">
+            <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+            <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
+            ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
+            <button class="btn btn-sm btn-export" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
+          </div>
+        </div>
           </div>
         </div>
         <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary)">
@@ -1167,7 +1172,7 @@ window.openVGM = function(shipId) {
   const dateStr = `Long Bình, ngày ${now.getDate()} tháng ${now.getMonth()+1} năm ${now.getFullYear()}`;
   const fmt = n => Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
 
-  const css = `@page{size:A4;margin:14mm;} *{box-sizing:border-box;}
+  const css = `@page{size:A4 landscape;margin:12mm;} *{box-sizing:border-box;}
     body{font-family:"Times New Roman",serif;font-size:13px;color:#1f3864;margin:0;}
     .center{text-align:center;} .title{font-weight:bold;font-size:15px;margin-top:6px;}
     .title-en{font-weight:bold;font-style:italic;font-size:14px;}
@@ -1254,6 +1259,36 @@ ${printBtn}
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
+};
+
+// ====== SHIPPING MARK (ghi chú theo lô, copy được) ======
+window.openShipMark = function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const safe = (s.shipMark||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  document.getElementById("shipmark-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Gõ hoặc dán shipping mark cho lô này (giữ nguyên khoảng trắng như Excel). Bấm <b>Lưu</b> để lưu theo lô, <b>Copy</b> để chép cả khối.</div>
+    <textarea id="sm-text" spellcheck="false" style="width:100%;min-height:240px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.5;white-space:pre;padding:10px 12px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);background:var(--bg-card)">${safe}</textarea>
+    <div class="form-footer" style="justify-content:space-between">
+      <button type="button" class="btn" id="sm-copy"><i class="ti ti-copy"></i> Copy</button>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn" onclick="closeModalById('modal-shipmark')">Đóng</button>
+        <button type="button" class="btn btn-primary" id="sm-save"><i class="ti ti-device-floppy"></i> Lưu</button>
+      </div>
+    </div>`;
+  document.getElementById("sm-copy").addEventListener("click", () => {
+    const ta = document.getElementById("sm-text");
+    ta.select(); ta.setSelectionRange(0, ta.value.length);
+    try { document.execCommand("copy"); } catch(e){}
+    if (navigator.clipboard) navigator.clipboard.writeText(ta.value).catch(()=>{});
+    showToast("Đã copy shipping mark!");
+  });
+  document.getElementById("sm-save").addEventListener("click", async () => {
+    await updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("sm-text").value });
+    closeModal("modal-shipmark");
+    showToast("Đã lưu shipping mark!");
+  });
+  openModal("modal-shipmark");
 };
 
 // ====== BÁO CÁO ======

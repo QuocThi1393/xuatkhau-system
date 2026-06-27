@@ -16,7 +16,7 @@ const ADMIN_EMAIL = "nguyenquocthitpiuh@gmail.com";
 const ROLE_PERMS = {
   admin:     { view:true, addDelete:true,  manageMaster:true,  manageUsers:true,  editCols:"all" },
   price:     { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["unitPrice"] },
-  dimension: { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["dimension"] },
+  dimension: { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["dimension","tareCtn"] },
   viewer:    { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[] },
 };
 export const ROLE_LABELS = {

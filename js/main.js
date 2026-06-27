@@ -43,6 +43,7 @@ const EDIT_COLS = [
   { data: "kgPerCtn",     title: "Kgs/Carton",    width: 85, type: "numeric" },
   { data: "kgTotal",      title: "Qty (Kgs)",     width: 85, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 100 },
+  { data: "tareCtn",      title: "Tare thùng",    width: 90, type: "numeric" },
   { data: "cbm",          title: "CBM",           width: 75, type: "numeric", readOnly: true },
   { data: "unitPrice",    title: "Giá GC (USD)",  width: 90, type: "numeric" },
   { data: "hsCode",       title: "HS CODE",       width: 85 },
@@ -649,6 +650,7 @@ document.getElementById("btn-save-edit-orders").addEventListener("click", async 
       items:o.items||"", qty:parseFloat(o.qty)||0, ctns:parseFloat(o.ctns)||0,
       kgPerCtn:parseFloat(o.kgPerCtn)||0, kgTotal:parseFloat(o.kgTotal)||0,
       dimension:o.dimension||"", cbm:parseFloat(o.cbm)||0,
+      tareCtn:parseFloat(o.tareCtn)||0,
       unitPrice:parseFloat(o.unitPrice)||0,
       hsCode:o.hsCode||"", coForm:o.coForm||"", note:o.note||"",
       stuffingDate:o.stuffingDate||"", etd:o.etd||"",
@@ -708,12 +710,20 @@ window.openEditShipment = function(id) {
     const etdVal = document.getElementById("es-etd").value;
     // Thu thập danh sách container
     const containers = [];
+    let contError = "";
     document.querySelectorAll("#es-cont-list .es-cont-row").forEach(row => {
       const type = row.querySelector(".ec-type").value;
-      const no   = row.querySelector(".ec-no").value.trim();
+      const no   = row.querySelector(".ec-no").value.trim().toUpperCase();
       const seal = row.querySelector(".ec-seal").value.trim();
-      if (no || seal) containers.push({ type, no, seal });
+      const tare = parseFloat(row.querySelector(".ec-tare").value) || 0;
+      // Quy tắc số cont: 4 chữ cái + 7 chữ số (vd ABCD1234567)
+      if (no && !/^[A-Z]{4}[0-9]{7}$/.test(no)) contError = no;
+      if (no || seal) containers.push({ type, no, seal, tare });
     });
+    if (contError) {
+      alert(`Số cont "${contError}" không đúng quy tắc.\n\nĐúng phải là 4 chữ cái + 7 chữ số (ví dụ: ABCD1234567).\n\nVui lòng kiểm tra lại số cont.`);
+      return;
+    }
     await updateDoc(doc(db,"shipments",id), {
       stuffingDate: document.getElementById("es-stuffing").value||null,
       shipDate: etdVal,
@@ -744,8 +754,9 @@ window.openEditShipment = function(id) {
       <select class="form-select ec-type" style="width:90px;flex-shrink:0">
         ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
       </select>
-      <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1">
+      <input class="form-input ec-no" placeholder="Số cont (ABCD1234567)" value="${c.no||""}" style="flex:1.2">
       <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1">
+      <input class="form-input ec-tare" type="number" placeholder="Tare (kg)" value="${c.tare||""}" style="width:90px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
       <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
     row.querySelector(".ec-del").addEventListener("click", () => row.remove());
     contListEl.appendChild(row);
@@ -949,68 +960,9 @@ window.saveAssignLC = async function(shipId) {
 };
 
 // ====== PACKING LIST ======
-window.openPackingList = function(shipId) {
+window.openPackingList = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  const conts = (s.containers && s.containers.length) ? s.containers
-              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
-
-  let contSection;
-  if (conts.length <= 1) {
-    const hasCont = conts.length === 1;
-    contSection = `<div class="form-group"><label class="form-label">TARE (trọng lượng vỏ container, kg)</label><input type="number" class="form-input" id="pk-tarecont" placeholder="2120">
-      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${hasCont?"Lô có 1 container → G.W tự động lấy = tổng G.W lô hàng.":"Lô AIR / LCL / CPN / KNQ → không có container."}</div></div>`;
-  } else {
-    contSection = `<input type="hidden" id="pk-tarecont" value="0">
-      <div class="form-group"><label class="form-label">Lô có ${conts.length} container → nhập G.W và Tare cho từng cont</label>
-      <div style="display:flex;flex-direction:column;gap:8px">
-      ${conts.map((c,i)=>`<div style="border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:8px">
-        <div style="font-size:12px;font-weight:500;margin-bottom:6px">${String(i+1).padStart(2,"0")} — ${c.type||""} ${c.no||""}${c.seal?" / "+c.seal:""}</div>
-        <div class="form-row">
-          <div class="form-group" style="margin:0"><label class="form-label">G.W (kg)</label><input type="number" class="form-input" id="pk-gw-${i}" placeholder="0"></div>
-          <div class="form-group" style="margin:0"><label class="form-label">Tare vỏ cont (kg)</label><input type="number" class="form-input" id="pk-tare-${i}" placeholder="2120"></div>
-        </div>
-      </div>`).join("")}
-      </div></div>`;
-  }
-
-  document.getElementById("packing-form-body").innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">Điền thông tin cho lần in này. Container lấy tự động từ lô hàng (sửa ở 'Sửa lô hàng').</div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Invoice No.</label><input class="form-input" id="pk-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT"></div>
-      <div class="form-group"><label class="form-label">Invoice Date</label><input type="date" class="form-input" id="pk-invdate" value="${s.invoiceDate||s.etd||""}"></div>
-    </div>
-    <input type="hidden" id="pk-contno" value=""><input type="hidden" id="pk-sealno" value="">
-    <div class="form-group">
-      <label class="form-label">Tare thùng (kg/thùng) — để tính Net Weight</label>
-      <div style="display:flex;gap:8px">
-        ${[1,1.5,2,2.5].map((t,i) => `<label style="flex:1;display:flex;align-items:center;justify-content:center;gap:5px;padding:8px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);cursor:pointer">
-          <input type="radio" name="pk-tare" value="${t}" ${i===0?"checked":""}> ${t}kg
-        </label>`).join("")}
-      </div>
-    </div>
-    ${contSection}
-    <div class="form-footer">
-      <button type="button" class="btn" onclick="closeModalById('modal-packing')">Hủy</button>
-      <button type="button" class="btn btn-primary" onclick="generatePackingList('${shipId}')"><i class="ti ti-printer"></i> Tạo & In</button>
-    </div>`;
-  openModal("modal-packing");
-};
-
-window.generatePackingList = async function(shipId) {
-  const s = allShipments.find(x=>x.id===shipId);
-  if (!s) return;
-
-  const invoice  = document.getElementById("pk-invoice").value.trim();
-  const invDate  = document.getElementById("pk-invdate").value;
-  const tarePerCtn = parseFloat(document.querySelector('input[name="pk-tare"]:checked')?.value)||0;
-  const tareCont = parseFloat(document.getElementById("pk-tarecont").value)||0;
-
-  // Lưu Invoice vào lô (cont/seal đã nhập ở form sửa lô)
-  const invVal = document.getElementById("pk-invoice").value.trim();
-  if (invVal && invVal !== s.invoiceNo) {
-    await updateDoc(doc(db,"shipments",shipId), { invoiceNo: invVal, invoiceDate: invDate||null });
-  }
 
   // Lấy thông tin khách hàng
   const firstCust = (s.orders||[])[0]?.customer;
@@ -1023,43 +975,44 @@ window.generatePackingList = async function(shipId) {
     } catch(e){}
   }
 
-  // Gộp đơn hàng theo Index (mã hàng) — hiển thị theo dòng
   const orders = s.orders || [];
   const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
   const totalPcs  = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
   const totalGW   = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);  // kgTotal = GW
-  const totalNW   = totalGW - (tarePerCtn * totalCtns);
+  // Net Weight = Σ (GW từng dòng − tare thùng × số thùng của dòng đó)
+  const totalNW = orders.reduce((a,o)=>{
+    const gw = parseFloat(o.kgTotal)||0, tare = parseFloat(o.tareCtn)||0, ct = parseFloat(o.ctns)||0;
+    return a + (gw - tare*ct);
+  }, 0);
   const totalCBM  = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
-  const vgm = Math.round(totalGW + tareCont);
 
-  // Container: 1 cont → GW = tổng lô; nhiều cont → nhập tay GW & Tare từng cont
+  // Container: tare lấy sẵn từ lô hàng (nhập ở "Sửa lô hàng")
   const conts = (s.containers && s.containers.length) ? s.containers
-              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo,tare:0}] : [];
+  const totalTareCont = conts.reduce((a,c)=>a+(parseFloat(c.tare)||0),0);
   let contData;
-  if (conts.length > 1) {
-    contData = conts.map((c,i) => {
-      const gw = parseFloat(document.getElementById(`pk-gw-${i}`)?.value)||0;
-      const tare = parseFloat(document.getElementById(`pk-tare-${i}`)?.value)||0;
-      return { label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw, vgm: Math.round(gw+tare) };
-    });
-  } else if (conts.length === 1) {
+  if (conts.length === 1) {
     const c = conts[0];
-    contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare: tareCont, gw: totalGW, vgm: Math.round(totalGW+tareCont) }];
+    const tare = parseFloat(c.tare)||0;
+    contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: totalGW, vgm: Math.round(totalGW+tare) }];
+  } else if (conts.length > 1) {
+    contData = conts.map((c,i) => ({ label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare:parseFloat(c.tare)||0, gw:null, vgm:null }));
+    contData.push({ label:"TOTAL", tare: totalTareCont, gw: totalGW, vgm: Math.round(totalGW+totalTareCont), isTotal:true });
   } else {
-    contData = [{ label:`${s.container||""}`, tare: 0, gw: totalGW, vgm: 0 }];
+    contData = [{ label:`${s.container||""}`, tare:0, gw: totalGW, vgm:0 }];
   }
+  const vgm = Math.round(totalGW + totalTareCont);
 
-  // TERM OF PAYMENT: mặc định T/T; khách có L/C thì hỏi
+  // TERM OF PAYMENT: mặc định T/T; khách có L/C thì hỏi (1 cú bấm)
   const U = (firstCust||"").toUpperCase();
   const isLcCust = ["MITSUWA","SANMARINO","ACROS","HEMD"].some(n => U.includes(n));
   let term = "T/T";
   if (isLcCust) {
-    const useLC = confirm(`Khách hàng "${firstCust}" có L/C.\n\nLô này có thanh toán bằng L/C không?\n\n• OK = L/C\n• Cancel = T/T`);
+    const useLC = confirm(`Khách hàng "${firstCust}" có L/C.\n\nLô này thanh toán bằng L/C?\n\n• OK = L/C\n• Cancel = T/T`);
     term = useLC ? "L/C" : "T/T";
   }
 
-  closeModal("modal-packing");
-  renderPackingA4(s, cust, { invoice: invVal, invDate, tarePerCtn, tareCont, term, contData,
+  renderPackingA4(s, cust, { invoice:s.invoiceNo||"", invDate:s.invoiceDate||"", term, contData,
     totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
 };
 
@@ -1076,7 +1029,7 @@ function renderPackingA4(s, cust, p) {
       <td style="padding:2px 4px">${o.index||o.items||""}</td>
       <td style="text-align:right;padding:2px 4px">${o.ctns?fmtInt(o.ctns):""}</td>
       <td style="text-align:right;padding:2px 4px">${o.qty?fmtInt(o.qty):""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum((parseFloat(o.kgTotal)||0)-(p.tarePerCtn*(parseFloat(o.ctns)||0))):""}</td>
+      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum((parseFloat(o.kgTotal)||0)-((parseFloat(o.tareCtn)||0)*(parseFloat(o.ctns)||0))):""}</td>
       <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum(o.kgTotal):""}</td>
       <td style="text-align:right;padding:2px 4px">${o.cbm?fmtNum(o.cbm):""}</td>
     </tr>`).join("");
@@ -1150,13 +1103,12 @@ function renderPackingA4(s, cust, p) {
 <table class="goods" style="margin-top:10px">
   <thead><tr><th style="width:55%;text-align:left;padding:3px 6px">CTN NO.</th><th>Tare</th><th>GW</th><th>VGM</th></tr></thead>
   <tbody>
-    ${(p.contData||[]).map(cd => `<tr>
+    ${(p.contData||[]).map(cd => `<tr${cd.isTotal?' class="totals"':''}>
       <td style="font-weight:bold;padding:3px 6px">${cd.label}</td>
       <td style="text-align:right;padding:2px 4px">${cd.tare?fmtNum(cd.tare):""}</td>
       <td style="text-align:right;padding:2px 4px">${cd.gw?fmtNum(cd.gw):""}</td>
       <td style="text-align:right;padding:2px 4px">${cd.vgm?fmtInt(cd.vgm):""}</td>
     </tr>`).join("")}
-    ${(p.contData||[]).length>1?`<tr class="totals"><td style="padding:3px 6px">TOTAL</td><td style="text-align:right;padding:2px 4px">${fmtNum(p.contData.reduce((a,c)=>a+c.tare,0))}</td><td style="text-align:right;padding:2px 4px">${fmtNum(p.contData.reduce((a,c)=>a+c.gw,0))}</td><td style="text-align:right;padding:2px 4px">${fmtInt(p.contData.reduce((a,c)=>a+c.vgm,0))}</td></tr>`:""}
   </tbody>
 </table>
 

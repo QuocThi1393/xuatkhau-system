@@ -393,3 +393,7 @@ a { text-decoration: none; color: inherit; }
 
 /* Cột Amount trong bảng chi tiết lô hàng */
 .data-table .amount-cell { text-align: right; color: var(--green-text); font-weight: 500; }
+
+/* Nhóm nút xuất (Generate email / Packing List / VGM) - tông xanh dương */
+.btn-export { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-border); }
+.btn-export:hover { background: #d7e9fb; }

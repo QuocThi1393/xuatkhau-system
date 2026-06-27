@@ -62,6 +62,7 @@
     <a href="forwarders.html" class="btn btn-sm" id="nav-forwarders" style="display:none"><i class="ti ti-truck-delivery"></i> Forwarder</a>
     <button class="btn btn-sm" id="btn-reports" style="display:none"><i class="ti ti-report"></i> Báo cáo</button>
     <a href="users.html" class="btn btn-sm" id="nav-users" style="display:none"><i class="ti ti-user-cog"></i> Tài khoản</a>
+    <button class="btn btn-sm" id="btn-backup" style="display:none"><i class="ti ti-database-export"></i> Backup</button>
     <span id="user-greeting" style="display:none;font-size:13px;color:var(--text-muted);margin:0 4px"></span>
     <div id="admin-indicator" class="admin-indicator" style="display:none">
       <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
@@ -75,6 +76,7 @@
 <div class="container">
   <!-- VIEW LỊCH (trang chủ) -->
   <div id="calendar-view">
+    <div id="cutoff-warning"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <span style="font-size:15px;font-weight:500"><i class="ti ti-calendar-event"></i> Lịch xuất hàng</span>
     </div>
@@ -84,7 +86,7 @@
   <!-- VIEW DANH SÁCH LÔ -->
   <div id="list-view" style="display:none">
     <div class="toolbar">
-      <div class="toolbar-left">
+      <div class="toolbar-left" style="flex-wrap:wrap">
         <button class="btn btn-sm" id="btn-back-calendar"><i class="ti ti-calendar"></i> Về lịch</button>
         <span id="shipment-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
         <select class="form-select" id="filter-status" style="width:140px;padding:6px 8px">
@@ -97,6 +99,10 @@
         <select class="form-select" id="filter-month" style="width:160px;padding:6px 8px">
           <option value="">Tất cả tháng</option>
         </select>
+        <select class="form-select" id="filter-customer" style="width:170px;padding:6px 8px">
+          <option value="">Tất cả khách</option>
+        </select>
+        <input class="form-input" id="filter-invoice" placeholder="Tìm số Inv..." style="width:160px;padding:6px 8px">
       </div>
       <div class="toolbar-right">
         <button class="btn" id="btn-import-plan" style="display:none">

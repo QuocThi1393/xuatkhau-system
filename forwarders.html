@@ -67,6 +67,10 @@
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label">Thông tin Forwarder (tên + địa chỉ + SĐT) — nhập tay</label>
+        <textarea class="form-input" id="ff-info" rows="3" placeholder="VD: SITC VIETNAM CO., LTD&#10;123 Nguyen Van A, Q1, HCM&#10;Tel: 028 1234 5678"></textarea>
+      </div>
+      <div class="form-group">
         <label class="form-label">Liên kết khách hàng (chọn nhiều)</label>
         <div id="ff-customers" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);max-height:160px;overflow-y:auto"></div>
       </div>
@@ -144,6 +148,7 @@ document.getElementById("form-fwd").addEventListener("submit", async e => {
     name: document.getElementById("ff-name").value.trim(),
     mailBooking: document.getElementById("ff-mailbooking").value.trim(),
     mailDoc: document.getElementById("ff-maildoc").value.trim(),
+    info: document.getElementById("ff-info").value.trim(),
     customers: linked,
   };
   try {
@@ -179,6 +184,7 @@ function renderList() {
         <div style="margin-top:8px;font-size:12px;color:var(--text-muted)">
           <div><b>Email Booking (To):</b> ${f.mailBooking||"—"}</div>
           <div><b>Email Doc (CC):</b> ${f.mailDoc||"—"}</div>
+          ${f.info?`<div style="margin-top:4px;white-space:pre-line"><b>Thông tin:</b> ${f.info.replace(/</g,"&lt;")}</div>`:""}
         </div>
         <div style="margin-top:8px;font-size:11px">
           <b style="color:var(--text-muted)">Khách hàng liên kết:</b>
@@ -197,6 +203,7 @@ window.editFwd = function(id) {
   document.getElementById("ff-name").value = f.name||"";
   document.getElementById("ff-mailbooking").value = f.mailBooking||"";
   document.getElementById("ff-maildoc").value = f.mailDoc||"";
+  document.getElementById("ff-info").value = f.info||"";
   renderCustomerCheckboxes(f.customers||[]);
   openModal("modal-fwd");
 };

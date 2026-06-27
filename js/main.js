@@ -512,6 +512,7 @@ function buildCard(s, admin) {
             ${buildReadonlyTable(s.orders||[])}
             <div class="action-row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
               ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
+              <button class="btn btn-sm" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
               ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
               ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
@@ -525,7 +526,6 @@ function buildCard(s, admin) {
             <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
-            <button class="btn btn-sm btn-export" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
           </div>
         </div>
       </div>

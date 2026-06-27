@@ -85,6 +85,8 @@ function updateAdminUI() {
   // Nút quản lý tài khoản: chỉ admin
   const navUsers = document.getElementById("nav-users");
   if (navUsers) navUsers.style.display = admin ? "" : "none";
+  const btnBk = document.getElementById("btn-backup");
+  if (btnBk) btnBk.style.display = admin ? "" : "none";
   // Thêm / Import lô: chỉ vai trò được thêm-xóa (admin)
   document.getElementById("btn-add-shipment").style.display = p.addDelete ? "flex" : "none";
   document.getElementById("btn-import-plan").style.display = p.addDelete ? "flex" : "none";
@@ -364,6 +366,8 @@ function sortShipments(list) {
 function renderList() {
   const filterVal = document.getElementById("filter-status").value;
   const filterMonth = document.getElementById("filter-month").value;
+  const filterCust = document.getElementById("filter-customer").value;
+  const filterInv = (document.getElementById("filter-invoice").value || "").trim().toLowerCase();
   const container = document.getElementById("shipment-list");
   const admin = isAdmin();
 
@@ -375,6 +379,13 @@ function renderList() {
     const [y,mo] = m.split("-");
     return `<option value="${m}" ${m===curMonth?"selected":""}>Tháng ${mo}/${y}</option>`;
   }).join("");
+
+  // Đổ danh sách khách hàng vào dropdown (lấy từ đơn hàng các lô)
+  const custs = [...new Set(allShipments.flatMap(s => (s.orders||[]).map(o=>o.customer)).filter(Boolean))].sort();
+  const custSel = document.getElementById("filter-customer");
+  const curCust = custSel.value;
+  custSel.innerHTML = `<option value="">Tất cả khách</option>` + custs.map(c =>
+    `<option value="${c}" ${c===curCust?"selected":""}>${c}</option>`).join("");
 
   const openCards = new Set();
   document.querySelectorAll(".card-detail.open").forEach(el => openCards.add(el.id.replace("detail-","")));
@@ -389,6 +400,12 @@ function renderList() {
   }
   if (filterMonth) {
     list = list.filter(s => s.period === filterMonth);
+  }
+  if (filterCust) {
+    list = list.filter(s => (s.orders||[]).some(o => o.customer === filterCust));
+  }
+  if (filterInv) {
+    list = list.filter(s => (s.invoiceNo||"").toLowerCase().includes(filterInv));
   }
 
   document.getElementById("shipment-count").textContent = list.length + " lô hàng · sắp theo ngày đóng hàng";
@@ -512,7 +529,7 @@ function buildCard(s, admin) {
             ${buildReadonlyTable(s.orders||[])}
             <div class="action-row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
               ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
-              <button class="btn btn-sm" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
+              ${canEditAnyCol() ? `<button class="btn btn-sm" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
               ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
@@ -676,7 +693,7 @@ window.openEditShipment = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Cảng (POD)</label><input class="form-input" id="es-port" value="${s.port||""}"></div>
-        <div class="form-group"><label class="form-label">Quy cách (Container)</label><input class="form-input" id="es-container" value="${s.container||""}" placeholder="1x20GP, 40HC, AIR..."></div>
+        <div class="form-group"><label class="form-label">Phương thức vận chuyển</label><input class="form-input" id="es-container" value="${s.container||""}" placeholder="20F*1, 40HC*2, AIR, LCL, KNQ..." oninput="window._refreshFclLock&&window._refreshFclLock()"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Tên tàu / Hãng bay</label><input class="form-input" id="es-vessel" value="${s.vessel||""}"></div>
@@ -694,6 +711,7 @@ window.openEditShipment = function(id) {
         <label class="form-label">Danh sách Container</label>
         <div id="es-cont-list"></div>
         <button type="button" class="btn btn-sm" id="es-add-cont" style="margin-top:6px"><i class="ti ti-plus"></i> Thêm container</button>
+        <div id="es-cont-note" style="display:none;font-size:12px;color:var(--text-muted);margin-top:6px"><i class="ti ti-lock"></i> Phương thức này không dùng container — danh sách đã khóa.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Lô hàng thuộc tháng (MM/YYYY)</label>
@@ -751,16 +769,35 @@ window.openEditShipment = function(id) {
 
   // Khởi tạo danh sách container
   const contListEl = document.getElementById("es-cont-list");
+  const contNoteEl = document.getElementById("es-cont-note");
+  const addContBtn = document.getElementById("es-add-cont");
+
+  // FCL = có 20F/40F (hoặc bất kỳ thứ gì không phải AIR/LCL/KNQ/CPN). Trống cũng coi như FCL.
+  function isFclMethod() {
+    const v = (document.getElementById("es-container").value || "").toUpperCase();
+    return !/AIR|LCL|KNQ|CPN/.test(v);
+  }
   function refreshGwState() {
+    const fcl = isFclMethod();
     const rows = contListEl.querySelectorAll(".es-cont-row");
     const multi = rows.length > 1;
     rows.forEach(r => {
       const gw = r.querySelector(".ec-gw");
-      gw.disabled = !multi;
-      gw.placeholder = multi ? "G.W cont" : "= tổng lô";
-      gw.style.opacity = multi ? "1" : "0.45";
+      const on = fcl && multi;
+      gw.disabled = !on;
+      gw.placeholder = !fcl ? "" : (multi ? "G.W cont" : "= tổng lô");
+      gw.style.opacity = on ? "1" : "0.45";
     });
   }
+  window._refreshFclLock = function() {
+    const fcl = isFclMethod();
+    contListEl.style.opacity = fcl ? "1" : "0.45";
+    contListEl.querySelectorAll("input,select,button").forEach(el => { el.disabled = !fcl; });
+    addContBtn.disabled = !fcl;
+    addContBtn.style.opacity = fcl ? "1" : "0.45";
+    if (contNoteEl) contNoteEl.style.display = fcl ? "none" : "block";
+    if (fcl) refreshGwState();
+  };
   function addContRow(c = {}) {
     const row = document.createElement("div");
     row.className = "es-cont-row";
@@ -774,15 +811,16 @@ window.openEditShipment = function(id) {
       <input class="form-input ec-tare" type="number" placeholder="Tare" value="${c.tare||""}" style="width:74px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
       <input class="form-input ec-gw" type="number" placeholder="G.W cont" value="${c.gw||""}" style="width:86px;flex-shrink:0" title="G.W riêng cont này (chỉ cần khi lô có từ 2 cont)">
       <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
-    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); refreshGwState(); });
+    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); });
     contListEl.appendChild(row);
-    refreshGwState();
+    window._refreshFclLock();
   }
   // Nạp dữ liệu cũ: ưu tiên mảng containers, fallback contNo/sealNo cũ
   const existing = (s.containers && s.containers.length) ? s.containers
                  : (s.contNo||s.sealNo) ? [{type:"20GP", no:s.contNo||"", seal:s.sealNo||""}] : [];
   if (existing.length) existing.forEach(addContRow); else addContRow();
-  document.getElementById("es-add-cont").addEventListener("click", () => addContRow());
+  addContBtn.addEventListener("click", () => { if (isFclMethod()) addContRow(); });
+  window._refreshFclLock();
   openModal("modal-edit-shipment");
 };
 
@@ -872,6 +910,8 @@ document.getElementById("btn-open-mail").addEventListener("click", () => {
 
 document.getElementById("filter-status").addEventListener("change", renderList);
 document.getElementById("filter-month").addEventListener("change", renderList);
+document.getElementById("filter-customer").addEventListener("change", renderList);
+document.getElementById("filter-invoice").addEventListener("input", renderList);
 
 // ====== GÁN LC ======
 window.openAssignLC = async function(shipId) {
@@ -1039,6 +1079,12 @@ window.openPackingList = async function(shipId) {
     totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
 };
 
+// Tên file PDF: bỏ "/", đổi "-" thành cách, bỏ ký tự cấm. VD "485/26-TOYOTA" -> "Packing list 48526 TOYOTA"
+function pdfFileName(prefix, inv) {
+  const clean = (inv||"").replace(/\//g,"").replace(/-/g," ").replace(/[\\:*?"<>|]/g,"").replace(/\s+/g," ").trim();
+  return clean ? `${prefix} ${clean}` : prefix;
+}
+
 function renderPackingA4(s, cust, p) {
   const fmtNum = (n, dec=2) => Number(n).toLocaleString("en-US",{minimumFractionDigits:dec, maximumFractionDigits:dec});
   const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
@@ -1149,6 +1195,7 @@ function renderPackingA4(s, cust, p) {
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
+  w.document.title = pdfFileName("Packing list", p.invoice);
 }
 
 // ====== XUẤT VGM ======
@@ -1253,6 +1300,7 @@ ${printBtn}
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
+  w.document.title = pdfFileName("VGM", s.invoiceNo);
 };
 
 // ====== SHIPPING MARK (ghi chú theo lô, copy được) ======
@@ -1487,6 +1535,7 @@ let calMonth = new Date().getFullYear() + "-" + String(new Date().getMonth()+1).
 function showCalendar() {
   document.getElementById("calendar-view").style.display = "block";
   document.getElementById("list-view").style.display = "none";
+  renderCutoffWarnings();
   renderCalendar();
 }
 function showListView() {
@@ -1494,6 +1543,66 @@ function showListView() {
   document.getElementById("list-view").style.display = "block";
   renderList();
 }
+
+// ====== CẢNH BÁO CẮT MÁNG ======
+function renderCutoffWarnings() {
+  const box = document.getElementById("cutoff-warning");
+  if (!box) return;
+  if (!isLoggedIn()) { box.innerHTML = ""; return; }
+  const now = new Date();
+  const items = [];
+  allShipments.forEach(s => {
+    if (!s.cyCut) return;                                   // không có ngày cắt máng (AIR/LCL) → bỏ
+    const ck = s.checklist || {};
+    if (ck[8] === "done" || ck[8] === "skip") return;       // đã làm tờ khai → bỏ
+    const dt = new Date(s.cyCut + "T" + (s.cyCutTime || "23:59"));
+    if (isNaN(dt)) return;
+    const diffH = (dt - now) / 3600000;
+    if (diffH > 48) return;                                 // còn xa hơn 48h → chưa cảnh báo
+    if (diffH < -168) return;                               // quá hạn > 7 ngày → coi như tồn cũ, bỏ
+    items.push({ s, dt, diffH });
+  });
+  if (!items.length) { box.innerHTML = ""; return; }
+  items.sort((a,b) => a.dt - b.dt);
+
+  const rows = items.map(({s, dt, diffH}) => {
+    const cust = (s.orders||[])[0]?.customer || "—";
+    const port = s.port || "";
+    const overdue = diffH < 0;
+    const hrs = Math.round(Math.abs(diffH));
+    const pill = overdue
+      ? `color:var(--red-text);background:var(--red-bg)`
+      : `color:var(--amber-text);background:var(--bg-card);border:0.5px solid var(--amber-border)`;
+    const icon = overdue ? "ti-clock-exclamation" : "ti-clock";
+    const iconColor = overdue ? "var(--red-text)" : "var(--amber-text)";
+    const dd = String(dt.getDate()).padStart(2,"0") + "/" + String(dt.getMonth()+1).padStart(2,"0");
+    const tt = s.cyCutTime ? " " + s.cyCutTime : "";
+    return `<div onclick="gotoShipment('${s.id}')" style="display:flex;align-items:center;gap:12px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;cursor:pointer">
+      <i class="ti ${icon}" style="font-size:18px;color:${iconColor}"></i>
+      <div style="min-width:0">
+        <div style="font-size:14px;font-weight:500;color:var(--text)">${cust} — ${port}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Cắt máng ${dd}${tt} · INV ${s.invoiceNo||"—"}</div>
+      </div>
+      <span style="margin-left:auto;flex-shrink:0;font-size:12px;font-weight:500;padding:3px 10px;border-radius:20px;${pill}">${overdue?`Quá hạn ${hrs} giờ`:`Còn ${hrs} giờ`}</span>
+    </div>`;
+  }).join("");
+
+  box.innerHTML = `<div style="background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--amber-text)"></i>
+      <span style="font-size:15px;font-weight:500;color:var(--amber-text)">Sắp cắt máng — chưa làm tờ khai</span>
+      <span style="margin-left:auto;font-size:12px;font-weight:500;color:var(--amber-text);background:var(--bg-card);border:0.5px solid var(--amber-border);padding:2px 10px;border-radius:20px">${items.length} lô</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+  </div>`;
+}
+
+window.gotoShipment = function(id) {
+  ["filter-status","filter-month","filter-customer","filter-invoice"].forEach(fid => {
+    const el = document.getElementById(fid); if (el) el.value = "";
+  });
+  openShipmentPopup(id);
+};
 
 document.getElementById("btn-home").addEventListener("click", showCalendar);
 document.getElementById("btn-nav-list").addEventListener("click", showListView);
@@ -1617,6 +1726,7 @@ function startData() {
   _unsubShipments = onSnapshot(q, snap => {
     allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
     renderList();
+    renderCutoffWarnings();
     if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
   }, err => { console.warn("Firestore:", err.message); });
 }
@@ -1625,10 +1735,53 @@ function stopData() {
   allShipments = [];
 }
 
+// ====== BACKUP DỮ LIỆU ======
+async function downloadBackup() {
+  try {
+    showToast("Đang tạo backup...");
+    const { collection:col, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const names = ["shipments","customers","lc","forwarders"];
+    const data = { _exportedAt: new Date().toISOString() };
+    for (const n of names) {
+      const snap = await getDocs(col(db, n));
+      data[n] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `backup-xuatkhau-${today}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    try { localStorage.setItem("lastBackup", today); } catch(e){}
+    showToast("Đã tải file backup!");
+  } catch (e) {
+    showToast("Lỗi backup: " + (e.message||e));
+  }
+}
+const _btnBackup = document.getElementById("btn-backup");
+if (_btnBackup) _btnBackup.addEventListener("click", downloadBackup);
+
+// Nhắc backup mỗi thứ 6 (chỉ admin, mỗi ngày 1 lần)
+function maybeFridayBackup() {
+  if (!isAdmin()) return;
+  const now = new Date();
+  if (now.getDay() !== 5) return;   // 5 = thứ 6
+  const today = now.toISOString().slice(0,10);
+  try {
+    if (localStorage.getItem("backupReminded") === today) return;
+    localStorage.setItem("backupReminded", today);
+  } catch(e){}
+  setTimeout(() => {
+    if (confirm("Hôm nay thứ 6 — bạn có muốn tải file backup dữ liệu về máy không?\n\n(Nên lưu thêm 1 bản lên Google Drive cho chắc.)")) downloadBackup();
+  }, 1200);
+}
+
 onAuthChange(user => {
   updateAdminUI();
   if (user) {
     startData();
+    maybeFridayBackup();
   } else {
     stopData();
     showCalendar();   // về lịch trống

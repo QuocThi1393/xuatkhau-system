@@ -1358,6 +1358,7 @@ function shipmentsOfMonth(month) {
 
 function totalGW(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0); }
 function totalCBM(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.cbm)||0),0); }
+function totalCtnsShip(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.ctns)||0),0); }
 
 // --- BÁO CÁO BỐC XẾP ---
 window.reportBocXep = function() {
@@ -1387,12 +1388,14 @@ window.reportBocXep = function() {
       <td style="text-align:center">${i+1}</td>
       <td>${fmtDateVN(s.stuffingDate)}</td>
       <td>${custs} — ${fullPort(s.port)}</td>
+      <td style="text-align:right">${Math.round(totalCtnsShip(s)).toLocaleString()}</td>
       <td style="text-align:right">${Math.round(totalGW(s)).toLocaleString()}</td>
       <td style="text-align:right">${(Math.round(totalCBM(s)*100)/100).toLocaleString()}</td>
       <td>${hinhthuc}</td>
     </tr>`;
   }).join("");
 
+  const sumCtns = Math.round(list.reduce((a,s)=>a+totalCtnsShip(s),0));
   const sumGW = Math.round(list.reduce((a,s)=>a+totalGW(s),0));
   const sumCBM = Math.round(list.reduce((a,s)=>a+totalCBM(s),0)*100)/100;
 
@@ -1415,12 +1418,14 @@ window.reportBocXep = function() {
 <table>
   <thead><tr>
     <th style="width:30px">STT</th><th style="width:65px">Ngày đóng hàng</th>
-    <th style="width:130px">Khách hàng — Cảng</th><th style="width:70px">G.W (KGS)</th>
+    <th style="width:130px">Khách hàng — Cảng</th><th style="width:55px">Số Carton</th>
+    <th style="width:70px">G.W (KGS)</th>
     <th style="width:55px">CBM</th><th>Hình thức xuất</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <td colspan="3" style="text-align:right">TỔNG CỘNG</td>
+    <td style="text-align:right">${sumCtns.toLocaleString()}</td>
     <td style="text-align:right">${sumGW.toLocaleString()}</td>
     <td style="text-align:right">${sumCBM.toLocaleString()}</td>
     <td></td>

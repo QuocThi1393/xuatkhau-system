@@ -20,13 +20,13 @@ const COLS = [
   { data: "customer",     title: "Customer",      width: 100 },
   { data: "contract",     title: "Contract",      width: 90 },
   { data: "index",        title: "Index",         width: 90 },
-  { data: "items",        title: "Items",         width: 100 },
-  { data: "qty",          title: "Qty (PCS)",     width: 75, type: "numeric" },
-  { data: "ctns",         title: "Qty (CTNs)",    width: 75, type: "numeric" },
-  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 80, type: "numeric" },
-  { data: "kgTotal",      title: "Qty (Kgs)",     width: 80, type: "numeric", readOnly: true },
+  { data: "items",        title: "Items",         width: 170 },
+  { data: "qty",          title: "Qty (PCS)",     width: 60, type: "numeric" },
+  { data: "ctns",         title: "Qty (CTNs)",    width: 60, type: "numeric" },
+  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 65, type: "numeric" },
+  { data: "kgTotal",      title: "Qty (Kgs)",     width: 65, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 95 },
-  { data: "cbm",          title: "CBM",           width: 70, type: "numeric", readOnly: true },
+  { data: "cbm",          title: "CBM",           width: 55, type: "numeric", readOnly: true },
   { data: "hsCode",       title: "HS CODE",       width: 80 },
   { data: "coForm",       title: "C/O FORM",      width: 80 },
   { data: "note",         title: "Note",          width: 120 },
@@ -37,15 +37,15 @@ const EDIT_COLS = [
   { data: "customer",     title: "Customer",      width: 110 },
   { data: "contract",     title: "Contract",      width: 95 },
   { data: "index",        title: "Index",         width: 95 },
-  { data: "items",        title: "Items",         width: 105 },
-  { data: "qty",          title: "Qty (PCS)",     width: 80, type: "numeric" },
-  { data: "ctns",         title: "Qty (CTNs)",    width: 80, type: "numeric" },
-  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 85, type: "numeric" },
-  { data: "kgTotal",      title: "Qty (Kgs)",     width: 85, type: "numeric", readOnly: true },
+  { data: "items",        title: "Items",         width: 175 },
+  { data: "qty",          title: "Qty (PCS)",     width: 65, type: "numeric" },
+  { data: "ctns",         title: "Qty (CTNs)",    width: 65, type: "numeric" },
+  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 70, type: "numeric" },
+  { data: "kgTotal",      title: "Qty (Kgs)",     width: 70, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 100 },
-  { data: "tareCtn",      title: "Tare thùng",    width: 90, type: "numeric" },
-  { data: "cbm",          title: "CBM",           width: 75, type: "numeric", readOnly: true },
-  { data: "unitPrice",    title: "Giá GC (USD)",  width: 90, type: "numeric" },
+  { data: "tareCtn",      title: "Tare thùng",    width: 70, type: "numeric" },
+  { data: "cbm",          title: "CBM",           width: 60, type: "numeric", readOnly: true },
+  { data: "unitPrice",    title: "Giá GC (USD)",  width: 75, type: "numeric" },
   { data: "hsCode",       title: "HS CODE",       width: 85 },
   { data: "coForm",       title: "C/O FORM",      width: 85 },
   { data: "note",         title: "Note",          width: 130 },
@@ -292,7 +292,8 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
       let overlap = 0; newItems.forEach(i => { if (exItems.has(i)) overlap++; });
       return overlap > 0 && overlap >= Math.min(newItems.size, exItems.size) * 0.3;
     });
-    ns.overwrite = !!ns.matched;
+    // action: "overwrite" (ghi đè lô cũ) | "create" (ghi mới, tách riêng) | "skip" (bỏ qua)
+    ns.action = ns.matched ? "overwrite" : "create";
   });
 
   parsedPlan = shipments;
@@ -315,19 +316,23 @@ function renderImportPreview() {
       <td>${ns.orders.length}</td>
       <td style="font-size:11px;color:${m?'var(--amber-text)':'var(--green-text)'}">${m?"Có":"Mới"}</td>
       <td>${m
-        ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer"><input type="checkbox" ${ns.overwrite?"checked":""} onchange="toggleOW(${i},this.checked)"> Ghi đè</label>`
+        ? `<select style="font-size:12px;padding:3px 6px;border:0.5px solid var(--border-md);border-radius:6px;background:var(--bg-card)" onchange="setImportAction(${i},this.value)">
+             <option value="overwrite" ${ns.action==="overwrite"?"selected":""}>Ghi đè lô cũ</option>
+             <option value="create" ${ns.action==="create"?"selected":""}>Ghi mới (tách riêng)</option>
+             <option value="skip" ${ns.action==="skip"?"selected":""}>Bỏ qua</option>
+           </select>`
         : `<span style="font-size:11px;color:var(--green-text)">Tạo mới</span>`}</td>
       <td style="font-size:11px;color:var(--text-muted)">${sample}${ns.orders.length>2?"...":""}</td>
       <td style="font-size:12px">${custs}</td>
     </tr>`;
   }).join("");
 }
-window.toggleOW = (i,v) => { parsedPlan[i].overwrite = v; };
+window.setImportAction = (i,v) => { parsedPlan[i].action = v; };
 
 document.getElementById("btn-confirm-import-plan").addEventListener("click", async () => {
-  const create = parsedPlan.filter(s=>!s.matched);
-  const ow = parsedPlan.filter(s=>s.matched && s.overwrite);
-  const skip = parsedPlan.filter(s=>s.matched && !s.overwrite);
+  const create = parsedPlan.filter(s=>s.action==="create");
+  const ow = parsedPlan.filter(s=>s.action==="overwrite" && s.matched);
+  const skip = parsedPlan.filter(s=>s.action==="skip");
   if (!confirm(`Tạo mới ${create.length} · Ghi đè ${ow.length} · Bỏ qua ${skip.length}. Tiếp tục?`)) return;
 
   for (const ns of create) {
@@ -1051,12 +1056,12 @@ window.openPackingList = async function(shipId) {
   if (conts.length === 1) {
     const c = conts[0];
     const tare = parseFloat(c.tare)||0;
-    contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: totalGW, vgm: Math.round(totalGW+tare) }];
+    contData = [{ label:`1 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: totalGW, vgm: Math.round(totalGW+tare) }];
   } else if (conts.length > 1) {
-    contData = conts.map((c,i) => {
+    contData = conts.map((c) => {
       const tare = parseFloat(c.tare)||0;
       const gw = parseFloat(c.gw)||0;
-      return { label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: gw||null, vgm: gw?Math.round(gw+tare):null };
+      return { label:`1 X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: gw||null, vgm: gw?Math.round(gw+tare):null };
     });
     const sumGw = conts.reduce((a,c)=>a+(parseFloat(c.gw)||0),0);
     const gwTot = sumGw || totalGW;
@@ -1409,9 +1414,9 @@ window.reportBocXep = function() {
 <div class="sub">Tháng ${mo}/${y}</div>
 <table>
   <thead><tr>
-    <th style="width:40px">STT</th><th style="width:110px">Ngày đóng hàng</th>
-    <th>Khách hàng — Cảng</th><th style="width:110px">G.W (KGS)</th>
-    <th style="width:90px">CBM</th><th style="width:200px">Hình thức xuất</th>
+    <th style="width:30px">STT</th><th style="width:65px">Ngày đóng hàng</th>
+    <th style="width:130px">Khách hàng — Cảng</th><th style="width:70px">G.W (KGS)</th>
+    <th style="width:55px">CBM</th><th>Hình thức xuất</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
@@ -1538,9 +1543,10 @@ function showCalendar() {
   renderCutoffWarnings();
   renderCalendar();
 }
-function showListView() {
+function showListView(month) {
   document.getElementById("calendar-view").style.display = "none";
   document.getElementById("list-view").style.display = "block";
+  if (month !== undefined) document.getElementById("filter-month").value = month;
   renderList();
 }
 
@@ -1598,14 +1604,15 @@ function renderCutoffWarnings() {
 }
 
 window.gotoShipment = function(id) {
-  ["filter-status","filter-month","filter-customer","filter-invoice"].forEach(fid => {
+  const s = allShipments.find(x=>x.id===id);
+  ["filter-status","filter-customer","filter-invoice"].forEach(fid => {
     const el = document.getElementById(fid); if (el) el.value = "";
   });
-  openShipmentPopup(id);
+  openShipmentPopup(id, s?.period ?? "");
 };
 
 document.getElementById("btn-home").addEventListener("click", showCalendar);
-document.getElementById("btn-nav-list").addEventListener("click", showListView);
+document.getElementById("btn-nav-list").addEventListener("click", () => showListView(calMonth));
 document.getElementById("btn-back-calendar").addEventListener("click", showCalendar);
 
 function renderCalendar() {
@@ -1635,7 +1642,7 @@ function renderCalendar() {
       const custs = [...new Set((e.s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ") || "—";
       const inv = e.s.invoiceNo || e.s.booking || "";
       const icon = e.type==="pack" ? "package" : "ship";
-      return `<div class="cal-tag ${e.type}" onclick="openShipmentPopup('${e.s.id}')">
+      return `<div class="cal-tag ${e.type}" onclick="openShipmentPopup('${e.s.id}','${e.s.period||''}')">
         <i class="ti ti-${icon}"></i> ${custs}${inv?`<br><span style="opacity:0.85">${inv}</span>`:""}
       </div>`;
     }).join("");
@@ -1702,8 +1709,8 @@ function shiftMonth(ym, delta) {
 }
 
 // Popup chi tiết lô từ lịch — chuyển sang danh sách và mở card
-window.openShipmentPopup = function(shipId) {
-  showListView();
+window.openShipmentPopup = function(shipId, month) {
+  showListView(month !== undefined ? month : calMonth);
   setTimeout(() => {
     const card = document.getElementById("card-"+shipId);
     if (card) {
@@ -1714,6 +1721,19 @@ window.openShipmentPopup = function(shipId) {
       card.style.transition = "box-shadow .3s";
       card.style.boxShadow = "0 0 0 3px #185FA5";
       setTimeout(()=>{ card.style.boxShadow = ""; }, 1600);
+    } else {
+      // Lô không nằm trong tháng đang lọc → bỏ lọc tháng rồi thử lại
+      document.getElementById("filter-month").value = "";
+      renderList();
+      setTimeout(() => {
+        const card2 = document.getElementById("card-"+shipId);
+        if (card2) {
+          card2.scrollIntoView({behavior:"smooth", block:"center"});
+          card2.style.transition = "box-shadow .3s";
+          card2.style.boxShadow = "0 0 0 3px #185FA5";
+          setTimeout(()=>{ card2.style.boxShadow = ""; }, 1600);
+        }
+      }, 100);
     }
   }, 100);
 };

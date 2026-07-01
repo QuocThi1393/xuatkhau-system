@@ -548,6 +548,7 @@ function buildCard(s, admin) {
             <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
+            <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
           </div>
         </div>
       </div>
@@ -1337,6 +1338,325 @@ window.openShipMark = function(shipId) {
   });
   openModal("modal-shipmark");
 };
+
+// ====== XUẤT SI (DRAFT B/L) ======
+const SI_DEFAULT_SHIPPER = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD.\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIET NAM\nTEL: 84-251-3992537       FAX: 84-251-3992540";
+
+function siCustomerName(s) { return (s.orders||[])[0]?.customer || ""; }
+function siDistinctHsCodes(s) { return [...new Set((s.orders||[]).map(o=>o.hsCode).filter(Boolean))]; }
+function siItemList(s) {
+  const seen = new Set(), out = [];
+  (s.orders||[]).forEach(o => {
+    const contract = o.contract||"", index = o.index||o.items||"";
+    if (!contract && !index) return;
+    const key = contract+"|"+index;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ contract, index });
+  });
+  return out;
+}
+
+window.openSI = async function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const custName = siCustomerName(s);
+  const existing = s.si || {};
+
+  // Forwarder liên kết với khách hàng này
+  let allFwd = [];
+  try {
+    const { collection:col, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDocs(col(db,"forwarders"));
+    allFwd = snap.docs.map(d=>({id:d.id,...d.data()}));
+  } catch(e){}
+  const matchedFwd = allFwd.filter(f => (f.customers||[]).includes(custName));
+
+  // Thông tin khách hàng (mặc định Consignee/Description)
+  let cust = {};
+  if (custName) {
+    try {
+      const { collection:col, query:q, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDocs(q(col(db,"customers"), where("name","==",custName)));
+      if (!snap.empty) cust = snap.docs[0].data();
+    } catch(e){}
+  }
+
+  // SI gần nhất của cùng khách hàng (để copy các trường ít đổi)
+  const prev = [...allShipments]
+    .filter(x => x.id!==shipId && x.si && custName && siCustomerName(x)===custName)
+    .sort((a,b) => (b.stuffingDate||b.shipDate||"").localeCompare(a.stuffingDate||a.shipDate||""))[0];
+  const prevSi = prev?.si || {};
+
+  const def = {
+    forwarderId: existing.forwarderId || (matchedFwd.length===1 ? matchedFwd[0].id : (matchedFwd.find(f=>f.id===prevSi.forwarderId) ? prevSi.forwarderId : "")),
+    attnText: existing.attnText || prevSi.attnText || "",
+    shipperText: existing.shipperText || prevSi.shipperText || SI_DEFAULT_SHIPPER,
+    consigneeText: existing.consigneeText || prevSi.consigneeText || cust.consignee || "",
+    notifyText: existing.notifyText || prevSi.notifyText || cust.consignee || "",
+    goodsDescription: existing.goodsDescription || prevSi.goodsDescription || cust.description || "SHIRTS",
+    billType: existing.billType || prevSi.billType || "SURRENDERED",
+    freightCollect: existing.freightCollect ?? prevSi.freightCollect ?? false,
+    showItemList: existing.showItemList ?? prevSi.showItemList ?? true,
+    vesselLabel: existing.vesselLabel || prevSi.vesselLabel || "VESSEL",
+  };
+  if (!def.attnText && def.forwarderId) {
+    const f = allFwd.find(x=>x.id===def.forwarderId);
+    if (f) def.attnText = `${(f.info||f.name||"").split("\n")[0].trim()} Docs Team`;
+  }
+
+  const fwdOptionsHTML = allFwd.map(f=>`<option value="${f.id}" ${def.forwarderId===f.id?"selected":""}>${f.name}</option>`).join("");
+  const fwdBlockHTML = matchedFwd.length === 1
+    ? `<input type="hidden" id="si-forwarder" value="${matchedFwd[0].id}">
+       <div style="font-size:13px;padding:8px 0;color:var(--text-muted)">Tự động: <b>${matchedFwd[0].name}</b> <span style="font-size:11px">(khách này chỉ có 1 forwarder)</span></div>`
+    : `<select class="form-select" id="si-forwarder">
+         <option value="">${matchedFwd.length ? "— Chọn forwarder —" : "— Chưa gán forwarder cho khách này, chọn tay —"}</option>
+         ${fwdOptionsHTML}
+       </select>`;
+
+  document.getElementById("si-form-body").innerHTML = `
+    <div class="form-group">
+      <label class="form-label">Forwarder (TO:)</label>
+      ${fwdBlockHTML}
+    </div>
+    <div class="form-group">
+      <label class="form-label">ATTN</label>
+      <input class="form-input" id="si-attn" value="${(def.attnText||"").replace(/"/g,"&quot;")}" placeholder="TRALINKS Docs Team">
+    </div>
+    <div class="form-group">
+      <label class="form-label">SHIPPER</label>
+      <textarea class="form-textarea" id="si-shipper" rows="4">${def.shipperText}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="si-consignee" rows="4">${def.consigneeText}</textarea></div>
+      <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="si-notify" rows="4">${def.notifyText}</textarea></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tên hàng (Goods Description)</label>
+      <input class="form-input" id="si-goods" value="${def.goodsDescription}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Loại Bill</label>
+        <select class="form-select" id="si-billtype">
+          <option value="SURRENDERED" ${def.billType==="SURRENDERED"?"selected":""}>SURRENDERED B/L</option>
+          <option value="SEAWAY" ${def.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Nhãn Vessel</label>
+        <select class="form-select" id="si-vessellabel">
+          <option value="VESSEL" ${def.vesselLabel==="VESSEL"?"selected":""}>VESSEL</option>
+          <option value="FEEDER VESSEL" ${def.vesselLabel==="FEEDER VESSEL"?"selected":""}>FEEDER VESSEL</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row" style="align-items:center">
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="si-freight" ${def.freightCollect?"checked":""}> Freight Collect</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="si-itemlist" ${def.showItemList?"checked":""}> Hiện danh sách Contract/Style</label>
+    </div>
+    ${s.lcId ? `<div style="font-size:12px;color:var(--text-muted);background:var(--bg-secondary);padding:8px 12px;border-radius:var(--radius-md)">Lô này đã gán LC — SI sẽ tự hiện khối L/C NO. + INVOICE NO.</div>` : ""}
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-si')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveSI('${shipId}')"><i class="ti ti-file-export"></i> Lưu & Xuất SI</button>
+    </div>`;
+  openModal("modal-si");
+};
+
+window.saveSI = async function(shipId) {
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const fwdSel = document.getElementById("si-forwarder");
+  const si = {
+    forwarderId: fwdSel ? fwdSel.value : "",
+    attnText: document.getElementById("si-attn").value.trim(),
+    shipperText: document.getElementById("si-shipper").value,
+    consigneeText: document.getElementById("si-consignee").value,
+    notifyText: document.getElementById("si-notify").value,
+    goodsDescription: document.getElementById("si-goods").value.trim(),
+    billType: document.getElementById("si-billtype").value,
+    vesselLabel: document.getElementById("si-vessellabel").value,
+    freightCollect: document.getElementById("si-freight").checked,
+    showItemList: document.getElementById("si-itemlist").checked,
+  };
+
+  let fwdInfo = "";
+  if (si.forwarderId) {
+    try {
+      const { doc:d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDoc(d2(db,"forwarders",si.forwarderId));
+      if (snap.exists()) fwdInfo = snap.data().info || snap.data().name || "";
+    } catch(e){}
+  }
+  si.toText = fwdInfo;
+
+  let lcNo = "";
+  if (s.lcId) {
+    try {
+      const { doc:d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDoc(d2(db,"lc",s.lcId));
+      if (snap.exists()) lcNo = snap.data().name || "";
+    } catch(e){}
+  }
+  si.lcNo = lcNo;
+
+  await updateDoc(doc(db,"shipments",shipId), { si });
+  closeModal("modal-si");
+  showToast("Đã lưu thông tin SI!");
+  renderSIPrint({ ...s, si });
+};
+
+function renderSIPrint(s) {
+  const si = s.si || {};
+  const orders = s.orders || [];
+  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const totalGWv  = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
+  const totalNW   = orders.reduce((a,o)=>{ const gw=parseFloat(o.kgTotal)||0, tare=parseFloat(o.tareCtn)||0, ct=parseFloat(o.ctns)||0; return a+(gw-tare*ct); }, 0);
+  const totalCBMv = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
+
+  const conts = (s.containers && s.containers.length) ? s.containers
+              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+
+  const fmtNum = (n,dec=2) => Number(n||0).toLocaleString("en-US",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+  const fmtInt = (n) => Math.round(n||0).toLocaleString("en-US");
+
+  const contLineRows = conts.length ? conts.map(c => {
+    let ctnsC, gwC, nwC, cbmC;
+    if (conts.length === 1) {
+      ctnsC = totalCtns; gwC = totalGWv; nwC = totalNW; cbmC = totalCBMv;
+    } else {
+      gwC = parseFloat(c.gw)||0;
+      const ratio = totalGWv ? gwC/totalGWv : 0;
+      ctnsC = Math.round(totalCtns*ratio);
+      nwC = Math.round(totalNW*ratio*100)/100;
+      cbmC = Math.round(totalCBMv*ratio*100)/100;
+    }
+    return `<tr>
+      <td>1 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}</td>
+      <td style="text-align:right">${fmtInt(ctnsC)} CTNS</td>
+      <td style="text-align:right;color:#888888">${fmtNum(nwC,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(gwC,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(cbmC,2)} CBM</td>
+    </tr>`;
+  }).join("") : `<tr>
+      <td>${s.container||""}</td>
+      <td style="text-align:right">${fmtInt(totalCtns)} CTNS</td>
+      <td style="text-align:right;color:#888888">${fmtNum(totalNW,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(totalGWv,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(totalCBMv,2)} CBM</td>
+    </tr>`;
+
+  const totalRow = `<tr style="font-weight:bold;font-style:italic">
+      <td>TOTAL</td>
+      <td style="text-align:right">${fmtInt(totalCtns)} CTNS</td>
+      <td style="text-align:right">${fmtNum(totalNW,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(totalGWv,2)} KGS</td>
+      <td style="text-align:right">${fmtNum(totalCBMv,2)} CBM</td>
+    </tr>`;
+
+  const items = siItemList(s);
+  const itemsHTML = (si.showItemList && items.length)
+    ? `<table style="width:100%;border-collapse:collapse;margin:6px 0">
+        ${items.map(it=>`<tr><td style="padding:1px 8px 1px 0;width:110px">${it.contract}</td><td style="padding:1px 0">${it.index}</td></tr>`).join("")}
+      </table>`
+    : "";
+
+  const hsCodes = siDistinctHsCodes(s).join(", ");
+  const now = new Date();
+  const dateStr = `${now.toLocaleString("en-US",{month:"short"}).toUpperCase()} ${String(now.getDate()).padStart(2,"0")}, ${now.getFullYear()}`;
+  const etdStr = s.etd ? (() => { const d = new Date(s.etd); return `${d.toLocaleString("en-US",{month:"long"})} ${d.getDate()}, ${d.getFullYear()}`; })() : "";
+  const billTypeText = si.billType === "SEAWAY" ? "SEAWAY BILL" : "SURRENDERED B/L";
+  const lcBlock = (s.lcId && si.lcNo) ? `<div>L/C NO. ${si.lcNo}</div><div>INVOICE NO. ${s.invoiceNo||""}</div>` : "";
+  const toLines = (si.toText||"").split("\n").filter(Boolean);
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 12mm; }
+  * { box-sizing:border-box; }
+  body { font-family:"Times New Roman",serif; font-size:12px; color:#000; margin:0; }
+  table { border-collapse:collapse; width:100%; }
+  td,th { padding:2px 4px; vertical-align:top; }
+  .box { border:1px solid #000; }
+  .yellow { background:#FFFF99; }
+  .center { text-align:center; }
+  .bold { font-weight:bold; }
+  @media print { .no-print{display:none;} }
+</style></head><body>
+
+<table class="box yellow"><tr>
+  <td style="width:22%"><b style="font-size:18px">TOSGAMEX</b></td>
+  <td style="text-align:center">
+    <div class="bold" style="font-size:14px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+    <div style="font-size:10px">LOT B1, LONG BINH TECHNO PARK (LOTECO), LONG BINH WARD, DONG NAI PROVINCE, VIETNAM</div>
+    <div style="font-size:10px">TEL: 84-0251-3992537   FAX: 84-0251-3992540   E-MAIL: tos2@tosg.com.vn</div>
+  </td>
+</tr></table>
+
+<table class="box" style="margin-top:4px"><tr>
+  <td style="width:60%">
+    <b>TO:</b> ${toLines[0]||""}<br>${toLines.slice(1).join("<br>")}
+    <br><b>ATTN:</b> ${si.attnText||""}
+  </td>
+  <td style="width:40%">
+    <span class="yellow bold">FROM: QUỐC THI</span><br>DATE: ${dateStr}
+  </td>
+</tr></table>
+
+<div class="center yellow bold" style="font-size:20px;margin:8px 0">DETAILS FOR B/L</div>
+
+<table class="box">
+  <tr>
+    <td style="width:50%"><b> SHIPPER: </b><br>${(si.shipperText||"").replace(/\n/g,"<br>")}</td>
+    <td>${si.freightCollect ? `<div class="yellow center bold">"FREIGHT COLLECT"</div>` : ""}</td>
+  </tr>
+  <tr>
+    <td><b> CONSIGNEE: </b><br>${(si.consigneeText||"").replace(/\n/g,"<br>")}</td>
+    <td><b>NOTIFY PARTY:</b><br>${(si.notifyText||"").replace(/\n/g,"<br>")}</td>
+  </tr>
+  <tr>
+    <td style="width:33%">HOCHIMINH, VIETNAM</td>
+    <td colspan="2">TO: ${fullPort(s.port)}, JAPAN &nbsp;&nbsp;&nbsp; ${si.vesselLabel}: ${s.vessel||""}<br>DEPARTURE DATE: ${etdStr}</td>
+  </tr>
+</table>
+
+<table class="box yellow" style="margin-top:4px">
+  <tr><th style="width:40%">GOODS DESCRIPTION</th><th>QUANTITY<br>(CARTONS)</th><th>N.W<br>(KGS)</th><th>G.W<br>( KGS )</th><th>M' MENT<br>( CBM )</th></tr>
+</table>
+
+<div style="margin-top:6px"><b>${si.goodsDescription||""}</b>${lcBlock}</div>
+${itemsHTML}
+
+<table style="margin-top:6px">${contLineRows}${totalRow}</table>
+
+<div style="margin-top:14px">
+  ${hsCodes ? `HS CODE: ${hsCodes}&nbsp;&nbsp;&nbsp;DON'T SHOW ON B/L<br>` : ""}
+  ${billTypeText}
+</div>
+
+<div style="margin-top:10px"><b>SHIPPING MARKS:</b><br><div style="white-space:pre-line;font-weight:bold">${(s.shipMark||"").replace(/</g,"&lt;")}</div></div>
+
+<div class="yellow" style="margin-top:14px;display:inline-block;padding:2px 6px">PLEASE SEND COPY B/L THROUGH E-MAIL: tos2@tosg.com.vn</div>
+
+<div style="margin-top:20px;font-size:11px">
+  CONTRACT #: ____________________<br>
+  STYLE #: ____________________<br>
+  QUANTITY: ____________________<br>
+  G.W: ____________________<br>
+  NW: ____________________<br>
+  C/T #: ____________________<br>
+  MADE IN VIETNAM
+</div>
+
+<div class="no-print center" style="margin-top:20px">
+  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+  w.document.title = pdfFileName("Draft SI", s.invoiceNo);
+}
 
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {

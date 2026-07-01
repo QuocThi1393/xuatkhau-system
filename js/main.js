@@ -1406,7 +1406,7 @@ window.openSI = async function(shipId) {
     notifyText: existing.notifyText || tpl.notifyText || cust.consignee || "",
     goodsDescription: existing.goodsDescription || tpl.goodsDescription || cust.description || "SHIRTS",
     billType: existing.billType || tpl.billType || "SURRENDERED",
-    freightCollect: existing.freightCollect ?? tpl.freightCollect ?? false,
+    freightCollect: existing.freightCollect ?? true,
     showItemList: existing.showItemList ?? tpl.showItemList ?? true,
     lcNo: existing.lcNo || lcNoSuggest || tpl.lcNo || "",
   };
@@ -1449,7 +1449,8 @@ window.openSI = async function(shipId) {
     </div>
     ${showLcField ? `<div class="form-group">
       <label class="form-label">Thông tin L/C</label>
-      <input class="form-input" id="si-lcno" value="${(def.lcNo||"").replace(/"/g,"&quot;")}" placeholder="101LCS-67788569">
+      <textarea class="form-textarea" id="si-lcno" rows="3" placeholder="CONTRACT NO. NPTC/TOSG-2026/007/011
+L/C NO. LC002200003063">${(def.lcNo||"")}</textarea>
     </div>` : `<input type="hidden" id="si-lcno" value="">`}
     <div class="form-row">
       <div class="form-group">
@@ -1564,7 +1565,7 @@ function renderSIPrint(s) {
   const dateStr = `${now.toLocaleString("en-US",{month:"short"}).toUpperCase()} ${String(now.getDate()).padStart(2,"0")}, ${now.getFullYear()}`;
   const etdStr = s.etd ? (() => { const d = new Date(s.etd); return `${d.toLocaleString("en-US",{month:"long"})} ${d.getDate()}, ${d.getFullYear()}`; })() : "";
   const billTypeText = si.billType === "SEAWAY" ? "SEAWAY BILL" : "SURRENDERED B/L";
-  const lcBlock = si.lcNo ? `<tr><td colspan="5">L/C NO. ${si.lcNo}</td></tr><tr><td colspan="5">INVOICE NO. ${s.invoiceNo||""}</td></tr>` : "";
+  const lcBlock = si.lcNo ? `<tr><td colspan="5">${si.lcNo.replace(/\n/g,"<br>")}</td></tr>` : "";
   const toLines = (si.toText||"").split("\n").filter(Boolean);
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">

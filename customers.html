@@ -305,6 +305,7 @@ window.deleteCustomer = async function(id) {
 const SI_DEFAULT_SHIPPER = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD.\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIET NAM\nTEL: 84-251-3992537       FAX: 84-251-3992540";
 
 window.openSiTemplate = async function(id) {
+  if (!isAdmin()) return;
   const c = allCustomers.find(x => x.id === id);
   if (!c) return;
   const t = c.siTemplate || {};
@@ -350,7 +351,8 @@ window.openSiTemplate = async function(id) {
     </div>
     <div class="form-group">
       <label class="form-label">Thông tin L/C</label>
-      <input class="form-input" id="sit-lcno" value="${(t.lcNo||"").replace(/"/g,"&quot;")}" placeholder="101LCS-67788569">
+      <textarea class="form-textarea" id="sit-lcno" rows="3" placeholder="CONTRACT NO. NPTC/TOSG-2026/007/011
+L/C NO. LC002200003063">${(t.lcNo||"")}</textarea>
     </div>
     <div class="form-group">
       <label class="form-label">Loại Bill</label>
@@ -368,6 +370,7 @@ window.openSiTemplate = async function(id) {
 };
 
 window.saveSiTemplate = async function(id) {
+  if (!isAdmin()) return;
   const fwdSel = document.getElementById("sit-forwarder");
   const siTemplate = {
     forwarderId: fwdSel ? fwdSel.value : "",

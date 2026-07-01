@@ -341,10 +341,8 @@ window.openSiTemplate = async function(id) {
       <label class="form-label">SHIPPER</label>
       <textarea class="form-textarea" id="sit-shipper" rows="4">${t.shipperText || SI_DEFAULT_SHIPPER}</textarea>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="sit-consignee" rows="4">${t.consigneeText || c.consignee || ""}</textarea></div>
-      <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="sit-notify" rows="4">${t.notifyText || c.consignee || ""}</textarea></div>
-    </div>
+    <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="sit-consignee" rows="4">${t.consigneeText || c.consignee || ""}</textarea></div>
+    <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="sit-notify" rows="4">${t.notifyText || c.consignee || ""}</textarea></div>
     <div class="form-group">
       <label class="form-label">Tên hàng (Goods Description)</label>
       <input class="form-input" id="sit-goods" value="${t.goodsDescription || ""}" placeholder="SHIRTS, PANTS...">

@@ -1408,7 +1408,7 @@ window.openSI = async function(shipId) {
     billType: existing.billType || tpl.billType || "SURRENDERED",
     freightCollect: existing.freightCollect ?? tpl.freightCollect ?? false,
     showItemList: existing.showItemList ?? tpl.showItemList ?? true,
-    lcNo: existing.lcNo || lcNoSuggest || "",
+    lcNo: existing.lcNo || lcNoSuggest || tpl.lcNo || "",
   };
   if (!def.attnText && def.forwarderId) {
     const f = allFwd.find(x=>x.id===def.forwarderId);

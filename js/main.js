@@ -1439,10 +1439,8 @@ window.openSI = async function(shipId) {
       <label class="form-label">SHIPPER</label>
       <textarea class="form-textarea" id="si-shipper" rows="4">${def.shipperText}</textarea>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="si-consignee" rows="4">${def.consigneeText}</textarea></div>
-      <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="si-notify" rows="4">${def.notifyText}</textarea></div>
-    </div>
+    <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="si-consignee" rows="4">${def.consigneeText}</textarea></div>
+    <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="si-notify" rows="4">${def.notifyText}</textarea></div>
     <div class="form-group">
       <label class="form-label">Tên hàng (Goods Description)</label>
       <input class="form-input" id="si-goods" value="${def.goodsDescription}">
@@ -1473,6 +1471,9 @@ L/C NO. LC002200003063">${(def.lcNo||"")}</textarea>
 window.saveSI = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
+  if (!(s.shipMark||"").trim()) {
+    if (!confirm("Bạn chưa nhập Shipping Mark. Có muốn tiếp tục xuất SI?")) return;
+  }
   const fwdSel = document.getElementById("si-forwarder");
   const si = {
     forwarderId: fwdSel ? fwdSel.value : "",
@@ -1605,12 +1606,13 @@ function renderSIPrint(s) {
 
 <table class="box">
   <tr>
-    <td style="width:65%;border-right:1px solid #000;border-bottom:1px solid #000"><b>SHIPPER:</b><br>${(si.shipperText||"").replace(/\n/g,"<br>")}</td>
-    <td style="border-bottom:1px solid #000;text-align:center;vertical-align:middle">${si.freightCollect ? `<div class="yellow bold" style="display:inline-block;border:1.5px solid #C0392B;color:#C0392B;padding:4px 8px;font-size:10.5px">"FREIGHT COLLECT"</div>` : ""}</td>
+    <td style="border-bottom:1px solid #000"><b>SHIPPER:</b><br>${(si.shipperText||"").replace(/\n/g,"<br>")}</td>
   </tr>
   <tr>
-    <td style="border-right:1px solid #000;border-bottom:1px solid #000"><b>CONSIGNEE:</b><br>${(si.consigneeText||"").replace(/\n/g,"<br>")}</td>
-    <td style="border-bottom:1px solid #000"><b>NOTIFY PARTY:</b><br>${(si.notifyText||"").replace(/\n/g,"<br>")}</td>
+    <td style="border-bottom:1px solid #000"><b>CONSIGNEE:</b><br>${(si.consigneeText||"").replace(/\n/g,"<br>")}</td>
+  </tr>
+  <tr>
+    <td><b>NOTIFY PARTY:</b><br>${(si.notifyText||"").replace(/\n/g,"<br>")}</td>
   </tr>
 </table>
 
@@ -1651,6 +1653,7 @@ function renderSIPrint(s) {
 </table>
 
 <div class="box" style="border-color:#C0392B;border-width:2px;padding:8px 10px;margin-top:10px;color:#C0392B" class="bold">
+  ${si.freightCollect ? `<b>"FREIGHT COLLECT"</b><br>` : ""}
   <b>HS CODE: ${hsCodes}&nbsp;&nbsp;&nbsp;DON'T SHOW ON B/L</b><br>
   <b>${billTypeText}</b><br>
   <b>PLEASE SEND COPY B/L THROUGH E-MAIL: tos2@tosg.com.vn</b>

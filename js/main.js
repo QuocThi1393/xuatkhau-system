@@ -1341,8 +1341,13 @@ window.openShipMark = function(shipId) {
 
 // ====== XUẤT SI (DRAFT B/L) ======
 const SI_DEFAULT_SHIPPER = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD.\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIET NAM\nTEL: 84-251-3992537       FAX: 84-251-3992540";
+const SI_LC_CUSTOMERS = ["MITSUWA","SANMARINO","ACROS","HEMD"];
 
 function siCustomerName(s) { return (s.orders||[])[0]?.customer || ""; }
+function siIsLcCust(custName, s) {
+  const U = (custName||"").toUpperCase();
+  return SI_LC_CUSTOMERS.some(n => U.includes(n)) || !!(s && s.lcId);
+}
 function siDistinctHsCodes(s) { return [...new Set((s.orders||[]).map(o=>o.hsCode).filter(Boolean))]; }
 function siItemList(s) {
   const seen = new Set(), out = [];
@@ -1372,7 +1377,7 @@ window.openSI = async function(shipId) {
   } catch(e){}
   const matchedFwd = allFwd.filter(f => (f.customers||[]).includes(custName));
 
-  // Thông tin khách hàng (mặc định Consignee/Description)
+  // Thông tin khách hàng + SI mẫu đã lưu sẵn cho khách này
   let cust = {};
   if (custName) {
     try {
@@ -1381,24 +1386,29 @@ window.openSI = async function(shipId) {
       if (!snap.empty) cust = snap.docs[0].data();
     } catch(e){}
   }
+  const tpl = cust.siTemplate || {};
 
-  // SI gần nhất của cùng khách hàng (để copy các trường ít đổi)
-  const prev = [...allShipments]
-    .filter(x => x.id!==shipId && x.si && custName && siCustomerName(x)===custName)
-    .sort((a,b) => (b.stuffingDate||b.shipDate||"").localeCompare(a.stuffingDate||a.shipDate||""))[0];
-  const prevSi = prev?.si || {};
+  // Số LC gợi ý sẵn nếu lô đã "Gán LC"
+  let lcNoSuggest = "";
+  if (s.lcId) {
+    try {
+      const { doc:d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDoc(d2(db,"lc",s.lcId));
+      if (snap.exists()) lcNoSuggest = snap.data().name || "";
+    } catch(e){}
+  }
 
   const def = {
-    forwarderId: existing.forwarderId || (matchedFwd.length===1 ? matchedFwd[0].id : (matchedFwd.find(f=>f.id===prevSi.forwarderId) ? prevSi.forwarderId : "")),
-    attnText: existing.attnText || prevSi.attnText || "",
-    shipperText: existing.shipperText || prevSi.shipperText || SI_DEFAULT_SHIPPER,
-    consigneeText: existing.consigneeText || prevSi.consigneeText || cust.consignee || "",
-    notifyText: existing.notifyText || prevSi.notifyText || cust.consignee || "",
-    goodsDescription: existing.goodsDescription || prevSi.goodsDescription || cust.description || "SHIRTS",
-    billType: existing.billType || prevSi.billType || "SURRENDERED",
-    freightCollect: existing.freightCollect ?? prevSi.freightCollect ?? false,
-    showItemList: existing.showItemList ?? prevSi.showItemList ?? true,
-    vesselLabel: existing.vesselLabel || prevSi.vesselLabel || "VESSEL",
+    forwarderId: existing.forwarderId || (matchedFwd.length===1 ? matchedFwd[0].id : (matchedFwd.find(f=>f.id===tpl.forwarderId) ? tpl.forwarderId : "")),
+    attnText: existing.attnText || tpl.attnText || "",
+    shipperText: existing.shipperText || tpl.shipperText || SI_DEFAULT_SHIPPER,
+    consigneeText: existing.consigneeText || tpl.consigneeText || cust.consignee || "",
+    notifyText: existing.notifyText || tpl.notifyText || cust.consignee || "",
+    goodsDescription: existing.goodsDescription || tpl.goodsDescription || cust.description || "SHIRTS",
+    billType: existing.billType || tpl.billType || "SURRENDERED",
+    freightCollect: existing.freightCollect ?? tpl.freightCollect ?? false,
+    showItemList: existing.showItemList ?? tpl.showItemList ?? true,
+    lcNo: existing.lcNo || lcNoSuggest || "",
   };
   if (!def.attnText && def.forwarderId) {
     const f = allFwd.find(x=>x.id===def.forwarderId);
@@ -1414,6 +1424,8 @@ window.openSI = async function(shipId) {
          ${fwdOptionsHTML}
        </select>`;
 
+  const showLcField = siIsLcCust(custName, s);
+
   document.getElementById("si-form-body").innerHTML = `
     <div class="form-group">
       <label class="form-label">Forwarder (TO:)</label>
@@ -1421,7 +1433,7 @@ window.openSI = async function(shipId) {
     </div>
     <div class="form-group">
       <label class="form-label">ATTN</label>
-      <input class="form-input" id="si-attn" value="${(def.attnText||"").replace(/"/g,"&quot;")}" placeholder="TRALINKS Docs Team">
+      <input class="form-input" id="si-attn" value="${(def.attnText||"").replace(/"/g,"&quot;")}" placeholder="TRALINKS CO.,LTD Docs Team">
     </div>
     <div class="form-group">
       <label class="form-label">SHIPPER</label>
@@ -1435,6 +1447,10 @@ window.openSI = async function(shipId) {
       <label class="form-label">Tên hàng (Goods Description)</label>
       <input class="form-input" id="si-goods" value="${def.goodsDescription}">
     </div>
+    ${showLcField ? `<div class="form-group">
+      <label class="form-label">Thông tin L/C</label>
+      <input class="form-input" id="si-lcno" value="${(def.lcNo||"").replace(/"/g,"&quot;")}" placeholder="101LCS-67788569">
+    </div>` : `<input type="hidden" id="si-lcno" value="">`}
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Loại Bill</label>
@@ -1443,19 +1459,9 @@ window.openSI = async function(shipId) {
           <option value="SEAWAY" ${def.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
         </select>
       </div>
-      <div class="form-group">
-        <label class="form-label">Nhãn Vessel</label>
-        <select class="form-select" id="si-vessellabel">
-          <option value="VESSEL" ${def.vesselLabel==="VESSEL"?"selected":""}>VESSEL</option>
-          <option value="FEEDER VESSEL" ${def.vesselLabel==="FEEDER VESSEL"?"selected":""}>FEEDER VESSEL</option>
-        </select>
-      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-top:22px"><input type="checkbox" id="si-freight" ${def.freightCollect?"checked":""}> Freight Collect</label>
     </div>
-    <div class="form-row" style="align-items:center">
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="si-freight" ${def.freightCollect?"checked":""}> Freight Collect</label>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="si-itemlist" ${def.showItemList?"checked":""}> Hiện danh sách Contract/Style</label>
-    </div>
-    ${s.lcId ? `<div style="font-size:12px;color:var(--text-muted);background:var(--bg-secondary);padding:8px 12px;border-radius:var(--radius-md)">Lô này đã gán LC — SI sẽ tự hiện khối L/C NO. + INVOICE NO.</div>` : ""}
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="si-itemlist" ${def.showItemList?"checked":""}> Hiện danh sách Contract/Style</label>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-si')">Hủy</button>
       <button type="button" class="btn btn-primary" onclick="saveSI('${shipId}')"><i class="ti ti-file-export"></i> Lưu & Xuất SI</button>
@@ -1475,9 +1481,9 @@ window.saveSI = async function(shipId) {
     notifyText: document.getElementById("si-notify").value,
     goodsDescription: document.getElementById("si-goods").value.trim(),
     billType: document.getElementById("si-billtype").value,
-    vesselLabel: document.getElementById("si-vessellabel").value,
     freightCollect: document.getElementById("si-freight").checked,
     showItemList: document.getElementById("si-itemlist").checked,
+    lcNo: (document.getElementById("si-lcno")?.value || "").trim(),
   };
 
   let fwdInfo = "";
@@ -1489,16 +1495,6 @@ window.saveSI = async function(shipId) {
     } catch(e){}
   }
   si.toText = fwdInfo;
-
-  let lcNo = "";
-  if (s.lcId) {
-    try {
-      const { doc:d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      const snap = await getDoc(d2(db,"lc",s.lcId));
-      if (snap.exists()) lcNo = snap.data().name || "";
-    } catch(e){}
-  }
-  si.lcNo = lcNo;
 
   await updateDoc(doc(db,"shipments",shipId), { si });
   closeModal("modal-si");
@@ -1556,9 +1552,11 @@ function renderSIPrint(s) {
 
   const items = siItemList(s);
   const itemsHTML = (si.showItemList && items.length)
-    ? `<table style="width:100%;border-collapse:collapse;margin:6px 0">
-        ${items.map(it=>`<tr><td style="padding:1px 8px 1px 0;width:110px">${it.contract}</td><td style="padding:1px 0">${it.index}</td></tr>`).join("")}
-      </table>`
+    ? `<tr><td colspan="5" style="padding-top:4px">
+        <table style="width:100%">
+          ${items.map(it=>`<tr><td style="padding:1px 0;width:110px">${it.contract}</td><td style="padding:1px 0">${it.index}</td></tr>`).join("")}
+        </table>
+      </td></tr>`
     : "";
 
   const hsCodes = siDistinctHsCodes(s).join(", ");
@@ -1566,86 +1564,100 @@ function renderSIPrint(s) {
   const dateStr = `${now.toLocaleString("en-US",{month:"short"}).toUpperCase()} ${String(now.getDate()).padStart(2,"0")}, ${now.getFullYear()}`;
   const etdStr = s.etd ? (() => { const d = new Date(s.etd); return `${d.toLocaleString("en-US",{month:"long"})} ${d.getDate()}, ${d.getFullYear()}`; })() : "";
   const billTypeText = si.billType === "SEAWAY" ? "SEAWAY BILL" : "SURRENDERED B/L";
-  const lcBlock = (s.lcId && si.lcNo) ? `<div>L/C NO. ${si.lcNo}</div><div>INVOICE NO. ${s.invoiceNo||""}</div>` : "";
+  const lcBlock = si.lcNo ? `<tr><td colspan="5">L/C NO. ${si.lcNo}</td></tr><tr><td colspan="5">INVOICE NO. ${s.invoiceNo||""}</td></tr>` : "";
   const toLines = (si.toText||"").split("\n").filter(Boolean);
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
   @page { size: A4; margin: 12mm; }
   * { box-sizing:border-box; }
-  body { font-family:"Times New Roman",serif; font-size:12px; color:#000; margin:0; }
+  body { font-family:Helvetica,Arial,sans-serif; font-size:11px; color:#000; margin:0; }
   table { border-collapse:collapse; width:100%; }
-  td,th { padding:2px 4px; vertical-align:top; }
-  .box { border:1px solid #000; }
+  td,th { padding:3px 6px; vertical-align:top; }
+  .box { border:1.5px solid #000; }
   .yellow { background:#FFFF99; }
   .center { text-align:center; }
   .bold { font-weight:bold; }
   @media print { .no-print{display:none;} }
 </style></head><body>
 
-<table class="box yellow"><tr>
-  <td style="width:22%"><b style="font-size:18px">TOSGAMEX</b></td>
-  <td style="text-align:center">
-    <div class="bold" style="font-size:14px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
-    <div style="font-size:10px">LOT B1, LONG BINH TECHNO PARK (LOTECO), LONG BINH WARD, DONG NAI PROVINCE, VIETNAM</div>
-    <div style="font-size:10px">TEL: 84-0251-3992537   FAX: 84-0251-3992540   E-MAIL: tos2@tosg.com.vn</div>
+<table class="box"><tr>
+  <td class="yellow" style="width:22%;border-right:1.5px solid #000"><b style="font-size:16px">TOSGAMEX</b></td>
+  <td class="yellow center">
+    <div class="bold" style="font-size:13px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+    <div style="font-size:9px">LOT B1, LONG BINH TECHNO PARK (LOTECO), LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+    <div style="font-size:9px">TEL: 84-0251-3992537&nbsp;&nbsp;FAX: 84-0251-3992540&nbsp;&nbsp;E-MAIL: tos2@tosg.com.vn</div>
   </td>
 </tr></table>
 
-<table class="box" style="margin-top:4px"><tr>
-  <td style="width:60%">
+<table class="box" style="border-top:none"><tr>
+  <td style="width:60%;border-right:1px solid #000">
     <b>TO:</b> ${toLines[0]||""}<br>${toLines.slice(1).join("<br>")}
     <br><b>ATTN:</b> ${si.attnText||""}
   </td>
-  <td style="width:40%">
-    <span class="yellow bold">FROM: QUỐC THI</span><br>DATE: ${dateStr}
+  <td>
+    <span class="yellow bold">FROM: QUOC THI</span><br>DATE: ${dateStr}
   </td>
 </tr></table>
 
-<div class="center yellow bold" style="font-size:20px;margin:8px 0">DETAILS FOR B/L</div>
+<div class="center yellow bold" style="font-size:17px;padding:6px 0;margin:6px 0">DETAILS FOR B/L</div>
 
 <table class="box">
   <tr>
-    <td style="width:50%"><b> SHIPPER: </b><br>${(si.shipperText||"").replace(/\n/g,"<br>")}</td>
-    <td>${si.freightCollect ? `<div class="yellow center bold">"FREIGHT COLLECT"</div>` : ""}</td>
+    <td style="width:65%;border-right:1px solid #000;border-bottom:1px solid #000"><b>SHIPPER:</b><br>${(si.shipperText||"").replace(/\n/g,"<br>")}</td>
+    <td style="border-bottom:1px solid #000;text-align:center;vertical-align:middle">${si.freightCollect ? `<div class="yellow bold" style="display:inline-block;border:1.5px solid #C0392B;color:#C0392B;padding:4px 8px;font-size:10.5px">"FREIGHT COLLECT"</div>` : ""}</td>
   </tr>
   <tr>
-    <td><b> CONSIGNEE: </b><br>${(si.consigneeText||"").replace(/\n/g,"<br>")}</td>
-    <td><b>NOTIFY PARTY:</b><br>${(si.notifyText||"").replace(/\n/g,"<br>")}</td>
-  </tr>
-  <tr>
-    <td style="width:33%">HOCHIMINH, VIETNAM</td>
-    <td colspan="2">TO: ${fullPort(s.port)}, JAPAN &nbsp;&nbsp;&nbsp; ${si.vesselLabel}: ${s.vessel||""}<br>DEPARTURE DATE: ${etdStr}</td>
+    <td style="border-right:1px solid #000;border-bottom:1px solid #000"><b>CONSIGNEE:</b><br>${(si.consigneeText||"").replace(/\n/g,"<br>")}</td>
+    <td style="border-bottom:1px solid #000"><b>NOTIFY PARTY:</b><br>${(si.notifyText||"").replace(/\n/g,"<br>")}</td>
   </tr>
 </table>
 
-<table class="box yellow" style="margin-top:4px">
-  <tr><th style="width:40%">GOODS DESCRIPTION</th><th>QUANTITY<br>(CARTONS)</th><th>N.W<br>(KGS)</th><th>G.W<br>( KGS )</th><th>M' MENT<br>( CBM )</th></tr>
+<table class="box" style="border-top:none">
+  <tr class="yellow bold center">
+    <td style="width:25%;border-right:1px solid #000">FROM:</td>
+    <td style="width:25%;border-right:1px solid #000">TO:</td>
+    <td style="width:25%;border-right:1px solid #000">FEEDER VESSEL:</td>
+    <td style="width:25%">DEPARTURE DATE:</td>
+  </tr>
+  <tr class="center">
+    <td style="border-right:1px solid #000">HOCHIMINH, VIETNAM</td>
+    <td style="border-right:1px solid #000">${fullPort(s.port)}, JAPAN</td>
+    <td style="border-right:1px solid #000">${s.vessel||""}</td>
+    <td>${etdStr}</td>
+  </tr>
 </table>
 
-<div style="margin-top:6px"><b>${si.goodsDescription||""}</b>${lcBlock}</div>
-${itemsHTML}
+<table style="margin-top:6px">
+  <colgroup><col style="width:46%"><col style="width:13%"><col style="width:14%"><col style="width:14%"><col style="width:13%"></colgroup>
+  <thead>
+    <tr class="box yellow bold center">
+      <th style="border-right:1px solid #000">GOODS DESCRIPTION</th>
+      <th style="border-right:1px solid #000">QUANTITY<br>(CARTONS)</th>
+      <th style="border-right:1px solid #000">N.W<br>(KGS)</th>
+      <th style="border-right:1px solid #000">G.W<br>( KGS )</th>
+      <th>M' MENT<br>( CBM )</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="5" style="padding-top:8px" class="bold">${si.goodsDescription||""}</td></tr>
+    ${lcBlock}
+    ${itemsHTML}
+    <tr><td colspan="5" style="height:8px"></td></tr>
+    ${contLineRows}
+    ${totalRow}
+  </tbody>
+</table>
 
-<table style="margin-top:6px">${contLineRows}${totalRow}</table>
-
-<div style="margin-top:14px">
-  ${hsCodes ? `HS CODE: ${hsCodes}&nbsp;&nbsp;&nbsp;DON'T SHOW ON B/L<br>` : ""}
-  ${billTypeText}
+<div class="box" style="border-color:#C0392B;border-width:2px;padding:8px 10px;margin-top:10px;color:#C0392B" class="bold">
+  <b>HS CODE: ${hsCodes}&nbsp;&nbsp;&nbsp;DON'T SHOW ON B/L</b><br>
+  <b>${billTypeText}</b><br>
+  <b>PLEASE SEND COPY B/L THROUGH E-MAIL: tos2@tosg.com.vn</b>
 </div>
 
-<div style="margin-top:10px"><b>SHIPPING MARKS:</b><br><div style="white-space:pre-line;font-weight:bold">${(s.shipMark||"").replace(/</g,"&lt;")}</div></div>
+<div style="margin-top:10px"><b>SHIPPING MARKS:</b><div style="margin-top:4px;font-weight:bold;white-space:pre-line">${(s.shipMark||"").replace(/</g,"&lt;")}</div></div>
 
-<div class="yellow" style="margin-top:14px;display:inline-block;padding:2px 6px">PLEASE SEND COPY B/L THROUGH E-MAIL: tos2@tosg.com.vn</div>
-
-<div style="margin-top:20px;font-size:11px">
-  CONTRACT #: ____________________<br>
-  STYLE #: ____________________<br>
-  QUANTITY: ____________________<br>
-  G.W: ____________________<br>
-  NW: ____________________<br>
-  C/T #: ____________________<br>
-  MADE IN VIETNAM
-</div>
+<div class="center bold" style="font-size:12px;letter-spacing:1px;margin-top:22px">--- THE END ---</div>
 
 <div class="no-print center" style="margin-top:20px">
   <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
@@ -1657,6 +1669,7 @@ ${itemsHTML}
   w.document.close();
   w.document.title = pdfFileName("Draft SI", s.invoiceNo);
 }
+
 
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {

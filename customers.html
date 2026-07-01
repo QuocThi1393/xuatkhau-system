@@ -317,14 +317,20 @@ window.openSiTemplate = async function(id) {
   const matchedFwd = allFwd.filter(f => (f.customers||[]).includes(c.name));
 
   document.getElementById("si-template-title").textContent = `SI mẫu — ${c.name}`;
+  const fwdOptionsHTML = allFwd.map(f=>`<option value="${f.id}" ${t.forwarderId===f.id?"selected":""}>${f.name}</option>`).join("");
+  const fwdBlockHTML = matchedFwd.length === 1
+    ? `<input type="hidden" id="sit-forwarder" value="${matchedFwd[0].id}">
+       <div style="font-size:13px;padding:8px 0;color:var(--text-muted)">Tự động: <b>${matchedFwd[0].name}</b> <span style="font-size:11px">(khách này chỉ có 1 forwarder)</span></div>`
+    : `<select class="form-select" id="sit-forwarder">
+         <option value="">${matchedFwd.length ? "— Chọn forwarder —" : "— Chưa gán forwarder cho khách này, chọn tay —"}</option>
+         ${fwdOptionsHTML}
+       </select>`;
+
   document.getElementById("si-template-body").innerHTML = `
     <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Thông tin này sẽ tự điền mỗi khi bấm "Xuất SI" cho lô của khách <b>${c.name}</b>. Vẫn sửa được ở từng lô khi xuất, không ảnh hưởng SI mẫu này.</div>
     <div class="form-group">
       <label class="form-label">Forwarder (TO:)</label>
-      <select class="form-select" id="sit-forwarder">
-        <option value="">${matchedFwd.length ? "— Chọn forwarder —" : "— Chưa gán forwarder cho khách này, chọn tay —"}</option>
-        ${allFwd.map(f=>`<option value="${f.id}" ${t.forwarderId===f.id?"selected":""}>${f.name}</option>`).join("")}
-      </select>
+      ${fwdBlockHTML}
     </div>
     <div class="form-group">
       <label class="form-label">ATTN</label>
@@ -340,17 +346,18 @@ window.openSiTemplate = async function(id) {
     </div>
     <div class="form-group">
       <label class="form-label">Tên hàng (Goods Description)</label>
-      <input class="form-input" id="sit-goods" value="${t.goodsDescription || c.description || "SHIRTS"}">
+      <input class="form-input" id="sit-goods" value="${t.goodsDescription || ""}" placeholder="SHIRTS, PANTS...">
     </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Loại Bill</label>
-        <select class="form-select" id="sit-billtype">
-          <option value="SURRENDERED" ${(t.billType||"SURRENDERED")==="SURRENDERED"?"selected":""}>SURRENDERED B/L</option>
-          <option value="SEAWAY" ${t.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
-        </select>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-top:22px"><input type="checkbox" id="sit-freight" ${t.freightCollect?"checked":""}> Freight Collect (mặc định)</label>
+    <div class="form-group">
+      <label class="form-label">Thông tin L/C</label>
+      <input class="form-input" id="sit-lcno" value="${(t.lcNo||"").replace(/"/g,"&quot;")}" placeholder="101LCS-67788569">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Loại Bill</label>
+      <select class="form-select" id="sit-billtype" style="max-width:240px">
+        <option value="SURRENDERED" ${(t.billType||"SURRENDERED")==="SURRENDERED"?"selected":""}>SURRENDERED B/L</option>
+        <option value="SEAWAY" ${t.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
+      </select>
     </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="sit-itemlist" ${t.showItemList!==false?"checked":""}> Hiện danh sách Contract/Style</label>
     <div class="form-footer">
@@ -361,15 +368,16 @@ window.openSiTemplate = async function(id) {
 };
 
 window.saveSiTemplate = async function(id) {
+  const fwdSel = document.getElementById("sit-forwarder");
   const siTemplate = {
-    forwarderId: document.getElementById("sit-forwarder").value,
+    forwarderId: fwdSel ? fwdSel.value : "",
     attnText: document.getElementById("sit-attn").value.trim(),
     shipperText: document.getElementById("sit-shipper").value,
     consigneeText: document.getElementById("sit-consignee").value,
     notifyText: document.getElementById("sit-notify").value,
     goodsDescription: document.getElementById("sit-goods").value.trim(),
+    lcNo: document.getElementById("sit-lcno").value.trim(),
     billType: document.getElementById("sit-billtype").value,
-    freightCollect: document.getElementById("sit-freight").checked,
     showItemList: document.getElementById("sit-itemlist").checked,
   };
   await updateDoc(doc(db, "customers", id), { siTemplate });

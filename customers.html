@@ -116,6 +116,17 @@ CHUO-KU OSAKA 541-0043 JAPAN"></textarea>
   </div>
 </div>
 
+<!-- MODAL: SI mẫu -->
+<div class="modal-backdrop" id="modal-si-template">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="si-template-title">SI mẫu</span>
+      <span class="modal-close" onclick="closeModalById('modal-si-template')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="si-template-body"></div>
+  </div>
+</div>
+
 <!-- MODAL: Đăng nhập -->
 <div class="modal-backdrop" id="modal-login">
   <div class="modal" style="max-width:360px">
@@ -145,7 +156,7 @@ import { db } from "./js/firebase-config.js";
 import { isAdmin, isLoggedIn, logout, onAuthChange } from "./js/auth.js";
 import { showToast, openModal, closeModal } from "./js/utils.js";
 import {
-  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 window.closeModalById = closeModal;
@@ -229,6 +240,7 @@ function renderList() {
             <div style="font-size:12px;color:var(--text-muted)">${c.hdgc?`HDGC: ${c.hdgc}`:"—"}</div>
           </div>
           ${admin ? `<div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="openSiTemplate('${c.id}')" title="SI mẫu cho khách này"><i class="ti ti-file-description"></i> SI mẫu</button>
             <button class="btn btn-sm" onclick="copyCustomer('${c.id}')" title="Sao chép khách hàng này"><i class="ti ti-copy"></i></button>
             <button class="btn btn-sm" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
@@ -288,6 +300,81 @@ window.deleteCustomer = async function(id) {
   if (!confirm("Xóa khách hàng này?")) return;
   await deleteDoc(doc(db, "customers", id));
   showToast("Đã xóa khách hàng!");
+};
+
+const SI_DEFAULT_SHIPPER = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD.\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIET NAM\nTEL: 84-251-3992537       FAX: 84-251-3992540";
+
+window.openSiTemplate = async function(id) {
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  const t = c.siTemplate || {};
+
+  let allFwd = [];
+  try {
+    const snap = await getDocs(collection(db, "forwarders"));
+    allFwd = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {}
+  const matchedFwd = allFwd.filter(f => (f.customers||[]).includes(c.name));
+
+  document.getElementById("si-template-title").textContent = `SI mẫu — ${c.name}`;
+  document.getElementById("si-template-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Thông tin này sẽ tự điền mỗi khi bấm "Xuất SI" cho lô của khách <b>${c.name}</b>. Vẫn sửa được ở từng lô khi xuất, không ảnh hưởng SI mẫu này.</div>
+    <div class="form-group">
+      <label class="form-label">Forwarder (TO:)</label>
+      <select class="form-select" id="sit-forwarder">
+        <option value="">${matchedFwd.length ? "— Chọn forwarder —" : "— Chưa gán forwarder cho khách này, chọn tay —"}</option>
+        ${allFwd.map(f=>`<option value="${f.id}" ${t.forwarderId===f.id?"selected":""}>${f.name}</option>`).join("")}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">ATTN</label>
+      <input class="form-input" id="sit-attn" value="${(t.attnText||"").replace(/"/g,"&quot;")}" placeholder="TRALINKS CO.,LTD Docs Team">
+    </div>
+    <div class="form-group">
+      <label class="form-label">SHIPPER</label>
+      <textarea class="form-textarea" id="sit-shipper" rows="4">${t.shipperText || SI_DEFAULT_SHIPPER}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="sit-consignee" rows="4">${t.consigneeText || c.consignee || ""}</textarea></div>
+      <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="sit-notify" rows="4">${t.notifyText || c.consignee || ""}</textarea></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tên hàng (Goods Description)</label>
+      <input class="form-input" id="sit-goods" value="${t.goodsDescription || c.description || "SHIRTS"}">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Loại Bill</label>
+        <select class="form-select" id="sit-billtype">
+          <option value="SURRENDERED" ${(t.billType||"SURRENDERED")==="SURRENDERED"?"selected":""}>SURRENDERED B/L</option>
+          <option value="SEAWAY" ${t.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-top:22px"><input type="checkbox" id="sit-freight" ${t.freightCollect?"checked":""}> Freight Collect (mặc định)</label>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="sit-itemlist" ${t.showItemList!==false?"checked":""}> Hiện danh sách Contract/Style</label>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-si-template')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveSiTemplate('${id}')"><i class="ti ti-device-floppy"></i> Lưu SI mẫu</button>
+    </div>`;
+  openModal("modal-si-template");
+};
+
+window.saveSiTemplate = async function(id) {
+  const siTemplate = {
+    forwarderId: document.getElementById("sit-forwarder").value,
+    attnText: document.getElementById("sit-attn").value.trim(),
+    shipperText: document.getElementById("sit-shipper").value,
+    consigneeText: document.getElementById("sit-consignee").value,
+    notifyText: document.getElementById("sit-notify").value,
+    goodsDescription: document.getElementById("sit-goods").value.trim(),
+    billType: document.getElementById("sit-billtype").value,
+    freightCollect: document.getElementById("sit-freight").checked,
+    showItemList: document.getElementById("sit-itemlist").checked,
+  };
+  await updateDoc(doc(db, "customers", id), { siTemplate });
+  closeModal("modal-si-template");
+  showToast("Đã lưu SI mẫu!");
 };
 
 let _unsub = null;

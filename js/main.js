@@ -2128,6 +2128,19 @@ window.confirmExportCO = function() {
   }
 };
 
+function coFillerRows(count, colCount, rowHeight) {
+  if (count <= 0) return "";
+  let out = "";
+  for (let i=0;i<count;i++) {
+    let tds = "";
+    for (let c=0;c<colCount;c++) {
+      tds += `<td style="height:${rowHeight}px;${c<colCount-1?"border-right:1px solid #000;":""}">&nbsp;</td>`;
+    }
+    out += `<tr>${tds}</tr>`;
+  }
+  return out;
+}
+
 const CO_PRINT_STYLE = `
   @page { size: A4; margin: 10mm; }
   * { box-sizing:border-box; }
@@ -2135,7 +2148,7 @@ const CO_PRINT_STYLE = `
   table { border-collapse:collapse; width:100%; }
   td,th { padding:3px 5px; vertical-align:top; }
   .co-page { page-break-after: always; }
-  .co-page:last-child { page-break-after: auto; }
+  .co-page-last { page-break-after: auto; }
   @media print { .no-print{display:none;} }
 `;
 
@@ -2183,7 +2196,7 @@ function renderCOPrintRCEP(s, type, groups, goodsDescription, ov) {
       <td style="text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
     </tr>`).join("");
 
-    return `<div class="co-page">
+    return `<div class="${isLast ? "co-page co-page-last" : "co-page"}">
 <table style="border:1.5px solid #000">
 <tr>
 <td style="width:52%;border-right:1.5px solid #000;border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
@@ -2244,9 +2257,10 @@ ${(ov.producerText||"").replace(/\n/g,"<br>")}
 <td style="border-right:1px solid #000"></td>
 <td style="border-right:1px solid #000"></td>
 <td style="border-right:1px solid #000"></td>
-<td rowspan="${rowSpanCount}" style="text-align:center;vertical-align:top;padding-top:4px">${pIdx===0 ? `${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}` : ""}</td>
+<td rowspan="${rowSpanCount}" style="text-align:center;vertical-align:top;padding-top:4px">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>
 </tr>
 ${rows}
+${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 8, 15)}
 </table>
 
 ${isLast ? `
@@ -2308,7 +2322,7 @@ function renderCOPrintAJ(s, groups, ov) {
       <td style="border-right:1px solid #000;text-align:right;padding:2px 4px">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
     </tr>`).join("");
 
-    return `<div class="co-page">
+    return `<div class="${isLast ? "co-page co-page-last" : "co-page"}">
 <div style="text-align:right;font-weight:bold;font-size:10px;margin-bottom:4px">ORIGINAL</div>
 <table style="border:1.5px solid #000">
 <tr>
@@ -2367,9 +2381,10 @@ FROM: HOCHIMINH, VIETNAM
 </td>
 <td style="border-right:1px solid #000;border-top:1px solid #000"></td>
 <td style="border-right:1px solid #000;border-top:1px solid #000"></td>
-<td rowspan="${rowSpanCount}" style="border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:3px">${pIdx===0 ? `${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}` : ""}</td>
+<td rowspan="${rowSpanCount}" style="border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:3px">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>
 </tr>
 ${itemRows}
+${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 6, 15)}
 </table>
 
 ${isLast ? `

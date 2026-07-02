@@ -127,6 +127,17 @@ CHUO-KU OSAKA 541-0043 JAPAN"></textarea>
   </div>
 </div>
 
+<!-- MODAL: Email mẫu -->
+<div class="modal-backdrop" id="modal-email-template">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="email-template-title">Email mẫu</span>
+      <span class="modal-close" onclick="closeModalById('modal-email-template')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="email-template-body"></div>
+  </div>
+</div>
+
 <!-- MODAL: Đăng nhập -->
 <div class="modal-backdrop" id="modal-login">
   <div class="modal" style="max-width:360px">
@@ -241,6 +252,7 @@ function renderList() {
           </div>
           ${admin ? `<div style="display:flex;gap:6px">
             <button class="btn btn-sm" onclick="openSiTemplate('${c.id}')" title="SI mẫu cho khách này"><i class="ti ti-file-description"></i> SI mẫu</button>
+            <button class="btn btn-sm" onclick="openEmailTemplate('${c.id}')" title="Email mẫu Booking cho khách này"><i class="ti ti-mail"></i> Email mẫu</button>
             <button class="btn btn-sm" onclick="copyCustomer('${c.id}')" title="Sao chép khách hàng này"><i class="ti ti-copy"></i></button>
             <button class="btn btn-sm" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
@@ -384,6 +396,70 @@ window.saveSiTemplate = async function(id) {
   await updateDoc(doc(db, "customers", id), { siTemplate });
   closeModal("modal-si-template");
   showToast("Đã lưu SI mẫu!");
+};
+
+const EMAIL_DEFAULT_SUBJECT = "New Booking {container} shipments //HCM-{port}/ ETD {etdShort} / Consignee: {shortName}//{contract}";
+const EMAIL_DEFAULT_BODY = `Please arrange for our NEW FCL BOOKING as follows!
+
+{container} TO {port}, JAPAN:
+
+ETD: ~ {etd}  TO: {port}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
+
+Description: {description}
+Contract number: {contract}
+Quantity: {qty} pcs = (about) {ctns} cartons = (about) {kg} kgs = (about) {cbm} cbm
+
+Consignee: {consignee}
+{note}
+
+Best regards,`;
+const EMAIL_PLACEHOLDER_HELP = "{container} {port} {etd} {etdShort} {description} {contract} {qty} {ctns} {kg} {cbm} {consignee} {note} {shortName} {table1} {table2}";
+
+window.openEmailTemplate = function(id) {
+  if (!isAdmin()) return;
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  const et = c.emailTemplate || {};
+
+  document.getElementById("email-template-title").textContent = `Email mẫu (Booking) — ${c.name}`;
+  document.getElementById("email-template-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Ký hiệu sẽ tự thay bằng số liệu thật của lô khi bấm "Generate email":<br><code style="font-size:11px">${EMAIL_PLACEHOLDER_HELP}</code>
+      <br><br><b>{table1}</b>: bảng đầy đủ ETD/POD/Customer/Order/Style/Qty PCS/CTNs/Kgs/CBM (không có HS Code, C/O Form).
+      <br><b>{table2}</b>: bảng ETD/POD/Customer/Contract/Items/Qty PCS + HS CODE + C/O FORM (không có CTNs/Kgs/CBM).
+      <br><span style="color:var(--text-muted)">Muốn in đậm/tô màu 1 đoạn cố định, gõ thẳng thẻ HTML, ví dụ: <code>&lt;b&gt;Quoc Thi (Mr)&lt;/b&gt;</code> hoặc <code>&lt;span style="background:yellow"&gt;{port}&lt;/span&gt;</code>.</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Email To</label><input class="form-input" id="et-mailto" value="${(c.mailTo||"").replace(/"/g,"&quot;")}"></div>
+      <div class="form-group"><label class="form-label">Email CC</label><input class="form-input" id="et-mailcc" value="${(c.mailCc||"").replace(/"/g,"&quot;")}"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subject</label>
+      <input class="form-input" id="et-subject" value="${(et.subject || EMAIL_DEFAULT_SUBJECT).replace(/"/g,"&quot;")}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nội dung</label>
+      <textarea class="form-textarea" id="et-body" rows="12">${et.body || EMAIL_DEFAULT_BODY}</textarea>
+    </div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-email-template')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveEmailTemplate('${id}')"><i class="ti ti-device-floppy"></i> Lưu Email mẫu</button>
+    </div>`;
+  openModal("modal-email-template");
+};
+
+window.saveEmailTemplate = async function(id) {
+  if (!isAdmin()) return;
+  const emailTemplate = {
+    subject: document.getElementById("et-subject").value.trim(),
+    body: document.getElementById("et-body").value,
+  };
+  await updateDoc(doc(db, "customers", id), {
+    emailTemplate,
+    mailTo: document.getElementById("et-mailto").value.trim(),
+    mailCc: document.getElementById("et-mailcc").value.trim(),
+  });
+  closeModal("modal-email-template");
+  showToast("Đã lưu Email mẫu!");
 };
 
 let _unsub = null;

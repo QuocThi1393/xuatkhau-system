@@ -841,13 +841,36 @@ function fillEmailTemplate(tpl, vars) {
   return (tpl||"").replace(/\{(\w+)\}/g, (m,k) => (vars[k] !== undefined && vars[k] !== null) ? String(vars[k]) : "");
 }
 
+function setupRichEditor(el) {
+  if (!el || el._richSetup) return;
+  el._richSetup = true;
+  try { document.execCommand("defaultParagraphSeparator", false, "br"); } catch(e){}
+  el.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    const text = e.clipboardData && e.clipboardData.getData("text/plain");
+    if (html) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      tmp.querySelectorAll("*").forEach(node => {
+        node.style.marginTop = "0";
+        node.style.marginBottom = "0";
+        node.style.lineHeight = node.style.lineHeight || "1.4";
+      });
+      document.execCommand("insertHTML", false, tmp.innerHTML);
+    } else if (text) {
+      document.execCommand("insertText", false, text);
+    }
+  });
+}
+
 function buildEmailTable1(s) {
   const orders = s.orders || [];
   if (!orders.length) return "";
   const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
   const pod = fullPort(s.port);
   const cust = siCustomerName(s);
-  const td = "border:1px solid #000;padding:5px 8px";
+  const td = "border:1px solid #000;padding:4px 8px;line-height:1.3;margin:0";
   const rows = orders.map((o,i) => `<tr style="text-align:center">
     ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
     <td style="${td}" rowspan="${orders.length}">${pod}</td>
@@ -863,7 +886,7 @@ function buildEmailTable1(s) {
   const tCtns= orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
   const tKg  = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
   const tCbm = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
-  return `<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Arial,Helvetica,sans-serif">
+  return `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.3;font-family:Arial,Helvetica,sans-serif;margin:0">
     <tr style="text-align:center;font-weight:bold">
       <td style="${td};color:#1a56db">ETD</td>
       <td style="${td}">POD</td>
@@ -892,7 +915,7 @@ function buildEmailTable2(s) {
   const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
   const pod = fullPort(s.port);
   const cust = siCustomerName(s);
-  const td = "border:1px solid #000;padding:5px 8px";
+  const td = "border:1px solid #000;padding:4px 8px;line-height:1.3;margin:0";
   const rows = orders.map((o,i) => `<tr style="text-align:center">
     ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
     <td style="${td}" rowspan="${orders.length}">${pod}</td>
@@ -904,7 +927,7 @@ function buildEmailTable2(s) {
     <td style="${td}">${o.coForm||""}</td>
   </tr>`).join("");
   const tQty = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
-  return `<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Arial,Helvetica,sans-serif">
+  return `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.3;font-family:Arial,Helvetica,sans-serif;margin:0">
     <tr style="text-align:center;font-weight:bold">
       <td style="${td};color:#1a56db">ETD</td>
       <td style="${td}">POD</td>
@@ -1005,7 +1028,8 @@ Best regards,`;
       </div>
     </div>
     <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Sửa trực tiếp nội dung bên dưới nếu cần. "Copy nội dung" giữ nguyên bảng khi dán vào Gmail/Outlook; "Mở Mail" chỉ gửi được bản chữ thường (giới hạn của mailto).</div>
-    <div id="em-body" contenteditable="true" style="width:100%;min-height:320px;max-height:520px;overflow:auto;font-size:13px;line-height:1.6;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;font-family:inherit;background:#fff;color:#111;outline:none">${bodyHtml}</div>`;
+    <div class="rich-edit" id="em-body" contenteditable="true">${bodyHtml}</div>`;
+  setupRichEditor(document.getElementById("em-body"));
 
   window._emailData = { mailTo, mailCc };
   openModal("modal-email");

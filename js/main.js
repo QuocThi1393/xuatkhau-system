@@ -841,6 +841,27 @@ function fillEmailTemplate(tpl, vars) {
   return (tpl||"").replace(/\{(\w+)\}/g, (m,k) => (vars[k] !== undefined && vars[k] !== null) ? String(vars[k]) : "");
 }
 
+function cleanEmailHtml(html) {
+  if (!html) return html;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+  tmp.querySelectorAll("*").forEach(node => {
+    node.style.removeProperty("height");
+    node.style.removeProperty("min-height");
+    node.style.marginTop = "0";
+    node.style.marginBottom = "0";
+    if (node.tagName !== "TD" && node.tagName !== "TH") {
+      node.style.removeProperty("padding-top");
+      node.style.removeProperty("padding-bottom");
+    }
+  });
+  let out = tmp.innerHTML;
+  out = out.replace(/(<div>(\s|&nbsp;)*<br\s*\/?>(\s|&nbsp;)*<\/div>\s*){2,}/gi, "<div><br></div>");
+  out = out.replace(/(<p>(\s|&nbsp;)*(<br\s*\/?>)?(\s|&nbsp;)*<\/p>\s*){2,}/gi, "<p><br></p>");
+  out = out.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
+  return out;
+}
+
 function setupRichEditor(el) {
   if (!el || el._richSetup) return;
   el._richSetup = true;
@@ -850,14 +871,7 @@ function setupRichEditor(el) {
     const html = e.clipboardData && e.clipboardData.getData("text/html");
     const text = e.clipboardData && e.clipboardData.getData("text/plain");
     if (html) {
-      const tmp = document.createElement("div");
-      tmp.innerHTML = html;
-      tmp.querySelectorAll("*").forEach(node => {
-        node.style.marginTop = "0";
-        node.style.marginBottom = "0";
-        node.style.lineHeight = node.style.lineHeight || "1.4";
-      });
-      document.execCommand("insertHTML", false, tmp.innerHTML);
+      document.execCommand("insertHTML", false, cleanEmailHtml(html));
     } else if (text) {
       document.execCommand("insertText", false, text);
     }
@@ -948,6 +962,13 @@ function buildEmailTable2(s) {
   </table>`;
 }
 
+window.cleanCurrentEditor = function(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = cleanEmailHtml(el.innerHTML);
+  showToast("Đã dọn khoảng trắng!");
+};
+
 window.openEmailModal = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
@@ -1010,7 +1031,7 @@ Consignee: {consignee}
 Best regards,`;
 
   const subject = fillEmailTemplate(subjectTpl, vars);
-  const bodyHtml = fillEmailTemplate(bodyTpl, vars).replace(/\n/g,"<br>");
+  const bodyHtml = cleanEmailHtml(fillEmailTemplate(bodyTpl, vars).replace(/\n/g,"<br>"));
 
   document.getElementById("email-body").innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
@@ -1027,7 +1048,10 @@ Best regards,`;
         <input class="form-input" id="em-subject" value="${subject.replace(/"/g,'&quot;')}" style="flex:1;font-size:12px">
       </div>
     </div>
-    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Sửa trực tiếp nội dung bên dưới nếu cần. "Copy nội dung" giữ nguyên bảng khi dán vào Gmail/Outlook; "Mở Mail" chỉ gửi được bản chữ thường (giới hạn của mailto).</div>
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <span>Sửa trực tiếp nội dung bên dưới nếu cần. "Copy nội dung" giữ nguyên bảng khi dán vào Gmail/Outlook; "Mở Mail" chỉ gửi được bản chữ thường (giới hạn của mailto).</span>
+      <button type="button" class="btn btn-sm" onclick="cleanCurrentEditor('em-body')"><i class="ti ti-eraser"></i> Dọn khoảng trắng</button>
+    </div>
     <div class="rich-edit" id="em-body" contenteditable="true">${bodyHtml}</div>`;
   setupRichEditor(document.getElementById("em-body"));
 

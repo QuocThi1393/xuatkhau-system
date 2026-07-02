@@ -1886,9 +1886,20 @@ function renderSIPrint(s) {
 
 
 // ====== XUẤT DRAFT CO ======
-const CO_SHIPPER_TEXT = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIETNAM";
 const CO_HS_COLORS = ["#FFF9C4","#BBDEFB","#C8E6C9","#FFE0B2","#F8BBD0",null,"#E1BEE7"];
 const CO_TYPE_LABEL = { RCEP:"RCEP", AJ:"AJ", D:"Form D" };
+const CO_ROWS_PER_PAGE = 18;
+
+function coShipperDefault(s) {
+  const city = (s && s.lcId) ? "DONG NAI PROVINCE" : "DONG NAI CITY";
+  return `TOMIYA SUMMIT GARMENT EXPORT CO., LTD\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, ${city}, VIETNAM`;
+}
+
+function coChunk(arr, size) {
+  const out = [];
+  for (let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size));
+  return out.length ? out : [[]];
+}
 
 window.toggleCoMenu = function(ev, shipId) {
   ev.stopPropagation();
@@ -1989,45 +2000,89 @@ window.openCODraft = async function(shipId, type) {
 
   window._coDraft = { shipId, type, groups, goodsDescription };
 
+  const shipperDef = coShipperDefault(s);
   document.getElementById("co-draft-title").textContent = `Xem lại Draft CO ${CO_TYPE_LABEL[type]}`;
-  document.getElementById("co-draft-body").innerHTML = `
-    <div class="form-group">
-      <label class="form-label">1. Goods Consigned from (Shipper)</label>
-      <textarea class="form-textarea" id="cod-shipper" rows="3">${CO_SHIPPER_TEXT}</textarea>
-    </div>
-    <div class="form-group">
-      <label class="form-label">2. Goods Consigned to (Consignee)</label>
-      <textarea class="form-textarea" id="cod-consignee" rows="3">${consigneeText}</textarea>
-    </div>
-    <div class="form-group">
-      <label class="form-label">3. Producer</label>
-      <textarea class="form-textarea" id="cod-producer" rows="3">${CO_SHIPPER_TEXT}</textarea>
-    </div>
-    <div class="form-row-3">
-      <div class="form-group"><label class="form-label">Departure Date</label><input class="form-input" id="cod-depdate" value="${coFmtDepDate(s.etd)}"></div>
-      <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" id="cod-vessel" value="${(s.vessel||"").replace(/"/g,"&quot;")}"></div>
-      <div class="form-group"><label class="form-label">Port of Discharge</label><input class="form-input" id="cod-pod" value="${fullPort(s.port)}, JAPAN"></div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">8. Number and kind of packages — hiện cột nào</label>
-      <div style="display:flex;gap:16px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-contract" checked> Contract</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-index" checked> Index</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-items" checked> Items</label>
+
+  if (type === "AJ") {
+    document.getElementById("co-draft-body").innerHTML = `
+      <div class="form-group">
+        <label class="form-label">1. Goods consigned from (Shipper)</label>
+        <textarea class="form-textarea" id="cod-shipper" rows="3">${shipperDef}</textarea>
       </div>
-    </div>
-    <div class="form-group">
-      <label class="form-label">17.</label>
-      <div style="display:flex;flex-direction:column;gap:6px">
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-backtoback"> Back-to-back Certificate of Origin</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-thirdparty"> Third-party invoicing</label>
-        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-retro"> ISSUED RETROACTIVELY</label>
+      <div class="form-group">
+        <label class="form-label">2. Goods consigned to (Consignee)</label>
+        <textarea class="form-textarea" id="cod-consignee" rows="3">${consigneeText}</textarea>
       </div>
-    </div>
-    <div class="form-footer">
-      <button type="button" class="btn" onclick="closeModalById('modal-co-draft')">Hủy</button>
-      <button type="button" class="btn btn-primary" onclick="confirmExportCO()"><i class="ti ti-certificate"></i> Xuất Draft CO</button>
-    </div>`;
+      <div class="form-row-3">
+        <div class="form-group"><label class="form-label">Shipment date</label><input class="form-input" id="cod-depdate" value="${coFmtDepDate(s.etd)}"></div>
+        <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" id="cod-vessel" value="${(s.vessel||"").replace(/"/g,"&quot;")}"></div>
+        <div class="form-group"><label class="form-label">Port of Discharge</label><input class="form-input" id="cod-pod" value="${fullPort(s.port)}, JAPAN"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tên hàng (box 7)</label>
+          <input class="form-input" id="cod-goods" value="${goodsDescription}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Box 6 hiện</label>
+          <div style="display:flex;gap:16px;padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-ctns" checked> Số thùng (CTNS)</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-shipmark"> Shipping Mark</label>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">13.</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-thirdcountry"> Third Country Invoicing</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-backtoback"> Back-to-Back CO</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-retro"> Issued Retroactively</label>
+        </div>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-co-draft')">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="confirmExportCO()"><i class="ti ti-certificate"></i> Xuất Draft CO</button>
+      </div>`;
+  } else {
+    document.getElementById("co-draft-body").innerHTML = `
+      <div class="form-group">
+        <label class="form-label">1. Goods Consigned from (Shipper)</label>
+        <textarea class="form-textarea" id="cod-shipper" rows="3">${shipperDef}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">2. Goods Consigned to (Consignee)</label>
+        <textarea class="form-textarea" id="cod-consignee" rows="3">${consigneeText}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">3. Producer</label>
+        <textarea class="form-textarea" id="cod-producer" rows="3">${shipperDef}</textarea>
+      </div>
+      <div class="form-row-3">
+        <div class="form-group"><label class="form-label">Departure Date</label><input class="form-input" id="cod-depdate" value="${coFmtDepDate(s.etd)}"></div>
+        <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" id="cod-vessel" value="${(s.vessel||"").replace(/"/g,"&quot;")}"></div>
+        <div class="form-group"><label class="form-label">Port of Discharge</label><input class="form-input" id="cod-pod" value="${fullPort(s.port)}, JAPAN"></div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">8. Number and kind of packages — hiện cột nào</label>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-contract" checked> Contract</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-index" checked> Index</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-items" checked> Items</label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">17.</label>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-backtoback"> Back-to-back Certificate of Origin</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-thirdparty"> Third-party invoicing</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-retro"> ISSUED RETROACTIVELY</label>
+        </div>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-co-draft')">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="confirmExportCO()"><i class="ti ti-certificate"></i> Xuất Draft CO</button>
+      </div>`;
+  }
   openModal("modal-co-draft");
 };
 
@@ -2036,25 +2091,69 @@ window.confirmExportCO = function() {
   if (!d) return;
   const s = allShipments.find(x=>x.id===d.shipId);
   if (!s) return;
-  const overrides = {
-    shipperText: document.getElementById("cod-shipper").value,
-    consigneeText: document.getElementById("cod-consignee").value,
-    producerText: document.getElementById("cod-producer").value,
-    depDate: document.getElementById("cod-depdate").value,
-    vessel: document.getElementById("cod-vessel").value,
-    pod: document.getElementById("cod-pod").value,
-    showContract: document.getElementById("cod-contract").checked,
-    showIndex: document.getElementById("cod-index").checked,
-    showItems: document.getElementById("cod-items").checked,
-    backToBack: document.getElementById("cod-backtoback").checked,
-    thirdParty: document.getElementById("cod-thirdparty").checked,
-    retro: document.getElementById("cod-retro").checked,
-  };
-  closeModal("modal-co-draft");
-  renderCOPrint(s, d.type, d.groups, d.goodsDescription, overrides);
+
+  if (d.type === "AJ") {
+    const overrides = {
+      shipperText: document.getElementById("cod-shipper").value,
+      consigneeText: document.getElementById("cod-consignee").value,
+      depDate: document.getElementById("cod-depdate").value,
+      vessel: document.getElementById("cod-vessel").value,
+      pod: document.getElementById("cod-pod").value,
+      goodsDescription: document.getElementById("cod-goods").value,
+      showCtns: document.getElementById("cod-ctns").checked,
+      showShipMark: document.getElementById("cod-shipmark").checked,
+      thirdCountry: document.getElementById("cod-thirdcountry").checked,
+      backToBack: document.getElementById("cod-backtoback").checked,
+      retro: document.getElementById("cod-retro").checked,
+    };
+    closeModal("modal-co-draft");
+    renderCOPrintAJ(s, d.groups, overrides);
+  } else {
+    const overrides = {
+      shipperText: document.getElementById("cod-shipper").value,
+      consigneeText: document.getElementById("cod-consignee").value,
+      producerText: document.getElementById("cod-producer").value,
+      depDate: document.getElementById("cod-depdate").value,
+      vessel: document.getElementById("cod-vessel").value,
+      pod: document.getElementById("cod-pod").value,
+      showContract: document.getElementById("cod-contract").checked,
+      showIndex: document.getElementById("cod-index").checked,
+      showItems: document.getElementById("cod-items").checked,
+      backToBack: document.getElementById("cod-backtoback").checked,
+      thirdParty: document.getElementById("cod-thirdparty").checked,
+      retro: document.getElementById("cod-retro").checked,
+    };
+    closeModal("modal-co-draft");
+    renderCOPrintRCEP(s, d.type, d.groups, d.goodsDescription, overrides);
+  }
 };
 
-function renderCOPrint(s, type, groups, goodsDescription, ov) {
+const CO_PRINT_STYLE = `
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing:border-box; }
+  body { font-family:Arial,Helvetica,sans-serif; font-size:10.5px; color:#000; margin:0; }
+  table { border-collapse:collapse; width:100%; }
+  td,th { padding:3px 5px; vertical-align:top; }
+  .co-page { page-break-after: always; }
+  .co-page:last-child { page-break-after: auto; }
+  @media print { .no-print{display:none;} }
+`;
+
+function coOpenPrintWindow(pagesHtml, title) {
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${CO_PRINT_STYLE}</style></head><body>
+    ${pagesHtml}
+    <div class="no-print" style="text-align:center;margin-top:20px">
+      <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+    </div>
+  </body></html>`;
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+  w.document.title = title;
+}
+
+// ---------- RCEP ----------
+function renderCOPrintRCEP(s, type, groups, goodsDescription, ov) {
   const orders = groups.flatMap(g => g.lines.map(o => ({ ...o, _color: g.color })));
   const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
   const signDate = coFmtSignDate(s.etd);
@@ -2068,27 +2167,23 @@ function renderCOPrint(s, type, groups, goodsDescription, ov) {
     return `<table style="width:100%"><tr>${vals.map(v=>`<td style="padding:0 4px 0 0">${v}</td>`).join("")}</tr></table>`;
   }
 
-  const rows = orders.map((o,i) => `<tr style="font-size:9px">
-    <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${i+1}</td>
-    <td style="border-right:1px solid #000;background:${o._color||"transparent"}"></td>
-    <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">${packCell(o)}</td>
-    <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${o.hsCode||""}</td>
-    <td style="border-right:1px solid #000;text-align:center">CTC</td>
-    <td style="border-right:1px solid #000;text-align:center">VIETNAM</td>
-    <td style="border-right:1px solid #000;text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
-    ${i===0 ? `<td style="text-align:center;vertical-align:top;padding-top:4px" rowspan="${orders.length}">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>` : ""}
-  </tr>`).join("");
+  const pages = coChunk(orders, CO_ROWS_PER_PAGE);
+  const pagesHtml = pages.map((pageOrders, pIdx) => {
+    const isLast = pIdx === pages.length - 1;
+    const startNum = pIdx * CO_ROWS_PER_PAGE;
+    const rowSpanCount = 1 + pageOrders.length;
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-  @page { size: A4; margin: 10mm; }
-  * { box-sizing:border-box; }
-  body { font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#000; margin:0; }
-  table { border-collapse:collapse; width:100%; }
-  td,th { padding:4px 6px; vertical-align:top; }
-  @media print { .no-print{display:none;} }
-</style></head><body>
+    const rows = pageOrders.map((o,i) => `<tr style="font-size:9px">
+      <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${startNum+i+1}</td>
+      <td style="border-right:1px solid #000;background:${o._color||"transparent"}"></td>
+      <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">${packCell(o)}</td>
+      <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${o.hsCode||""}</td>
+      <td style="border-right:1px solid #000;text-align:center">CTC</td>
+      <td style="border-right:1px solid #000;text-align:center">VIETNAM</td>
+      <td style="text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
+    </tr>`).join("");
 
+    return `<div class="co-page">
 <table style="border:1.5px solid #000">
 <tr>
 <td style="width:52%;border-right:1.5px solid #000;border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
@@ -2149,11 +2244,12 @@ ${(ov.producerText||"").replace(/\n/g,"<br>")}
 <td style="border-right:1px solid #000"></td>
 <td style="border-right:1px solid #000"></td>
 <td style="border-right:1px solid #000"></td>
-<td></td>
+<td rowspan="${rowSpanCount}" style="text-align:center;vertical-align:top;padding-top:4px">${pIdx===0 ? `${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}` : ""}</td>
 </tr>
 ${rows}
 </table>
 
+${isLast ? `
 <table style="border:1.5px solid #000;border-top:none">
 <tr><td style="padding:5px"><b>14. Remarks</b><div style="height:20px"></div></td></tr>
 </table>
@@ -2176,18 +2272,134 @@ ${rows}
 
 <table style="border:1.5px solid #000;border-top:none">
 <tr><td style="padding:5px 8px">17.&nbsp; ${chk(ov.backToBack)} Back-to-back Certificate of Origin &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${chk(ov.thirdParty)} Third-party invoicing &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${chk(ov.retro)} ISSUED RETROACTIVELY</td></tr>
+</table>` : ""}
+</div>`;
+  }).join("");
+
+  const fname = `Draft CO ${CO_TYPE_LABEL[type]} ${(s.invoiceNo||"").replace(/[\/\-]/g," ").trim()}`.trim();
+  coOpenPrintWindow(pagesHtml, fname);
+}
+
+// ---------- AJ ----------
+function renderCOPrintAJ(s, groups, ov) {
+  const orders = groups.flatMap(g => g.lines.map(o => ({ ...o, _color: g.color })));
+  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const signDate = coFmtSignDate(s.etd);
+  const certNo = coFmtCertNo(s.etd);
+  const chk = (b) => b ? "&#9746;" : "&#9633;";
+
+  const marksParts = [];
+  if (ov.showCtns) marksParts.push(`${Math.round(totalCtns).toLocaleString()} CTNS`);
+  if (ov.showShipMark) marksParts.push((s.shipMark||"").replace(/\n/g,"<br>"));
+  const marksHTML = marksParts.join("<br>");
+
+  const pages = coChunk(orders, CO_ROWS_PER_PAGE);
+  const pagesHtml = pages.map((pageOrders, pIdx) => {
+    const isLast = pIdx === pages.length - 1;
+    const startNum = pIdx * CO_ROWS_PER_PAGE;
+    const rowSpanCount = 1 + pageOrders.length;
+
+    const itemRows = pageOrders.map((o,i) => `<tr style="font-size:9px">
+      <td style="border-right:1px solid #000;text-align:center">${startNum+i+1}</td>
+      <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">
+        <table style="width:100%"><tr><td style="width:55px;padding:1px 2px">${o.hsCode||""}</td><td style="width:65px;padding:1px 2px">${o.contract||""}</td><td style="padding:1px 2px">${o.index||o.items||""}</td></tr></table>
+      </td>
+      <td style="border-right:1px solid #000;text-align:center">CTC</td>
+      <td style="border-right:1px solid #000;text-align:right;padding:2px 4px">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
+    </tr>`).join("");
+
+    return `<div class="co-page">
+<div style="text-align:right;font-weight:bold;font-size:10px;margin-bottom:4px">ORIGINAL</div>
+<table style="border:1.5px solid #000">
+<tr>
+<td style="width:56%;border-right:1.5px solid #000;border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
+<b>1. Goods consigned from (Exporter's name, address, country)</b><br>
+${(ov.shipperText||"").replace(/\n/g,"<br>")}
+</td>
+<td style="border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
+<div>Reference No. <b>${certNo}</b></div>
+<div style="text-align:center;font-weight:bold;font-size:8px;margin-top:5px">THE AGREEMENT ON COMPREHENSIVE ECONOMIC<br>PARTNERSHIP AMONG MEMBER STATES OF THE<br>ASSOCIATION OF SOUTHEAST ASIAN NATIONS AND JAPAN<br>(AJCEP AGREEMENT)</div>
+<div style="text-align:center;font-weight:bold;font-size:10.5px;margin-top:5px">CERTIFICATE OF ORIGIN</div>
+<div style="text-align:center;margin-top:5px"><span style="background:#FFFF00;font-weight:bold;padding:0 4px">FORM AJ</span></div>
+<div style="text-align:center;margin-top:5px">Issued in <u>VIET NAM</u><br><span style="font-size:8.5px">(Country)</span> <span style="font-size:8.5px">See Notes Overleaf</span></div>
+</td>
+</tr>
+<tr>
+<td style="border-right:1.5px solid #000;padding:0;vertical-align:top">
+<div style="border-bottom:1px solid #000;padding:5px">
+<b>2. Goods consigned to (Importer's/Consignee's name, address, country)</b><br>
+${(ov.consigneeText||"").replace(/\n/g,"<br>")}
+</div>
+<div style="padding:5px">
+<b>3. Means of transport and route (as far as known)</b><br>
+FROM: HOCHIMINH, VIETNAM
+<div style="margin-top:4px">Shipment date &nbsp;&nbsp;${ov.depDate||""}</div>
+<div style="margin-top:4px">Vessel's name/Aircraft etc. &nbsp;${ov.vessel||""}</div>
+<div style="margin-top:4px">Port of discharge &nbsp;${ov.pod||""}</div>
+</div>
+</td>
+<td style="padding:5px;vertical-align:top">
+<b>4. For Official Use</b>
+<div style="display:flex;gap:6px;margin-top:6px"><span>&#9633;</span><span>Preferential Treatment Given Under AJCEP Agreement</span></div>
+<div style="display:flex;gap:6px;margin-top:6px"><span>&#9633;</span><span>Preferential Treatment Not Given (Please state reason/s)</span></div>
+<div style="height:22px"></div>
+<div style="text-align:center">........................................................................<br><span style="font-size:8.5px">Signature of Authorised Signatory of the Importing Country</span></div>
+</td>
+</tr>
 </table>
 
-<div class="no-print" style="text-align:center;margin-top:20px">
-  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
-</div>
-</body></html>`;
+<table style="border:1.5px solid #000;border-top:none">
+<colgroup><col style="width:6%"><col style="width:11%"><col style="width:39%"><col style="width:14%"><col style="width:16%"><col style="width:14%"></colgroup>
+<tr style="text-align:center;font-weight:bold;font-size:8px">
+<td style="border-right:1px solid #000;padding:3px">5. Item number</td>
+<td style="border-right:1px solid #000;padding:3px">6. Marks and numbers of packages</td>
+<td style="border-right:1px solid #000;padding:3px">7. Number and type of packages, description of goods (including quantity where appropriate and HS number of the importing Party)</td>
+<td style="border-right:1px solid #000;padding:3px">8. Origin criteria (see Notes overleaf)</td>
+<td style="border-right:1px solid #000;padding:3px">9. Gross weight or other quantity and value (FOB only when RVC criterion is used)</td>
+<td style="padding:3px">10. Number and date of invoices</td>
+</tr>
+<tr style="font-size:9px">
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td rowspan="${rowSpanCount}" style="border-right:1px solid #000;border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:3px">${marksHTML}</td>
+<td style="border-right:1px solid #000;border-top:1px solid #000;padding:2px 4px">
+<div style="font-weight:bold">${ov.goodsDescription||""}</div>
+<div style="margin-top:2px">HS CODE</div>
+</td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td rowspan="${rowSpanCount}" style="border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:3px">${pIdx===0 ? `${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}` : ""}</td>
+</tr>
+${itemRows}
+</table>
 
-  const w = window.open("","_blank");
-  w.document.write(html);
-  w.document.close();
-  const fname = `Draft CO ${CO_TYPE_LABEL[type]} ${(s.invoiceNo||"").replace(/[\/\-]/g," ").trim()}`.trim();
-  w.document.title = fname;
+${isLast ? `
+<table style="border:1.5px solid #000;border-top:none;font-size:9px">
+<tr>
+<td style="width:50%;border-right:1px solid #000;padding:5px;vertical-align:top">
+<b style="font-size:9.5px">11. Declaration by the exporter</b>
+<div style="margin-top:4px">The undersigned hereby declares that the above details and statements are correct; that all the goods were produced in</div>
+<div style="margin-top:8px;text-align:center">.............<b>VIETNAM</b>.............<br><span style="font-size:8px">(Country)</span></div>
+<div style="margin-top:6px">and that they comply with the requirements specified for these goods in the AJCEP Agreement for the goods exported to</div>
+<div style="margin-top:8px;text-align:center">.............<b>JAPAN</b>.............<br><span style="font-size:8px">(importing Country)</span></div>
+<div style="margin-top:12px;text-align:center">DONG NAI, ${signDate}<br>........................................<br><span style="font-size:8px">Place and date, name, signature and company of authorised signatory</span></div>
+</td>
+<td style="padding:5px;vertical-align:top">
+<b style="font-size:9.5px">12. Certification</b>
+<div style="margin-top:4px">It is hereby certified, on the basis of control carried out, that the declaration by the exporter is correct.</div>
+<div style="height:70px"></div>
+<div style="text-align:center">DONG NAI,<br>........................................................<br><span style="font-size:8px">Place and date, signature and stamp of certifying authority</span></div>
+</td>
+</tr>
+</table>
+
+<table style="border:1.5px solid #000;border-top:none">
+<tr><td style="padding:4px 8px;font-size:10px">13.&nbsp; ${chk(ov.thirdCountry)} Third Country Invoicing &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${chk(ov.backToBack)} Back-to-Back CO &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ${chk(ov.retro)} Issued Retroactively</td></tr>
+</table>` : ""}
+</div>`;
+  }).join("");
+
+  const fname = `Draft CO AJ ${(s.invoiceNo||"").replace(/[\/\-]/g," ").trim()}`.trim();
+  coOpenPrintWindow(pagesHtml, fname);
 }
 
 // ====== BÁO CÁO ======

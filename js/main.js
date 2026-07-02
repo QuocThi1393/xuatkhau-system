@@ -837,10 +837,98 @@ window.deleteShipment = async function(id) {
 };
 
 // ====== EMAIL BOOKING ======
+function fillEmailTemplate(tpl, vars) {
+  return (tpl||"").replace(/\{(\w+)\}/g, (m,k) => (vars[k] !== undefined && vars[k] !== null) ? String(vars[k]) : "");
+}
+
+function buildEmailTable1(s) {
+  const orders = s.orders || [];
+  if (!orders.length) return "";
+  const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
+  const pod = fullPort(s.port);
+  const cust = siCustomerName(s);
+  const td = "border:1px solid #000;padding:5px 8px";
+  const rows = orders.map((o,i) => `<tr style="text-align:center">
+    ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
+    <td style="${td}" rowspan="${orders.length}">${pod}</td>
+    <td style="${td}" rowspan="${orders.length}">${cust}</td>` : ""}
+    <td style="${td}">${o.contract||""}</td>
+    <td style="${td}">${o.index||o.items||""}</td>
+    <td style="${td}">${Math.round(parseFloat(o.qty)||0).toLocaleString()}</td>
+    <td style="${td}">${Math.round(parseFloat(o.ctns)||0).toLocaleString()}</td>
+    <td style="${td}">${Math.round(parseFloat(o.kgTotal)||0).toLocaleString()}</td>
+    <td style="${td}">${(parseFloat(o.cbm)||0).toFixed(2)}</td>
+  </tr>`).join("");
+  const tQty = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
+  const tCtns= orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const tKg  = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
+  const tCbm = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Arial,Helvetica,sans-serif">
+    <tr style="text-align:center;font-weight:bold">
+      <td style="${td};color:#1a56db">ETD</td>
+      <td style="${td}">POD</td>
+      <td style="${td}">Customer</td>
+      <td style="${td}">ORDER</td>
+      <td style="${td}">STYLE</td>
+      <td style="${td}">Qty<br>(PCS)</td>
+      <td style="${td}">Qty<br>(CTNs)</td>
+      <td style="${td}">Qty<br>(Kgs)</td>
+      <td style="${td}">CBM</td>
+    </tr>
+    ${rows}
+    <tr style="text-align:center;font-weight:bold;color:#C0392B">
+      <td style="${td}" colspan="5">${s.container||""}</td>
+      <td style="${td}">${Math.round(tQty).toLocaleString()}</td>
+      <td style="${td}">${Math.round(tCtns).toLocaleString()}</td>
+      <td style="${td}">${Math.round(tKg).toLocaleString()}</td>
+      <td style="${td}">${tCbm.toFixed(2)}</td>
+    </tr>
+  </table>`;
+}
+
+function buildEmailTable2(s) {
+  const orders = s.orders || [];
+  if (!orders.length) return "";
+  const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
+  const pod = fullPort(s.port);
+  const cust = siCustomerName(s);
+  const td = "border:1px solid #000;padding:5px 8px";
+  const rows = orders.map((o,i) => `<tr style="text-align:center">
+    ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
+    <td style="${td}" rowspan="${orders.length}">${pod}</td>
+    <td style="${td}" rowspan="${orders.length}">${cust}</td>` : ""}
+    <td style="${td}">${o.contract||""}</td>
+    <td style="${td}">${o.index||o.items||""}</td>
+    <td style="${td}">${Math.round(parseFloat(o.qty)||0).toLocaleString()}</td>
+    <td style="${td}">${o.hsCode||""}</td>
+    <td style="${td}">${o.coForm||""}</td>
+  </tr>`).join("");
+  const tQty = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px;font-family:Arial,Helvetica,sans-serif">
+    <tr style="text-align:center;font-weight:bold">
+      <td style="${td};color:#1a56db">ETD</td>
+      <td style="${td}">POD</td>
+      <td style="${td}">Customer</td>
+      <td style="${td}">Contract</td>
+      <td style="${td}">Items</td>
+      <td style="${td}">Qty<br>(PCS)</td>
+      <td style="${td};background:#FFFF00">HS CODE</td>
+      <td style="${td};background:#C6E0B4">C/O FORM<br>(RCEP or AJ)</td>
+    </tr>
+    ${rows}
+    <tr style="text-align:center;font-weight:bold;color:#C0392B">
+      <td style="${td}" colspan="5">${s.container||""}</td>
+      <td style="${td}">${Math.round(tQty).toLocaleString()}</td>
+      <td style="${td}"></td>
+      <td style="${td}"></td>
+    </tr>
+  </table>`;
+}
+
 window.openEmailModal = async function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="";
+  let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="", emailTemplate=null;
   const first = (s.orders||[])[0];
   if (first?.customer) {
     try {
@@ -850,6 +938,7 @@ window.openEmailModal = async function(shipId) {
         const c = snap.docs[0].data();
         consignee=c.consignee||"—"; description=c.description||"SHIRTS"; note=c.note||"";
         mailTo=c.mailTo||""; mailCc=c.mailCc||""; shortName=c.shortName||c.name||"";
+        emailTemplate = c.emailTemplate || null;
       }
     } catch(e){}
   }
@@ -862,23 +951,43 @@ window.openEmailModal = async function(shipId) {
   const etdStr = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}).toUpperCase() : "???";
   const etdShort = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit"}).toUpperCase() : "???";
 
-  // Subject: New Booking 1x20 shipments //HCM-BANGKOK, THAILAND/ ETD 24 JUN / Consignee: FLEX THAILAND//V26TS006
-  const subject = `New Booking ${s.container||""} shipments //HCM-${fullPort(s.port)}/ ETD ${etdShort} / Consignee: ${shortName}//${firstContract}`;
+  const vars = {
+    container: s.container||"???",
+    port: fullPort(s.port),
+    etd: etdStr,
+    etdShort: etdShort,
+    description,
+    contract: contracts.join(", ") || firstContract,
+    qty: tPcs.toLocaleString(),
+    ctns: tCtns,
+    kg: tKg,
+    cbm: tCbm,
+    consignee,
+    note: note ? "\nNote: "+note : "",
+    shortName,
+    table1: buildEmailTable1(s),
+    table2: buildEmailTable2(s),
+  };
+  vars.table = vars.table1;
 
-  const body = `Please arrange for our NEW FCL BOOKING as follows!
+  const subjectTpl = emailTemplate?.subject || "New Booking {container} shipments //HCM-{port}/ ETD {etdShort} / Consignee: {shortName}//{contract}";
+  const bodyTpl = emailTemplate?.body || `Please arrange for our NEW FCL BOOKING as follows!
 
-${s.container||"???"} TO ${fullPort(s.port)}, JAPAN:
+{container} TO {port}, JAPAN:
 
-ETD: ~ ${etdStr}  TO: ${fullPort(s.port)}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
+ETD: ~ {etd}  TO: {port}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
 
-Description: ${description}
-Contract number: ${contracts.join(", ")}
-Quantity: ${tPcs.toLocaleString()} pcs = (about) ${tCtns} cartons = (about) ${tKg} kgs = (about) ${tCbm} cbm
+Description: {description}
+Contract number: {contract}
+Quantity: {qty} pcs = (about) {ctns} cartons = (about) {kg} kgs = (about) {cbm} cbm
 
-Consignee: ${consignee}
-${note ? "\nNote: "+note : ""}
+Consignee: {consignee}
+{note}
 
 Best regards,`;
+
+  const subject = fillEmailTemplate(subjectTpl, vars);
+  const bodyHtml = fillEmailTemplate(bodyTpl, vars).replace(/\n/g,"<br>");
 
   document.getElementById("email-body").innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
@@ -895,21 +1004,48 @@ Best regards,`;
         <input class="form-input" id="em-subject" value="${subject.replace(/"/g,'&quot;')}" style="flex:1;font-size:12px">
       </div>
     </div>
-    <textarea id="em-body" style="width:100%;height:280px;font-size:13px;line-height:1.6;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:12px;font-family:inherit;resize:vertical;outline:none">${body}</textarea>`;
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">Sửa trực tiếp nội dung bên dưới nếu cần. "Copy nội dung" giữ nguyên bảng khi dán vào Gmail/Outlook; "Mở Mail" chỉ gửi được bản chữ thường (giới hạn của mailto).</div>
+    <div id="em-body" contenteditable="true" style="width:100%;min-height:320px;max-height:520px;overflow:auto;font-size:13px;line-height:1.6;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:14px 16px;font-family:inherit;background:#fff;color:#111;outline:none">${bodyHtml}</div>`;
 
   window._emailData = { mailTo, mailCc };
   openModal("modal-email");
 };
-document.getElementById("btn-copy-email").addEventListener("click", () => {
-  const body = document.getElementById("em-body")?.value || "";
-  navigator.clipboard.writeText(body);
-  showToast("Đã copy nội dung email!");
+document.getElementById("btn-copy-email").addEventListener("click", async () => {
+  const el = document.getElementById("em-body");
+  if (!el) return;
+  const html = el.innerHTML;
+  const text = el.innerText;
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], {type:"text/html"}),
+          "text/plain": new Blob([text], {type:"text/plain"}),
+        })
+      ]);
+    } else {
+      await navigator.clipboard.writeText(text);
+    }
+    showToast("Đã copy nội dung email (giữ nguyên bảng)!");
+  } catch(e) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      document.execCommand("copy");
+      sel.removeAllRanges();
+      showToast("Đã copy nội dung email!");
+    } catch(e2) {
+      showToast("Không copy được, anh bôi đen rồi Ctrl+C thử nhé.");
+    }
+  }
 });
 document.getElementById("btn-open-mail").addEventListener("click", () => {
   const to = document.getElementById("em-to")?.value || "";
   const cc = document.getElementById("em-cc")?.value || "";
   const subject = document.getElementById("em-subject")?.value || "";
-  const body = document.getElementById("em-body")?.value || "";
+  const body = document.getElementById("em-body")?.innerText || "";
   const link = `mailto:${encodeURIComponent(to)}?cc=${encodeURIComponent(cc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = link;
 });

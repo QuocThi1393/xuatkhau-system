@@ -415,6 +415,29 @@ Consignee: {consignee}
 Best regards,`;
 const EMAIL_PLACEHOLDER_HELP = "{container} {port} {etd} {etdShort} {description} {contract} {qty} {ctns} {kg} {cbm} {consignee} {note} {shortName} {table1} {table2}";
 
+function setupRichEditor(el) {
+  if (!el || el._richSetup) return;
+  el._richSetup = true;
+  try { document.execCommand("defaultParagraphSeparator", false, "br"); } catch(e){}
+  el.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    const text = e.clipboardData && e.clipboardData.getData("text/plain");
+    if (html) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      tmp.querySelectorAll("*").forEach(node => {
+        node.style.marginTop = "0";
+        node.style.marginBottom = "0";
+        node.style.lineHeight = node.style.lineHeight || "1.4";
+      });
+      document.execCommand("insertHTML", false, tmp.innerHTML);
+    } else if (text) {
+      document.execCommand("insertText", false, text);
+    }
+  });
+}
+
 window.openEmailTemplate = function(id) {
   if (!isAdmin()) return;
   const c = allCustomers.find(x => x.id === id);
@@ -438,12 +461,13 @@ window.openEmailTemplate = function(id) {
     </div>
     <div class="form-group">
       <label class="form-label">Nội dung</label>
-      <textarea class="form-textarea" id="et-body" rows="12">${et.body || EMAIL_DEFAULT_BODY}</textarea>
+      <div class="rich-edit" id="et-body" contenteditable="true">${(et.body || EMAIL_DEFAULT_BODY).replace(/\n/g,"<br>")}</div>
     </div>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-email-template')">Hủy</button>
       <button type="button" class="btn btn-primary" onclick="saveEmailTemplate('${id}')"><i class="ti ti-device-floppy"></i> Lưu Email mẫu</button>
     </div>`;
+  setupRichEditor(document.getElementById("et-body"));
   openModal("modal-email-template");
 };
 
@@ -451,7 +475,7 @@ window.saveEmailTemplate = async function(id) {
   if (!isAdmin()) return;
   const emailTemplate = {
     subject: document.getElementById("et-subject").value.trim(),
-    body: document.getElementById("et-body").value,
+    body: document.getElementById("et-body").innerHTML,
   };
   await updateDoc(doc(db, "customers", id), {
     emailTemplate,

@@ -1888,7 +1888,7 @@ function renderSIPrint(s) {
 // ====== XUẤT DRAFT CO ======
 const CO_HS_COLORS = ["#FFF9C4","#BBDEFB","#C8E6C9","#FFE0B2","#F8BBD0",null,"#E1BEE7"];
 const CO_TYPE_LABEL = { RCEP:"RCEP", AJ:"AJ", D:"Form D" };
-const CO_ROWS_PER_PAGE = 18;
+const CO_ROWS_PER_PAGE = 22;
 
 function coShipperDefault(s) {
   const city = (s && s.lcId) ? "DONG NAI PROVINCE" : "DONG NAI CITY";
@@ -2186,14 +2186,14 @@ function renderCOPrintRCEP(s, type, groups, goodsDescription, ov) {
     const startNum = pIdx * CO_ROWS_PER_PAGE;
     const rowSpanCount = 1 + pageOrders.length;
 
-    const rows = pageOrders.map((o,i) => `<tr style="font-size:9px">
+    const rows = pageOrders.map((o,i) => `<tr style="font-size:9px;height:20px">
       <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${startNum+i+1}</td>
       <td style="border-right:1px solid #000;background:${o._color||"transparent"}"></td>
       <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">${packCell(o)}</td>
       <td style="border-right:1px solid #000;text-align:center;background:${o._color||"transparent"}">${o.hsCode||""}</td>
       <td style="border-right:1px solid #000;text-align:center">CTC</td>
       <td style="border-right:1px solid #000;text-align:center">VIETNAM</td>
-      <td style="text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
+      <td style="border-right:1px solid #000;text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
     </tr>`).join("");
 
     return `<div class="${isLast ? "co-page co-page-last" : "co-page"}">
@@ -2260,7 +2260,7 @@ ${(ov.producerText||"").replace(/\n/g,"<br>")}
 <td rowspan="${rowSpanCount}" style="text-align:center;vertical-align:top;padding-top:4px">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>
 </tr>
 ${rows}
-${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 8, 15)}
+${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 8, 20)}
 </table>
 
 ${isLast ? `
@@ -2313,7 +2313,7 @@ function renderCOPrintAJ(s, groups, ov) {
     const startNum = pIdx * CO_ROWS_PER_PAGE;
     const rowSpanCount = 1 + pageOrders.length;
 
-    const itemRows = pageOrders.map((o,i) => `<tr style="font-size:9px">
+    const itemRows = pageOrders.map((o,i) => `<tr style="font-size:9px;height:20px">
       <td style="border-right:1px solid #000;text-align:center">${startNum+i+1}</td>
       <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">
         <table style="width:100%"><tr><td style="width:55px;padding:1px 2px">${o.hsCode||""}</td><td style="width:65px;padding:1px 2px">${o.contract||""}</td><td style="padding:1px 2px">${o.index||o.items||""}</td></tr></table>
@@ -2384,7 +2384,7 @@ FROM: HOCHIMINH, VIETNAM
 <td rowspan="${rowSpanCount}" style="border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:3px">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>
 </tr>
 ${itemRows}
-${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 6, 15)}
+${coFillerRows(CO_ROWS_PER_PAGE - pageOrders.length, 6, 20)}
 </table>
 
 ${isLast ? `

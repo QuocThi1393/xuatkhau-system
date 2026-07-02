@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Khách hàng · Xuất Khẩu System</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo"><a href="index.html">Xuất Khẩu <span>System</span></a></div>
+  <a href="index.html" title="Về trang chủ" style="flex-shrink:0;line-height:0">
+  <svg width="280" height="52" viewBox="0 0 280 52">
+    <defs><linearGradient id="tosgrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#155A2C"/><stop offset="100%" stop-color="#2E9E54"/>
+    </linearGradient></defs>
+    <rect x="0" y="2" width="280" height="48" rx="8" fill="url(#tosgrad)"/>
+    <text x="140" y="28" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">TOSGAMEX</text>
+    <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
+  </svg></a>
+  <div class="topbar-nav">
+    <a href="index.html" class="btn btn-sm"><i class="ti ti-package"></i> Lô hàng</a>
+    <div id="admin-indicator" class="admin-indicator" style="display:none">
+      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
+    </div>
+    <button class="btn btn-sm" id="btn-login-toggle">
+      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
+    </button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span id="customer-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+    </div>
+    <div class="toolbar-right">
+      <button class="btn btn-primary" id="btn-add-customer">
+        <i class="ti ti-plus"></i> Thêm khách hàng
+      </button>
+    </div>
+  </div>
+
+  <div id="customer-list">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<!-- MODAL: Thêm / Sửa khách hàng -->
+<div class="modal-backdrop" id="modal-customer">
+  <div class="modal">
+    <div class="modal-title">
+      <span id="customer-modal-title">Thêm khách hàng</span>
+      <span class="modal-close" onclick="closeModalById('modal-customer')">
+        <i class="ti ti-x"></i>
+      </span>
+    </div>
+    <form id="form-customer">
+      <div class="form-group">
+        <label class="form-label">Tên khách hàng *</label>
+        <input class="form-input" id="fc-name" placeholder="TOYOTSU, FLEX JAPAN..." required>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">HDGC</label>
+        <input class="form-input" id="fc-hdgc" placeholder="HDGC...">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">MESSRS (bên mua / đặt hàng)</label>
+        <textarea class="form-textarea" id="fc-messrs" rows="3" placeholder="ITOCHU CORPORATION (YX SECTION)
+1-3, 4-Chome, Kyutaro-machi, chuo-ku, Osaka, Japan
+TEL. 06-6241-2691"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">CONSIGNEE (bên nhận hàng)</label>
+        <textarea class="form-textarea" id="fc-consignee" rows="3" placeholder="NIPPON PAPER TRADING CO., LTD.
+10F, OSAKA KOGIN BLDG. 4-1-1, KORAIBASHI
+CHUO-KU OSAKA 541-0043 JAPAN"></textarea>
+      </div>
+
+      <div style="border-top:0.5px solid var(--border);margin:16px 0;padding-top:12px">
+        <div style="font-size:12px;font-weight:500;color:var(--text-muted);margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">Email Booking</div>
+        <div class="form-group">
+          <label class="form-label">Mail To</label>
+          <input type="text" class="form-input" id="fc-mailto" placeholder="to@example.com (nhiều mail cách nhau dấu phẩy)">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mail CC</label>
+          <input type="text" class="form-input" id="fc-mailcc" placeholder="cc@example.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Tên Consignee (cho Subject)</label>
+          <input type="text" class="form-input" id="fc-shortname" placeholder="FLEX THAILAND">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Description (hàng hóa)</label>
+        <input class="form-input" id="fc-description" placeholder="SHIRTS, PANTS..." value="SHIRTS">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Note cố định trong email</label>
+        <textarea class="form-textarea" id="fc-note" rows="2" placeholder="Nếu tàu đi từ Cái Mép, chị cho hạ cont ở Đồng Nai Port giúp e!"></textarea>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-customer')">Hủy</button>
+        <button type="submit" class="btn btn-primary" id="fc-submit">
+          <i class="ti ti-check"></i> Lưu
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- MODAL: SI mẫu -->
+<div class="modal-backdrop" id="modal-si-template">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="si-template-title">SI mẫu</span>
+      <span class="modal-close" onclick="closeModalById('modal-si-template')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="si-template-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Email mẫu -->
+<div class="modal-backdrop" id="modal-email-template">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="email-template-title">Email mẫu</span>
+      <span class="modal-close" onclick="closeModalById('modal-email-template')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="email-template-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Đăng nhập -->
+<div class="modal-backdrop" id="modal-login">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">
+      Đăng nhập Admin
+      <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mật khẩu</label>
+      <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu admin">
+    </div>
+    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai mật khẩu!</div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="btn-do-login">
+        <i class="ti ti-login"></i> Đăng nhập
+      </button>
+    </div>
+  </div>
+</div>
+
+<div style="position:fixed;right:10px;bottom:6px;font-size:11px;color:#9a9a9a;z-index:5;pointer-events:none">© 2026 Nguyen Quoc Thi. All rights reserved. (Version 1.0.0)</div>
+<div id="toast" class="toast"></div>
+
+<script type="module">
+import { db } from "./js/firebase-config.js";
+import { isAdmin, isLoggedIn, logout, onAuthChange } from "./js/auth.js";
+import { showToast, openModal, closeModal } from "./js/utils.js";
+import {
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+window.closeModalById = closeModal;
+
+let allCustomers = [];
+let editingId = null;
+
+function updateAdminUI() {
+  const admin = isAdmin();
+  document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
+  document.getElementById("login-label").textContent = admin ? "Đăng xuất" : "Đăng nhập";
+  document.getElementById("btn-add-customer").style.display = admin ? "flex" : "none";
+  renderList();
+}
+
+document.getElementById("btn-login-toggle").addEventListener("click", async () => {
+  if (isLoggedIn()) { await logout(); location.href = "index.html"; }
+  else location.href = "index.html";   // Đăng nhập tại trang chủ
+});
+
+document.getElementById("btn-add-customer").addEventListener("click", () => {
+  if (!isAdmin()) return;
+  editingId = null;
+  document.getElementById("customer-modal-title").textContent = "Thêm khách hàng";
+  document.getElementById("form-customer").reset();
+  document.getElementById("fc-description").value = "SHIRTS";
+  openModal("modal-customer");
+});
+
+document.getElementById("form-customer").addEventListener("submit", async e => {
+  e.preventDefault();
+  const data = {
+    name:          document.getElementById("fc-name").value.trim(),
+    hdgc:          document.getElementById("fc-hdgc").value.trim(),
+    messrs:        document.getElementById("fc-messrs").value.trim(),
+    consignee:     document.getElementById("fc-consignee").value.trim(),
+    mailTo:        document.getElementById("fc-mailto").value.trim(),
+    mailCc:        document.getElementById("fc-mailcc").value.trim(),
+    shortName:     document.getElementById("fc-shortname").value.trim(),
+    description:   document.getElementById("fc-description").value.trim(),
+    note:          document.getElementById("fc-note").value.trim(),
+  };
+  try {
+    if (editingId) {
+      await updateDoc(doc(db, "customers", editingId), data);
+      showToast("Đã cập nhật khách hàng!");
+    } else {
+      // Check trùng tên
+      const dup = allCustomers.find(c => (c.name||"").toLowerCase() === data.name.toLowerCase());
+      if (dup) { showToast("Tên khách hàng đã tồn tại! Đổi tên khác."); return; }
+      await addDoc(collection(db, "customers"), { ...data, createdAt: serverTimestamp() });
+      showToast("Đã thêm khách hàng!");
+    }
+    closeModal("modal-customer");
+    e.target.reset();
+    editingId = null;
+  } catch(err) {
+    showToast("Lỗi: " + err.message);
+  }
+});
+
+function renderList() {
+  const admin = isAdmin();
+  const container = document.getElementById("customer-list");
+  document.getElementById("customer-count").textContent = allCustomers.length + " khách hàng";
+
+  if (allCustomers.length === 0) {
+    container.innerHTML = `<div class="empty-state"><i class="ti ti-users"></i><p>Chưa có khách hàng nào</p></div>`;
+    return;
+  }
+
+  container.innerHTML = "";
+  allCustomers.forEach(c => {
+    const card = document.createElement("div");
+    card.className = "shipment-card";
+    card.innerHTML = `
+      <div style="padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-size:15px;font-weight:500;margin-bottom:4px">${c.name}${c.shortName?` <span style="font-size:12px;color:var(--text-muted)">(${c.shortName})</span>`:""}</div>
+            <div style="font-size:12px;color:var(--text-muted)">${c.hdgc?`HDGC: ${c.hdgc}`:"—"}</div>
+          </div>
+          ${admin ? `<div style="display:flex;gap:6px">
+            <button class="btn btn-sm" onclick="openSiTemplate('${c.id}')" title="SI mẫu cho khách này"><i class="ti ti-file-description"></i> SI mẫu</button>
+            <button class="btn btn-sm" onclick="openEmailTemplate('${c.id}')" title="Email mẫu Booking cho khách này"><i class="ti ti-mail"></i> Email mẫu</button>
+            <button class="btn btn-sm" onclick="copyCustomer('${c.id}')" title="Sao chép khách hàng này"><i class="ti ti-copy"></i></button>
+            <button class="btn btn-sm" onclick="editCustomer('${c.id}')"><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="deleteCustomer('${c.id}')"><i class="ti ti-trash"></i></button>
+          </div>` : ""}
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:var(--text-muted);display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><span style="font-weight:500">MESSRS:</span><br><span style="white-space:pre-line;font-size:11px">${c.messrs || "—"}</span></div>
+          <div><span style="font-weight:500">CONSIGNEE:</span><br><span style="white-space:pre-line;font-size:11px">${c.consignee || "—"}</span></div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--text-muted)">
+          <div><span style="font-weight:500">To:</span> ${c.mailTo || "—"}</div>
+          <div><span style="font-weight:500">CC:</span> ${c.mailCc || "—"}</div>
+        </div>
+        <div style="margin-top:4px;font-size:11px;color:var(--text-muted)"><b>Description:</b> ${c.description || "—"}</div>
+        ${c.note ? `<div style="font-size:11px;color:var(--text-hint);margin-top:4px"><b>Note:</b> ${c.note}</div>` : ""}
+      </div>`;
+    container.appendChild(card);
+  });
+}
+
+window.editCustomer = function(id) {
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  editingId = id;
+  document.getElementById("customer-modal-title").textContent = "Sửa khách hàng";
+  document.getElementById("fc-name").value      = c.name || "";
+  document.getElementById("fc-hdgc").value      = c.hdgc || "";
+  document.getElementById("fc-messrs").value    = c.messrs || "";
+  document.getElementById("fc-consignee").value = c.consignee || "";
+  document.getElementById("fc-mailto").value    = c.mailTo || "";
+  document.getElementById("fc-mailcc").value    = c.mailCc || "";
+  document.getElementById("fc-shortname").value = c.shortName || "";
+  document.getElementById("fc-description").value = c.description || "SHIRTS";
+  document.getElementById("fc-note").value      = c.note || "";
+  openModal("modal-customer");
+};
+
+window.copyCustomer = function(id) {
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  editingId = null; // tạo mới
+  document.getElementById("customer-modal-title").textContent = "Sao chép khách hàng (đổi tên mới)";
+  document.getElementById("fc-name").value      = ""; // bắt buộc đổi tên
+  document.getElementById("fc-hdgc").value      = c.hdgc || "";
+  document.getElementById("fc-messrs").value    = c.messrs || "";
+  document.getElementById("fc-consignee").value = c.consignee || "";
+  document.getElementById("fc-mailto").value    = c.mailTo || "";
+  document.getElementById("fc-mailcc").value    = c.mailCc || "";
+  document.getElementById("fc-shortname").value = c.shortName || "";
+  document.getElementById("fc-description").value = c.description || "SHIRTS";
+  document.getElementById("fc-note").value      = c.note || "";
+  openModal("modal-customer");
+  showToast("Đã sao chép! Nhập tên mới rồi lưu.");
+};
+
+window.deleteCustomer = async function(id) {
+  if (!confirm("Xóa khách hàng này?")) return;
+  await deleteDoc(doc(db, "customers", id));
+  showToast("Đã xóa khách hàng!");
+};
+
+const SI_DEFAULT_SHIPPER = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD.\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIET NAM\nTEL: 84-251-3992537       FAX: 84-251-3992540";
+
+window.openSiTemplate = async function(id) {
+  if (!isAdmin()) return;
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  const t = c.siTemplate || {};
+
+  let allFwd = [];
+  try {
+    const snap = await getDocs(collection(db, "forwarders"));
+    allFwd = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {}
+  const matchedFwd = allFwd.filter(f => (f.customers||[]).includes(c.name));
+
+  document.getElementById("si-template-title").textContent = `SI mẫu — ${c.name}`;
+  const fwdOptionsHTML = allFwd.map(f=>`<option value="${f.id}" ${t.forwarderId===f.id?"selected":""}>${f.name}</option>`).join("");
+  const fwdBlockHTML = matchedFwd.length === 1
+    ? `<input type="hidden" id="sit-forwarder" value="${matchedFwd[0].id}">
+       <div style="font-size:13px;padding:8px 0;color:var(--text-muted)">Tự động: <b>${matchedFwd[0].name}</b> <span style="font-size:11px">(khách này chỉ có 1 forwarder)</span></div>`
+    : `<select class="form-select" id="sit-forwarder">
+         <option value="">${matchedFwd.length ? "— Chọn forwarder —" : "— Chưa gán forwarder cho khách này, chọn tay —"}</option>
+         ${fwdOptionsHTML}
+       </select>`;
+
+  document.getElementById("si-template-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Thông tin này sẽ tự điền mỗi khi bấm "Xuất SI" cho lô của khách <b>${c.name}</b>. Vẫn sửa được ở từng lô khi xuất, không ảnh hưởng SI mẫu này.</div>
+    <div class="form-group">
+      <label class="form-label">Forwarder (TO:)</label>
+      ${fwdBlockHTML}
+    </div>
+    <div class="form-group">
+      <label class="form-label">ATTN</label>
+      <input class="form-input" id="sit-attn" value="${(t.attnText||"").replace(/"/g,"&quot;")}" placeholder="TRALINKS CO.,LTD Docs Team">
+    </div>
+    <div class="form-group">
+      <label class="form-label">SHIPPER</label>
+      <textarea class="form-textarea" id="sit-shipper" rows="4">${t.shipperText || SI_DEFAULT_SHIPPER}</textarea>
+    </div>
+    <div class="form-group"><label class="form-label">CONSIGNEE</label><textarea class="form-textarea" id="sit-consignee" rows="4">${t.consigneeText || c.consignee || ""}</textarea></div>
+    <div class="form-group"><label class="form-label">NOTIFY PARTY</label><textarea class="form-textarea" id="sit-notify" rows="4">${t.notifyText || c.consignee || ""}</textarea></div>
+    <div class="form-group">
+      <label class="form-label">Tên hàng (Goods Description)</label>
+      <input class="form-input" id="sit-goods" value="${t.goodsDescription || ""}" placeholder="SHIRTS, PANTS...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Thông tin L/C</label>
+      <textarea class="form-textarea" id="sit-lcno" rows="3" placeholder="CONTRACT NO. NPTC/TOSG-2026/007/011
+L/C NO. LC002200003063">${(t.lcNo||"")}</textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Loại Bill</label>
+      <select class="form-select" id="sit-billtype" style="max-width:240px">
+        <option value="SURRENDERED" ${(t.billType||"SURRENDERED")==="SURRENDERED"?"selected":""}>SURRENDERED B/L</option>
+        <option value="SEAWAY" ${t.billType==="SEAWAY"?"selected":""}>SEAWAY BILL</option>
+      </select>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="sit-itemlist" ${t.showItemList!==false?"checked":""}> Hiện danh sách Contract/Style</label>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-si-template')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveSiTemplate('${id}')"><i class="ti ti-device-floppy"></i> Lưu SI mẫu</button>
+    </div>`;
+  openModal("modal-si-template");
+};
+
+window.saveSiTemplate = async function(id) {
+  if (!isAdmin()) return;
+  const fwdSel = document.getElementById("sit-forwarder");
+  const siTemplate = {
+    forwarderId: fwdSel ? fwdSel.value : "",
+    attnText: document.getElementById("sit-attn").value.trim(),
+    shipperText: document.getElementById("sit-shipper").value,
+    consigneeText: document.getElementById("sit-consignee").value,
+    notifyText: document.getElementById("sit-notify").value,
+    goodsDescription: document.getElementById("sit-goods").value.trim(),
+    lcNo: document.getElementById("sit-lcno").value.trim(),
+    billType: document.getElementById("sit-billtype").value,
+    showItemList: document.getElementById("sit-itemlist").checked,
+  };
+  await updateDoc(doc(db, "customers", id), { siTemplate });
+  closeModal("modal-si-template");
+  showToast("Đã lưu SI mẫu!");
+};
+
+const EMAIL_DEFAULT_SUBJECT = "New Booking {container} shipments //HCM-{port}/ ETD {etdShort} / Consignee: {shortName}//{contract}";
+const EMAIL_DEFAULT_BODY = `Please arrange for our NEW FCL BOOKING as follows!
+
+{container} TO {port}, JAPAN:
+
+ETD: ~ {etd}  TO: {port}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
+
+Description: {description}
+Contract number: {contract}
+Quantity: {qty} pcs = (about) {ctns} cartons = (about) {kg} kgs = (about) {cbm} cbm
+
+Consignee: {consignee}
+{note}
+
+Best regards,`;
+const EMAIL_PLACEHOLDER_HELP = "{container} {port} {etd} {etdShort} {description} {contract} {qty} {ctns} {kg} {cbm} {consignee} {note} {shortName} {table1} {table2}";
+
+function cleanEmailHtml(html) {
+  if (!html) return html;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+
+  tmp.querySelectorAll("*").forEach(node => {
+    node.style.removeProperty("height");
+    node.style.removeProperty("min-height");
+    node.style.removeProperty("margin-top");
+    node.style.removeProperty("margin-bottom");
+    node.style.removeProperty("margin");
+    node.style.removeProperty("padding-top");
+    node.style.removeProperty("padding-bottom");
+    if (node.getAttribute("style") === "") node.removeAttribute("style");
+    if (node.tagName === "DIV" || node.tagName === "P" || node.tagName === "SPAN") node.removeAttribute("height");
+  });
+
+  function isEmptyBlock(node) {
+    if (node.querySelector && node.querySelector("table, img")) return false;
+    const text = node.textContent.replace(/\u00a0/g, " ").trim();
+    return !text;
+  }
+
+  function collapseEmptyBlocks(parent) {
+    let consecutiveEmpty = 0;
+    Array.from(parent.children).forEach(node => {
+      const tag = node.tagName;
+      if (tag === "DIV" || tag === "P") {
+        if (isEmptyBlock(node)) {
+          consecutiveEmpty++;
+          if (consecutiveEmpty > 1) { node.remove(); return; }
+        } else {
+          consecutiveEmpty = 0;
+        }
+      } else {
+        consecutiveEmpty = 0;
+      }
+      collapseEmptyBlocks(node);
+    });
+  }
+  collapseEmptyBlocks(tmp);
+
+  let out = tmp.innerHTML;
+  out = out.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
+  return out;
+}
+function setupRichEditor(el) {
+  if (!el || el._richSetup) return;
+  el._richSetup = true;
+  try { document.execCommand("defaultParagraphSeparator", false, "br"); } catch(e){}
+  el.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    const text = e.clipboardData && e.clipboardData.getData("text/plain");
+    if (html) {
+      document.execCommand("insertHTML", false, cleanEmailHtml(html));
+    } else if (text) {
+      document.execCommand("insertText", false, text);
+    }
+  });
+}
+
+window.cleanCurrentEditor = function(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = cleanEmailHtml(el.innerHTML);
+  showToast("Đã dọn khoảng trắng!");
+};
+
+window.openEmailTemplate = function(id) {
+  if (!isAdmin()) return;
+  const c = allCustomers.find(x => x.id === id);
+  if (!c) return;
+  const et = c.emailTemplate || {};
+
+  document.getElementById("email-template-title").textContent = `Email mẫu (Booking) — ${c.name}`;
+  document.getElementById("email-template-body").innerHTML = `
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">Ký hiệu sẽ tự thay bằng số liệu thật của lô khi bấm "Generate email":<br><code style="font-size:11px">${EMAIL_PLACEHOLDER_HELP}</code>
+      <br><br><b>{table1}</b>: bảng đầy đủ ETD/POD/Customer/Order/Style/Qty PCS/CTNs/Kgs/CBM (không có HS Code, C/O Form).
+      <br><b>{table2}</b>: bảng ETD/POD/Customer/Contract/Items/Qty PCS + HS CODE + C/O FORM (không có CTNs/Kgs/CBM).
+      <br><span style="color:var(--text-muted)">Muốn in đậm/tô màu 1 đoạn cố định, gõ thẳng thẻ HTML, ví dụ: <code>&lt;b&gt;Quoc Thi (Mr)&lt;/b&gt;</code> hoặc <code>&lt;span style="background:yellow"&gt;{port}&lt;/span&gt;</code>.</span>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Email To</label><input class="form-input" id="et-mailto" value="${(c.mailTo||"").replace(/"/g,"&quot;")}"></div>
+      <div class="form-group"><label class="form-label">Email CC</label><input class="form-input" id="et-mailcc" value="${(c.mailCc||"").replace(/"/g,"&quot;")}"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Subject</label>
+      <input class="form-input" id="et-subject" value="${(et.subject || EMAIL_DEFAULT_SUBJECT).replace(/"/g,"&quot;")}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nội dung <button type="button" class="btn btn-sm" style="margin-left:6px" onclick="cleanCurrentEditor('et-body')"><i class="ti ti-eraser"></i> Dọn khoảng trắng</button></label>
+      <div class="rich-edit" id="et-body" contenteditable="true">${cleanEmailHtml((et.body || EMAIL_DEFAULT_BODY).replace(/\n/g,"<br>"))}</div>
+    </div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-email-template')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveEmailTemplate('${id}')"><i class="ti ti-device-floppy"></i> Lưu Email mẫu</button>
+    </div>`;
+  setupRichEditor(document.getElementById("et-body"));
+  openModal("modal-email-template");
+};
+
+window.saveEmailTemplate = async function(id) {
+  if (!isAdmin()) return;
+  const emailTemplate = {
+    subject: document.getElementById("et-subject").value.trim(),
+    body: cleanEmailHtml(document.getElementById("et-body").innerHTML),
+  };
+  await updateDoc(doc(db, "customers", id), {
+    emailTemplate,
+    mailTo: document.getElementById("et-mailto").value.trim(),
+    mailCc: document.getElementById("et-mailcc").value.trim(),
+  });
+  closeModal("modal-email-template");
+  showToast("Đã lưu Email mẫu!");
+};
+
+let _unsub = null;
+function startData() {
+  if (_unsub) return;
+  const q = query(collection(db, "customers"), orderBy("name"));
+  _unsub = onSnapshot(q, snap => {
+    allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderList();
+  }, err => { console.warn("Firestore:", err.message); });
+}
+
+onAuthChange(user => {
+  if (!user) { location.href = "index.html"; return; }  // chưa đăng nhập -> về trang chủ
+  updateAdminUI();
+  startData();
+});
+</script>
+</body>
+</html>

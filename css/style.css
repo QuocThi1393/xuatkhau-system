@@ -243,6 +243,18 @@ a { text-decoration: none; color: inherit; }
   border-top: 0.5px solid var(--border);
 }
 
+/* Ô soạn email dạng rich text (giữ bảng/định dạng khi paste, không bị giãn dòng) */
+.rich-edit {
+  width: 100%; min-height: 220px; max-height: 520px; overflow: auto;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border-md);
+  border-radius: var(--radius-md);
+  font-size: 13px; line-height: 1.4; color: var(--text);
+  background: #fff; outline: none;
+}
+.rich-edit:focus { border-color: var(--blue-text); box-shadow: 0 0 0 2px rgba(24,95,165,0.1); }
+.rich-edit div, .rich-edit p { margin: 0; padding: 0; line-height: 1.4; }
+
 /* TOAST */
 .toast {
   position: fixed; bottom: 24px; right: 24px;

@@ -845,23 +845,48 @@ function cleanEmailHtml(html) {
   if (!html) return html;
   const tmp = document.createElement("div");
   tmp.innerHTML = html;
+
   tmp.querySelectorAll("*").forEach(node => {
     node.style.removeProperty("height");
     node.style.removeProperty("min-height");
-    node.style.marginTop = "0";
-    node.style.marginBottom = "0";
-    if (node.tagName !== "TD" && node.tagName !== "TH") {
-      node.style.removeProperty("padding-top");
-      node.style.removeProperty("padding-bottom");
-    }
+    node.style.removeProperty("margin-top");
+    node.style.removeProperty("margin-bottom");
+    node.style.removeProperty("margin");
+    node.style.removeProperty("padding-top");
+    node.style.removeProperty("padding-bottom");
+    if (node.getAttribute("style") === "") node.removeAttribute("style");
+    if (node.tagName === "DIV" || node.tagName === "P" || node.tagName === "SPAN") node.removeAttribute("height");
   });
+
+  function isEmptyBlock(node) {
+    if (node.querySelector && node.querySelector("table, img")) return false;
+    const text = node.textContent.replace(/\u00a0/g, " ").trim();
+    return !text;
+  }
+
+  function collapseEmptyBlocks(parent) {
+    let consecutiveEmpty = 0;
+    Array.from(parent.children).forEach(node => {
+      const tag = node.tagName;
+      if (tag === "DIV" || tag === "P") {
+        if (isEmptyBlock(node)) {
+          consecutiveEmpty++;
+          if (consecutiveEmpty > 1) { node.remove(); return; }
+        } else {
+          consecutiveEmpty = 0;
+        }
+      } else {
+        consecutiveEmpty = 0;
+      }
+      collapseEmptyBlocks(node);
+    });
+  }
+  collapseEmptyBlocks(tmp);
+
   let out = tmp.innerHTML;
-  out = out.replace(/(<div>(\s|&nbsp;)*<br\s*\/?>(\s|&nbsp;)*<\/div>\s*){2,}/gi, "<div><br></div>");
-  out = out.replace(/(<p>(\s|&nbsp;)*(<br\s*\/?>)?(\s|&nbsp;)*<\/p>\s*){2,}/gi, "<p><br></p>");
   out = out.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
   return out;
 }
-
 function setupRichEditor(el) {
   if (!el || el._richSetup) return;
   el._richSetup = true;

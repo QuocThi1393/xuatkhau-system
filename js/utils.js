@@ -108,3 +108,28 @@ export function renderChecklist(container, checklist = {}, onChange) {
     container.appendChild(dot);
   });
 }
+
+// ====== HÀM DÙNG CHUNG CHO XUẤT CHỨNG TỪ ======
+// Tên file PDF: bỏ "/", đổi "-" thành cách, bỏ ký tự cấm. VD "485/26-TOYOTA" -> "Packing list 48526 TOYOTA"
+export function pdfFileName(prefix, inv) {
+  const clean = (inv||"").replace(/\//g,"").replace(/-/g," ").replace(/[\\:*?"<>|]/g,"").replace(/\s+/g," ").trim();
+  return clean ? `${prefix} ${clean}` : prefix;
+}
+
+// Khách hàng chính của lô (khách của đơn hàng đầu tiên)
+export function siCustomerName(s) { return (s.orders||[])[0]?.customer || ""; }
+
+// Chuẩn hóa tên để so khớp "mềm": bỏ khoảng trắng thừa, không phân biệt hoa thường
+export function normName(x) { return (x||"").trim().toUpperCase().replace(/\s+/g," "); }
+
+// Tìm khách hàng theo tên (so khớp mềm) - trả về data object hoặc {}
+export async function findCustomerByName(db, custName) {
+  if (!custName) return {};
+  try {
+    const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDocs(collection(db, "customers"));
+    const target = normName(custName);
+    const found = snap.docs.find(d => normName(d.data().name) === target);
+    return found ? found.data() : {};
+  } catch(e) { return {}; }
+}

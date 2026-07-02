@@ -549,6 +549,14 @@ function buildCard(s, admin) {
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
             <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
+            <div style="position:relative;display:inline-block">
+              <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu('${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>
+              <div id="co-menu-${s.id}" style="display:none;position:absolute;top:100%;left:0;margin-top:4px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:50;min-width:150px;overflow:hidden">
+                <div style="padding:8px 14px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''" onclick="exportDraftCO('${s.id}','RCEP')">CO RCEP</div>
+                <div style="padding:8px 14px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''" onclick="exportDraftCO('${s.id}','AJ')">CO AJ</div>
+                <div style="padding:8px 14px;cursor:pointer;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''" onclick="exportDraftCO('${s.id}','D')">CO Form D</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1883,6 +1891,205 @@ function renderSIPrint(s) {
   w.document.title = pdfFileName("Draft SI", s.invoiceNo);
 }
 
+
+// ====== XUẤT DRAFT CO ======
+const CO_SHIPPER_TEXT = "TOMIYA SUMMIT GARMENT EXPORT CO., LTD\nLOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ,\nLONG BINH WARD, DONG NAI PROVINCE, VIETNAM";
+const CO_HS_COLORS = ["#FFF9C4","#BBDEFB","#C8E6C9","#FFE0B2","#F8BBD0",null,"#E1BEE7"];
+const CO_TYPE_LABEL = { RCEP:"RCEP", AJ:"AJ", D:"Form D" };
+
+window.toggleCoMenu = function(shipId) {
+  document.querySelectorAll("[id^='co-menu-']").forEach(el => { if (el.id !== "co-menu-"+shipId) el.style.display = "none"; });
+  const el = document.getElementById("co-menu-"+shipId);
+  if (el) el.style.display = el.style.display === "none" ? "block" : "none";
+};
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[id^='co-menu-']") && !e.target.closest("[onclick^='toggleCoMenu']")) {
+    document.querySelectorAll("[id^='co-menu-']").forEach(el => el.style.display = "none");
+  }
+});
+
+function coFilterOrders(s, type) {
+  const orders = s.orders || [];
+  return orders.filter(o => {
+    const v = (o.coForm||"").toUpperCase().trim();
+    if (type === "RCEP") return v.includes("RCEP");
+    if (type === "AJ") return v.includes("AJ") && !v.includes("RCEP");
+    if (type === "D") return v.includes("FORM D") || v === "D";
+    return false;
+  });
+}
+
+function coGroupByHsCode(lines) {
+  const order = [];
+  const map = {};
+  lines.forEach(o => {
+    const hs = o.hsCode || "";
+    if (!map[hs]) { map[hs] = []; order.push(hs); }
+    map[hs].push(o);
+  });
+  return order.map((hs,i) => ({ hsCode: hs, color: CO_HS_COLORS[i % CO_HS_COLORS.length], lines: map[hs] }));
+}
+
+window.exportDraftCO = async function(shipId, type) {
+  document.querySelectorAll("[id^='co-menu-']").forEach(el => el.style.display = "none");
+  const s = allShipments.find(x=>x.id===shipId);
+  if (!s) return;
+  const lines = coFilterOrders(s, type);
+  if (!lines.length) {
+    showToast(`Lô hàng không có dòng hàng dùng CO ${CO_TYPE_LABEL[type]}!`);
+    return;
+  }
+  const groups = coGroupByHsCode(lines);
+
+  const custName = siCustomerName(s);
+  let cust = {};
+  if (custName) {
+    try {
+      const { collection:col, query:q, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDocs(q(col(db,"customers"), where("name","==",custName)));
+      if (!snap.empty) cust = snap.docs[0].data();
+    } catch(e){}
+  }
+  const consigneeText = cust.siTemplate?.consigneeText || cust.consignee || "";
+  const goodsDescription = cust.siTemplate?.goodsDescription || cust.description || "SHIRTS";
+
+  renderCOPrint(s, type, groups, consigneeText, goodsDescription);
+};
+
+function renderCOPrint(s, type, groups, consigneeText, goodsDescription) {
+  const orders = groups.flatMap(g => g.lines.map(o => ({ ...o, _color: g.color })));
+  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+
+  const etd = s.etd ? new Date(s.etd) : null;
+  const fmtDepDate = etd ? `${String(etd.getDate()).padStart(2,"0")}-${etd.toLocaleString("en-US",{month:"short"})}-${String(etd.getFullYear()).slice(-2)}` : "";
+  let signDate = etd ? new Date(etd) : null;
+  if (signDate && signDate.getDay() === 0) signDate.setDate(signDate.getDate()+1);
+  const fmtSignDate = signDate ? `${String(signDate.getDate()).padStart(2,"0")}/${String(signDate.getMonth()+1).padStart(2,"0")}/${signDate.getFullYear()}` : "";
+  const certNo = etd ? `VN-JP ${String(etd.getFullYear()).slice(-2)}/${String(etd.getMonth()+1).padStart(2,"0")}/` : "VN-JP /";
+
+  const rows = orders.map((o,i) => `<tr style="font-size:10px">
+    <td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center">${i+1}</td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000;padding:2px 4px">
+      <table style="width:100%"><tr><td style="width:80px">${o.contract||""}</td><td>${o.index||o.items||""}</td></tr></table>
+    </td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center;background:${o._color||"transparent"}">${o.hsCode||""}</td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center">CTC</td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center">VIETNAM</td>
+    <td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>
+    ${i===0 ? `<td style="border-top:1px solid #000;text-align:center;vertical-align:top;padding-top:4px" rowspan="${orders.length}">${s.invoiceNo||""}<br>DATE: ${s.invoiceDate||""}</td>` : ""}
+  </tr>`).join("");
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing:border-box; }
+  body { font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#000; margin:0; }
+  table { border-collapse:collapse; width:100%; }
+  td,th { padding:4px 6px; vertical-align:top; }
+  @media print { .no-print{display:none;} }
+</style></head><body>
+
+<table style="border:1.5px solid #000">
+<tr>
+<td style="width:52%;border-right:1.5px solid #000;border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
+<b>1. Goods Consigned from (Exporter's name, address and country)</b><br>
+${CO_SHIPPER_TEXT.replace(/\n/g,"<br>")}
+</td>
+<td style="border-bottom:1.5px solid #000;padding:5px;vertical-align:top">
+<div style="display:flex;justify-content:space-between"><span>Certificate No. <b>${certNo}</b></span><span><b>Form ${CO_TYPE_LABEL[type]}</b></span></div>
+<div style="text-align:center;font-weight:bold;font-size:12px;margin-top:8px">REGIONAL COMPREHENSIVE ECONOMIC<br>PARTNERSHIP AGREEMENT</div>
+<div style="text-align:center;font-weight:bold;font-size:11px;margin-top:6px">CERTIFICATE OF ORIGIN</div>
+<div style="text-align:center;margin-top:10px">Issued in ....<b>VIETNAM</b>....................<br><span style="font-size:9.5px">(Country)</span></div>
+</td>
+</tr>
+<tr>
+<td style="border-right:1.5px solid #000;padding:0;vertical-align:top">
+<div style="border-bottom:1px solid #000;padding:5px">
+<b>2. Goods Consigned to (Importer's/ Consignee's name, address, country)</b><br>
+${(consigneeText||"").replace(/\n/g,"<br>")}
+</div>
+<div style="border-bottom:1px solid #000;padding:5px">
+<b>3. Producer's name, address and country (if known)</b><br>
+${CO_SHIPPER_TEXT.replace(/\n/g,"<br>")}
+</div>
+<div style="padding:5px">
+<b>4. Means of transport and route (if known)</b>
+<div style="margin-top:5px">Departure Date: &nbsp;&nbsp;${fmtDepDate}</div>
+<div style="margin-top:6px">Vessel's name/Aircraft flight number, etc.: ${s.vessel||""}</div>
+<div style="margin-top:6px">Port of Discharge: &nbsp;&nbsp;${fullPort(s.port)}, JAPAN</div>
+</div>
+</td>
+<td style="padding:5px;vertical-align:top">
+<b>5. For Official Use</b>
+<div style="margin-top:5px"><b>Preferential Treatment:</b></div>
+<div style="margin-top:4px">&#9633; Given &nbsp;&nbsp;&nbsp;&nbsp; &#9633; Not Given (Please state reason/s)</div>
+<div style="height:36px"></div>
+<div style="text-align:center">........................................................................<br><span style="font-size:9.5px">Signature of Authorised Signatory of the Customs Authority of the Importing Country</span></div>
+</td>
+</tr>
+</table>
+
+<table style="border:1.5px solid #000;border-top:none">
+<tr style="text-align:center;font-weight:bold;font-size:9px">
+<td style="width:7%;border-right:1px solid #000">6. Item number</td>
+<td style="width:9%;border-right:1px solid #000">7. Marks and numbers on packages</td>
+<td style="width:22%;border-right:1px solid #000">8. Number and kind of packages; and description of goods.</td>
+<td style="width:11%;border-right:1px solid #000">9. HS Code of the goods (6 digit-level)</td>
+<td style="width:11%;border-right:1px solid #000">10. Origin Conferring Criterion</td>
+<td style="width:11%;border-right:1px solid #000">11. RCEP Country of Origin</td>
+<td style="width:16%;border-right:1px solid #000">12. Quantity (Gross weight or other measurement), and value (FOB) where RVC is applied</td>
+<td style="width:13%">13. Invoice number(s) and date of invoice(s)</td>
+</tr>
+<tr>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000;text-align:center;font-weight:bold">${Math.round(totalCtns).toLocaleString()} CTNS &nbsp;&nbsp; ${goodsDescription}</td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-right:1px solid #000;border-top:1px solid #000"></td>
+<td style="border-top:1px solid #000"></td>
+</tr>
+${rows}
+</table>
+
+<table style="border:1.5px solid #000;border-top:none">
+<tr><td style="padding:5px"><b>14. Remarks</b><div style="height:20px"></div></td></tr>
+</table>
+
+<table style="border:1.5px solid #000;border-top:none;font-size:9.5px">
+<tr>
+<td style="width:50%;border-right:1px solid #000;padding:5px;vertical-align:top">
+<b style="font-size:10.5px">15. Declaration by the exporter or producer</b>
+<div style="margin-top:5px">The undersigned hereby declares that the above details and statements are correct and that the goods covered in this Certificate comply with the requirements specified for these goods in the Regional Comprehensive Economic Partnership Agreement. These goods are exported to:</div>
+<div style="margin-top:10px;text-align:center">.............<b>JAPAN</b>.............<br><span style="font-size:9px">(importing country)</span></div>
+<div style="margin-top:14px;text-align:center">DONG NAI, ${fmtSignDate}<br>........................................<br><span style="font-size:9px">Place and date, and signature of authorised signatory</span></div>
+</td>
+<td style="padding:5px;vertical-align:top">
+<b style="font-size:10.5px">16. Certification</b>
+<div style="margin-top:5px">On the basis of control carried out, it is hereby certified that the information herein is correct and that the goods described comply with the origin requirements specified in the Regional Comprehensive Economic Partnership Agreement.</div>
+<div style="margin-top:28px">DONG NAI,</div>
+<div style="text-align:center;margin-top:6px">........................................................<br><span style="font-size:9px">Place and date, signature and seal or stamp of Issuing Body</span></div>
+</td>
+</tr>
+</table>
+
+<table style="border:1.5px solid #000;border-top:none">
+<tr><td style="padding:5px 8px">17.&nbsp; &#9633; Back-to-back Certificate of Origin &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &#9633; Third-party invoicing &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; &#9633; ISSUED RETROACTIVELY</td></tr>
+</table>
+
+<div class="no-print" style="text-align:center;margin-top:20px">
+  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
+</div>
+</body></html>`;
+
+  const w = window.open("","_blank");
+  w.document.write(html);
+  w.document.close();
+  const fname = `Draft CO ${CO_TYPE_LABEL[type]} ${(s.invoiceNo||"").replace(/[\/\-]/g," ").trim()}`.trim();
+  w.document.title = fname;
+}
 
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {

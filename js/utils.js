@@ -133,3 +133,19 @@ export async function findCustomerByName(db, custName) {
     return found ? found.data() : {};
   } catch(e) { return {}; }
 }
+
+// ====== GIAO DIỆN SÁNG / TỐI ======
+export function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+export function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  localStorage.setItem("theme", next);
+  return next;
+}
+// Cập nhật icon nút toggle (mặt trăng khi đang sáng, mặt trời khi đang tối)
+export function themeIcon(el) {
+  if (!el) return;
+  el.className = currentTheme() === "dark" ? "ti ti-sun" : "ti ti-moon";
+}

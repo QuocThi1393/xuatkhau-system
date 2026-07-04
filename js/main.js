@@ -1,11 +1,21 @@
 import { db } from "./firebase-config.js";
 import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
-import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
+import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, toggleTheme, themeIcon } from "./utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 window.closeModalById = closeModal;
+
+// Nút đổi giao diện sáng/tối
+const _themeBtn = document.getElementById("btn-theme");
+if (_themeBtn) {
+  themeIcon(document.getElementById("theme-icon"));
+  _themeBtn.addEventListener("click", () => {
+    toggleTheme();
+    themeIcon(document.getElementById("theme-icon"));
+  });
+}
 
 let allShipments = [];
 window.__getAllShipments = () => allShipments;

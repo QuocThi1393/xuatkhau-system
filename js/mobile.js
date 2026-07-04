@@ -1,7 +1,7 @@
 // ====== GIAO DIỆN ĐIỆN THOẠI ======
 import { db } from "./firebase-config.js";
 import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, canEditAnyCol } from "./auth.js";
-import { showToast, formatDate, fullPort, getProgress, CHECKLIST_STEPS, openModal, closeModal, normName } from "./utils.js";
+import { showToast, formatDate, fullPort, getProgress, CHECKLIST_STEPS, openModal, closeModal, normName, toggleTheme, themeIcon } from "./utils.js";
 import {
   collection, onSnapshot, doc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -45,6 +45,13 @@ async function doLogin() {
 
 document.getElementById("m-btn-logout").addEventListener("click", async () => {
   if (confirm("Đăng xuất?")) await logout();
+});
+
+// Nút đổi giao diện sáng/tối
+themeIcon(document.getElementById("m-btn-theme"));
+document.getElementById("m-btn-theme").addEventListener("click", () => {
+  toggleTheme();
+  themeIcon(document.getElementById("m-btn-theme"));
 });
 
 // Nút gạt Desktop (admin, chỉ trong phiên này)
@@ -93,19 +100,21 @@ function renderHome() {
   show("m-home", true);
   document.getElementById("m-title").textContent = "TOSGAMEX";
 
-  // Cảnh báo cắt máng hôm nay / ngày mai
+  // Cảnh báo cắt máng hôm nay / ngày mai — CHỈ khi bước 8 "Tờ khai Hải quan" chưa xong
   const today = localISO(new Date());
   const tmr = (() => { const d = new Date(); d.setDate(d.getDate()+1); return localISO(d); })();
   const warns = [];
   allShipments.forEach(s => {
     if (!s.cyCut) return;
+    const ck8 = (s.checklist||{})[8];
+    if (ck8 === "done" || ck8 === "skip") return; // đã xong tờ khai -> không cảnh báo
     if (s.cyCut === today) warns.push({ cls:"today", icon:"alert-triangle", pre:"Hôm nay", s });
     else if (s.cyCut === tmr) warns.push({ cls:"tomorrow", icon:"clock", pre:"Ngày mai", s });
   });
   document.getElementById("m-warnings").innerHTML = warns.map(w =>
     `<div class="m-warn ${w.cls}" onclick="mOpenDetail('${w.s.id}')">
       <i class="ti ti-${w.icon}" style="font-size:14px"></i>
-      <span><b>${w.pre}:</b> ${custLabel(w.s)} — ${fullPort(w.s.port)}${w.s.invoiceNo?` · ${w.s.invoiceNo}`:""}</span>
+      <span><b>${w.pre}:</b> ${custLabel(w.s)} — ${fullPort(w.s.port)}${w.s.invoiceNo?` · ${w.s.invoiceNo}`:""} · chưa tờ khai</span>
     </div>`).join("");
 
   // Nhãn tháng
@@ -122,15 +131,25 @@ function renderHome() {
   }
   list = [...list].sort((a,b) => (a.stuffingDate||"9999").localeCompare(b.stuffingDate||"9999"));
 
-  document.getElementById("m-list").innerHTML = list.length ? list.map(s => {
+  // Tách: lô 100% -> dòng gọn xếp trên đầu; lô đang xử lý -> thẻ đầy đủ
+  const doneList = list.filter(s => getProgress(s.checklist).pct >= 100);
+  const workList = list.filter(s => getProgress(s.checklist).pct < 100);
+
+  const doneHTML = doneList.map(s =>
+    `<div class="m-done-row" onclick="mOpenDetail('${s.id}')">
+      <b>${custLabel(s)} — ${fullPort(s.port)}</b>
+      <span class="m-done-pct">100% <i class="ti ti-circle-check" style="font-size:14px"></i></span>
+    </div>`).join("");
+
+  const workHTML = workList.map(s => {
     const { pct } = getProgress(s.checklist);
-    const pctStyle = pct >= 100 ? "background:#EAF3DE;color:#27500A" : pct >= 50 ? "background:#E6F1FB;color:#0C447C" : "background:#F1EFE8;color:#444";
     return `<div class="m-card" onclick="mOpenDetail('${s.id}')">
       <div class="m-card-head">
         <b>${custLabel(s)} — ${fullPort(s.port)}</b>
-        <span class="m-pct" style="${pctStyle}">${pct}%</span>
+        <span class="m-pct">${pct}%</span>
       </div>
       <div class="m-sub">INV ${s.invoiceNo||"—"} · ${s.container||"—"}</div>
+      <div class="m-bar"><div class="m-bar-fill" style="width:${pct}%"></div></div>
       <div class="m-dates">
         <span><i class="ti ti-home"></i> ${formatDate(s.stuffingDate)}</span>
         <span><i class="ti ti-scissors"></i> ${formatDate(s.cyCut)}</span>
@@ -138,7 +157,11 @@ function renderHome() {
         <span><i class="ti ti-anchor"></i> ${formatDate(s.eta)}</span>
       </div>
     </div>`;
-  }).join("") : `<div style="text-align:center;color:var(--text-muted);padding:30px 0;font-size:13px">Không có lô hàng trong tháng này</div>`;
+  }).join("");
+
+  const gap = doneList.length && workList.length ? `<div style="height:6px"></div>` : "";
+  document.getElementById("m-list").innerHTML = (doneHTML + gap + workHTML) ||
+    `<div style="text-align:center;color:var(--text-muted);padding:30px 0;font-size:13px">Không có lô hàng trong tháng này</div>`;
 }
 
 window.mOpenDetail = function(id) {

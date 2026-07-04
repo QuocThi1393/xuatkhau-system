@@ -55,6 +55,17 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
   .cal-tag.pack { background:#FAEEDA; color:#854F0B; border-left:2px solid #BA7517; }
   .cal-tag.ship { background:#E6F1FB; color:#0C447C; border-left:2px solid #185FA5; }
   .cal-tag:hover { filter:brightness(0.95); }
+
+  /* ====== DARK MODE: Lịch tháng + Handsontable ====== */
+  [data-theme="dark"] .cal-wrap { background: var(--bg-card); }
+  [data-theme="dark"] .cal-cell.other { background:#141A22; }
+  [data-theme="dark"] .cal-cell.today { background:#0C2D4A; outline-color:#7CC4F8; }
+  [data-theme="dark"] .cal-daynum { color: var(--text); }
+  [data-theme="dark"] .cal-daynum.other { color: var(--text-hint); }
+  [data-theme="dark"] .cal-daynum.sun, [data-theme="dark"] .cal-dow.sun { color:#F09595; }
+  [data-theme="dark"] .cal-tag.pack { background:#3A2A10; color:#FAC775; border-left-color:#854F0B; }
+  [data-theme="dark"] .cal-tag.ship { background:#0C2D4A; color:#7CC4F8; border-left-color:#185FA5; }
+  [data-theme="dark"] .cal-tag:hover { filter:brightness(1.2); }
 </style>
 </head>
 <body>

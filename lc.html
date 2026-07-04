@@ -278,7 +278,7 @@ function renderHistory(key) {
         <table class="data-table" style="font-size:11px">
           <thead><tr><th>Bản</th><th>Ngày</th><th style="text-align:right">Tăng tiền</th><th>Hạn LC mới</th><th>Hạn giao mới</th><th>Ghi chú</th>${admin?'<th></th>':''}</tr></thead>
           <tbody>
-            <tr style="background:#fafafa"><td>Gốc</td><td>${formatDate(lc.issueDate)||"—"}</td><td style="text-align:right">${(parseFloat(lc.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${formatDate(lc.expiry)||"—"}</td><td>${formatDate(lc.shipDate)||"—"}</td><td>${lc.note||""}</td>${admin?'<td></td>':''}</tr>
+            <tr style="background:var(--bg-secondary)"><td>Gốc</td><td>${formatDate(lc.issueDate)||"—"}</td><td style="text-align:right">${(parseFloat(lc.amount)||0).toLocaleString(undefined,{minimumFractionDigits:2})}</td><td>${formatDate(lc.expiry)||"—"}</td><td>${formatDate(lc.shipDate)||"—"}</td><td>${lc.note||""}</td>${admin?'<td></td>':''}</tr>
             ${amends.map((a,ai)=>`<tr>
               <td>${a.name||`Amend ${ai+1}`}</td>
               <td>${formatDate(a.issueDate)||"—"}</td>

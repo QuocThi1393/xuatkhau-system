@@ -36,6 +36,18 @@
   color-scheme: dark;
 }
 
+/* Dark: sửa các thành phần có màu hardcode sáng */
+[data-theme="dark"] .btn-primary { color: #10151D; }
+[data-theme="dark"] .btn-primary:hover { background: #C7CFD8; }
+[data-theme="dark"] .btn-export:hover { background: #12385C; }
+[data-theme="dark"] .rich-edit { background: var(--bg-card); }
+[data-theme="dark"] .ch-tl-ic.pink { background: #3A1F2B; }
+[data-theme="dark"] .ht-readonly-cell { background: #1C232C !important; }
+
+/* Card lô hoàn tất 100% */
+.card-done { background: #EBF3FB; }
+[data-theme="dark"] .card-done { background: #12283E; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;

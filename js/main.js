@@ -445,8 +445,8 @@ function buildCard(s, admin) {
   const card = document.createElement("div");
   card.className = "shipment-card";
   card.id = "card-"+s.id;
-  // Card hoàn tất → nền xanh nhẹ
-  if (isDone) card.style.background = "#EBF3FB";
+  // Card hoàn tất → nền xanh nhẹ (có bản dark trong style.css)
+  if (isDone) card.classList.add("card-done");
 
   // === Lộ trình vận chuyển: 4 mốc ===
   const routeNodes = [

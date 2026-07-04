@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Xuất Khẩu — Mobile</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23155A2C'/%3E%3Cstop offset='100%25' stop-color='%232E9E54'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='31' fill='url(%23g)'/%3E%3Ctext x='32' y='41' font-family='Arial,sans-serif' font-size='20' font-weight='bold' fill='white' text-anchor='middle'%3ETOS%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<style>
+  body { background: var(--bg-main); -webkit-tap-highlight-color: transparent; }
+  .m-topbar { position: sticky; top:0; z-index:20; background:#1B5E3A; color:#fff; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; }
+  .m-topbar b { font-size:16px; letter-spacing:0.5px; }
+  .m-top-actions { display:flex; align-items:center; gap:10px; }
+  .m-desktop-btn { font-size:11px; display:flex; align-items:center; gap:4px; background:rgba(255,255,255,0.15); border-radius:99px; padding:4px 10px; color:#fff; border:none; cursor:pointer; }
+  .m-wrap { padding: 12px; max-width: 560px; margin: 0 auto; }
+  .m-warn { display:flex; align-items:center; gap:6px; border-radius:8px; padding:6px 10px; margin-bottom:4px; font-size:12.5px; cursor:pointer; }
+  .m-warn.today { background:#FCEBEB; color:#791F1F; }
+  .m-warn.tomorrow { background:#FAEEDA; color:#633806; }
+  .m-monthbar { display:flex; gap:8px; align-items:center; margin:10px 0; }
+  .m-monthbar button { flex:0 0 44px; padding:8px 0; }
+  .m-monthbar .m-month-label { flex:1; text-align:center; font-weight:500; font-size:14px; }
+  .m-search { width:100%; margin-bottom:10px; font-size:14px; }
+  .m-card { border:0.5px solid var(--border); background:var(--bg-card); border-radius:12px; padding:10px 12px; margin-bottom:8px; cursor:pointer; }
+  .m-card-head { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .m-card-head b { font-size:14px; }
+  .m-pct { font-size:11px; padding:2px 8px; border-radius:99px; white-space:nowrap; }
+  .m-sub { color:var(--text-muted); font-size:12px; margin-top:3px; }
+  .m-dates { display:flex; gap:12px; font-size:11.5px; color:var(--text-muted); margin-top:5px; flex-wrap:wrap; }
+  .m-box { border:0.5px solid var(--border); background:var(--bg-card); border-radius:12px; padding:10px 12px; margin-bottom:8px; }
+  .m-timeline { display:flex; justify-content:space-between; text-align:center; font-size:11px; color:var(--text-muted); }
+  .m-timeline i { font-size:17px; }
+  .m-prog { display:flex; gap:3px; margin-top:4px; }
+  .m-prog span { flex:1; height:6px; border-radius:3px; background:#D3D1C7; }
+  .m-prog span.done { background:#1D9E75; }
+  .m-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .m-actions button { font-size:13px; padding:12px 4px; }
+  .m-export { border:0.5px solid var(--blue-border); background:var(--blue-bg); border-radius:12px; padding:10px 12px; }
+  .m-export-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
+  .m-export-grid button { font-size:12.5px; padding:9px 4px; background:var(--bg-card); }
+  .m-back { display:flex; align-items:center; gap:10px; cursor:pointer; }
+  .m-login { max-width:340px; margin:60px auto; padding:0 20px; text-align:center; }
+  .m-login .logo { width:72px; height:72px; border-radius:50%; background:#1B5E3A; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:20px; margin:0 auto 16px; }
+  .m-login input { width:100%; margin-bottom:10px; font-size:14px; }
+  .m-login button { width:100%; font-size:14px; padding:11px; }
+  .m-order-row { display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-top:0.5px solid var(--border); }
+  .m-sheet-label { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin:10px 0 4px; }
+  .m-cont-row { display:grid; grid-template-columns:70px 1fr 1fr; gap:6px; margin-bottom:6px; }
+  .m-cont-row input { font-size:13px; }
+  .m-ck-item { display:flex; align-items:center; gap:10px; padding:9px 4px; border-top:0.5px solid var(--border); font-size:13.5px; cursor:pointer; }
+  .m-ck-dot { width:24px; height:24px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; flex:0 0 24px; background:var(--bg-secondary); color:var(--text-muted); }
+  .m-ck-item.done .m-ck-dot { background:#1D9E75; color:#fff; }
+  .m-ck-item.skip .m-ck-dot { background:#D3D1C7; color:#555; }
+  .modal { max-width: 95vw; }
+</style>
+</head>
+<body>
+
+<div id="m-topbar" class="m-topbar" style="display:none">
+  <b id="m-title">TOSGAMEX</b>
+  <div class="m-top-actions">
+    <button class="m-desktop-btn" id="m-btn-desktop" style="display:none"><i class="ti ti-device-desktop"></i> Desktop</button>
+    <i class="ti ti-logout" id="m-btn-logout" style="font-size:19px;cursor:pointer" title="Đăng xuất"></i>
+  </div>
+</div>
+
+<!-- MÀN ĐĂNG NHẬP -->
+<div id="m-login" class="m-login" style="display:none">
+  <div class="logo">TOS</div>
+  <h2 style="margin:0 0 4px;font-size:18px">Hệ thống Xuất Khẩu</h2>
+  <div style="color:var(--text-muted);font-size:13px;margin-bottom:20px">TOSGAMEX — bản điện thoại</div>
+  <input type="email" class="form-input" id="ml-email" placeholder="Email" autocomplete="username">
+  <input type="password" class="form-input" id="ml-pass" placeholder="Mật khẩu" autocomplete="current-password">
+  <button class="btn btn-primary" id="ml-btn"><i class="ti ti-login"></i> Đăng nhập</button>
+  <div id="ml-err" style="color:var(--red-text,#A32D2D);font-size:12.5px;margin-top:10px"></div>
+</div>
+
+<!-- TRANG CHỦ -->
+<div id="m-home" class="m-wrap" style="display:none">
+  <div id="m-warnings"></div>
+  <div class="m-monthbar">
+    <button class="btn" id="m-prev"><i class="ti ti-chevron-left"></i></button>
+    <div class="m-month-label" id="m-month-label"></div>
+    <button class="btn" id="m-next"><i class="ti ti-chevron-right"></i></button>
+  </div>
+  <input class="form-input m-search" id="m-search" placeholder="Tìm khách / số invoice...">
+  <div id="m-list"></div>
+</div>
+
+<!-- CHI TIẾT LÔ -->
+<div id="m-detail" class="m-wrap" style="display:none"></div>
+
+<!-- MODAL: Sửa nhanh (tàu/ngày, cont/seal, shipping mark, tick tiến trình) -->
+<div class="modal-backdrop" id="modal-m-edit">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">
+      <span id="m-edit-title">Sửa nhanh</span>
+      <span class="modal-close" onclick="closeModalById('modal-m-edit')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="m-edit-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Xuất SI (dùng chung exports.js) -->
+<div class="modal-backdrop" id="modal-si">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      Xuất SI (Draft B/L)
+      <span class="modal-close" onclick="closeModalById('modal-si')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="si-form-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Xem lại Draft CO (dùng chung exports.js) -->
+<div class="modal-backdrop" id="modal-co-draft">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="co-draft-title">Xem lại Draft CO</span>
+      <span class="modal-close" onclick="closeModalById('modal-co-draft')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="co-draft-body"></div>
+  </div>
+</div>
+
+<script type="module" src="js/exports.js"></script>
+<script type="module" src="js/mobile.js"></script>
+</body>
+</html>

@@ -18,6 +18,24 @@
   --red-bg: #FCEBEB;   --red-text: #A32D2D;   --red-border: #F09595;
 }
 
+/* ====== DARK MODE: đổi toàn bộ biến màu, bố cục giữ nguyên ====== */
+[data-theme="dark"] {
+  --bg: #10151D;
+  --bg-card: #1A212A;
+  --bg-secondary: #1C232C;
+  --border: rgba(255,255,255,0.10);
+  --border-md: rgba(255,255,255,0.22);
+  --text: #E6EDF3;
+  --text-muted: #9AA4B2;
+  --text-hint: #6B7686;
+  --green-bg: #1C3311; --green-text: #A7D77C; --green-border: #3B6D11;
+  --amber-bg: #3A2A10; --amber-text: #FAC775; --amber-border: #854F0B;
+  --blue-bg: #0C2D4A;  --blue-text: #7CC4F8;  --blue-border: #185FA5;
+  --gray-bg: #232620;  --gray-text: #B4B2A9;  --gray-border: #5F5E5A;
+  --red-bg: #3A1B1B;   --red-text: #F7C1C1;   --red-border: #7A3030;
+  color-scheme: dark;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 14px;

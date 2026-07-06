@@ -1,5 +1,6 @@
 // ====== XUẤT CHỨNG TỪ (SI + CO) — tách từ main.js ======
 import { db } from "./firebase-config.js";
+import { isGuest } from "./auth.js";
 import { showToast, fullPort, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -29,6 +30,8 @@ function siItemList(s) {
 }
 
 window.openSI = async function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+
   const s = shipments().find(x=>x.id===shipId);
   if (!s) return;
   const custName = siCustomerName(s);
@@ -425,6 +428,8 @@ function coFmtCertNo(etd) {
 }
 
 window.openCODraft = async function(shipId, type) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+
   const menu = document.getElementById("co-floating-menu");
   if (menu) menu.remove();
   const s = shipments().find(x=>x.id===shipId);
@@ -864,6 +869,8 @@ ${isLast ? `
 
 // ====== PACKING LIST + VGM (chuyển từ main.js) ======
 window.openPackingList = async function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+
   const s = shipments().find(x=>x.id===shipId);
   if (!s) return;
 
@@ -1033,6 +1040,8 @@ function renderPackingA4(s, cust, p) {
 
 // ====== XUẤT VGM ======
 window.openVGM = function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+
   const s = shipments().find(x=>x.id===shipId);
   if (!s) return;
   const C = (s.container||"").toUpperCase();

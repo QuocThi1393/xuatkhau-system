@@ -1,6 +1,6 @@
 // ====== GIAO DIỆN ĐIỆN THOẠI ======
 import { db } from "./firebase-config.js";
-import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, canEditAnyCol } from "./auth.js";
+import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, canEditAnyCol } from "./auth.js";
 import { showToast, formatDate, fullPort, getProgress, CHECKLIST_STEPS, openModal, closeModal, normName, toggleTheme, themeIcon } from "./utils.js";
 import {
   collection, onSnapshot, doc, updateDoc
@@ -259,7 +259,7 @@ function renderDetail(id) {
       <button class="btn" onclick="mEditChecklist('${s.id}')"><i class="ti ti-checklist"></i> Tick tiến trình</button>
     </div>` : ""}
 
-    <div class="m-export">
+    ${isGuest() ? "" : `<div class="m-export">
       <b style="color:var(--blue-text);font-size:13.5px"><i class="ti ti-file-export"></i> Xuất chứng từ (PDF)</b>
       <div class="m-export-grid">
         <button class="btn" onclick="openPackingList('${s.id}')">Packing List</button>
@@ -268,7 +268,7 @@ function renderDetail(id) {
         <button class="btn" onclick="mExportCO(event,'${s.id}')">Draft CO</button>
       </div>
       <div style="font-size:10.5px;color:var(--blue-text);margin-top:6px">Bấm In → chọn "Lưu PDF" → share qua Zalo/Line</div>
-    </div>`;
+    </div>`}`;
 }
 
 window.mToggleOrders = function(el) {

@@ -18,9 +18,10 @@ const ROLE_PERMS = {
   price:     { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["unitPrice"] },
   dimension: { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["dimension","tareCtn"] },
   viewer:    { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[] },
+  guest:     { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[] },
 };
 export const ROLE_LABELS = {
-  admin:"Admin (toàn quyền)", price:"Sửa giá", dimension:"Sửa Dimension", viewer:"Chỉ xem"
+  admin:"Admin (toàn quyền)", price:"Sửa giá", dimension:"Sửa Dimension", viewer:"Chỉ xem", guest:"Khách (chỉ xem, không xuất)"
 };
 
 let _user = null, _role = null, _nick = "", _resolved = false;
@@ -55,6 +56,7 @@ export function role() { return _role; }
 export function nickname() { return _nick; }
 export function perms() { return ROLE_PERMS[_role] || ROLE_PERMS.viewer; }
 export function isAdmin() { return _role === "admin"; }
+export function isGuest() { return _role === "guest"; }
 // Có được sửa ít nhất 1 cột không (để hiện nút "Chỉnh sửa Excel")
 export function canEditAnyCol() {
   const p = perms();

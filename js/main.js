@@ -1,21 +1,13 @@
 import { db } from "./firebase-config.js";
-import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
-import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, toggleTheme, themeIcon } from "./utils.js";
+import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
+import { initTopbar } from "./topbar.js";
+import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 window.closeModalById = closeModal;
-
-// Nút đổi giao diện sáng/tối
-const _themeBtn = document.getElementById("btn-theme");
-if (_themeBtn) {
-  themeIcon(document.getElementById("theme-icon"));
-  _themeBtn.addEventListener("click", () => {
-    toggleTheme();
-    themeIcon(document.getElementById("theme-icon"));
-  });
-}
+initTopbar("index");
 
 let allShipments = [];
 window.__getAllShipments = () => allShipments;
@@ -85,14 +77,15 @@ function updateAdminUI() {
   const p = perms();
   document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
   document.getElementById("login-label").textContent = on ? "Đăng xuất" : "Đăng nhập";
-  // Lời chào
-  const g = document.getElementById("user-greeting");
-  if (on) { g.style.display = ""; g.textContent = "Xin chào " + (nickname() || "") + "!"; }
-  else { g.style.display = "none"; }
   // Nav cần đăng nhập
   ["btn-nav-list","nav-customers","nav-lc","nav-forwarders","btn-reports"].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none";
   });
+  // Vai trò Khách: không thấy Báo cáo
+  if (on && isGuest()) {
+    const rp = document.getElementById("btn-reports");
+    if (rp) rp.style.display = "none";
+  }
   // Nút quản lý tài khoản: chỉ admin
   const navUsers = document.getElementById("nav-users");
   if (navUsers) navUsers.style.display = admin ? "" : "none";
@@ -556,11 +549,11 @@ function buildCard(s, admin) {
           <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
           <div class="ck-list">${listHTML}</div>
           <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);display:flex;flex-direction:column;gap:6px">
-            <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+            ${!isGuest() ? `<button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
             <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
-            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>
+            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>` : ""}
           </div>
         </div>
       </div>
@@ -1007,6 +1000,7 @@ window.cleanCurrentEditor = function(id) {
 };
 
 window.openEmailModal = async function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
   let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="", emailTemplate=null;
@@ -1272,6 +1266,7 @@ window.openShipMark = function(shipId) {
 
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
   const now = new Date();
   document.getElementById("rp-month").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   document.getElementById("rp-asof").value = now.toISOString().slice(0,10);
@@ -1739,6 +1734,14 @@ onAuthChange(user => {
   if (user) {
     startData();
     maybeFridayBackup();
+    // Vào từ trang khác qua nút Báo cáo / Backup trong menu
+    if (location.hash === "#reports" && !isGuest()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => document.getElementById("btn-reports")?.click(), 600);
+    } else if (location.hash === "#backup" && isAdmin()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => downloadBackup(), 600);
+    }
   } else {
     stopData();
     showCalendar();   // về lịch trống

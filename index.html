@@ -70,37 +70,7 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-logo">Xuất Khẩu <span>System</span></div>
-  <svg width="280" height="52" viewBox="0 0 280 52" style="flex-shrink:0;cursor:pointer" id="btn-home" title="Về trang chủ (Lịch)">
-    <defs>
-      <linearGradient id="tosgrad" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stop-color="#155A2C"/>
-        <stop offset="100%" stop-color="#2E9E54"/>
-      </linearGradient>
-    </defs>
-    <rect x="0" y="2" width="280" height="48" rx="8" fill="url(#tosgrad)"/>
-    <text x="140" y="28" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">TOSGAMEX</text>
-    <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
-  </svg>
-  <div class="topbar-nav">
-    <button class="btn btn-sm" id="btn-nav-list" style="display:none"><i class="ti ti-package"></i> Lô hàng</button>
-    <a href="customers.html" class="btn btn-sm" id="nav-customers" style="display:none"><i class="ti ti-users"></i> Khách hàng</a>
-    <a href="lc.html" class="btn btn-sm" id="nav-lc" style="display:none"><i class="ti ti-credit-card"></i> LC</a>
-    <a href="forwarders.html" class="btn btn-sm" id="nav-forwarders" style="display:none"><i class="ti ti-truck-delivery"></i> Forwarder</a>
-    <button class="btn btn-sm" id="btn-reports" style="display:none"><i class="ti ti-report"></i> Báo cáo</button>
-    <a href="users.html" class="btn btn-sm" id="nav-users" style="display:none"><i class="ti ti-user-cog"></i> Tài khoản</a>
-    <button class="btn btn-sm" id="btn-backup" style="display:none"><i class="ti ti-database-export"></i> Backup</button>
-    <span id="user-greeting" style="display:none;font-size:13px;color:var(--text-muted);margin:0 4px"></span>
-    <div id="admin-indicator" class="admin-indicator" style="display:none">
-      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
-    </div>
-    <button class="btn btn-sm" id="btn-theme" title="Đổi giao diện sáng/tối"><i class="ti ti-moon" id="theme-icon"></i></button>
-    <button class="btn btn-sm" id="btn-login-toggle">
-      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
-    </button>
-  </div>
-</div>
+<div id="topbar"></div>
 
 <div class="container">
   <!-- VIEW LỊCH (trang chủ) -->

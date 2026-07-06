@@ -16,28 +16,7 @@
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-logo"><a href="index.html">Xuất Khẩu <span>System</span></a></div>
-  <a href="index.html" title="Về trang chủ" style="flex-shrink:0;line-height:0">
-  <svg width="280" height="52" viewBox="0 0 280 52">
-    <defs><linearGradient id="tosgrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#155A2C"/><stop offset="100%" stop-color="#2E9E54"/>
-    </linearGradient></defs>
-    <rect x="0" y="2" width="280" height="48" rx="8" fill="url(#tosgrad)"/>
-    <text x="140" y="28" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">TOSGAMEX</text>
-    <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
-  </svg></a>
-  <div class="topbar-nav">
-    <a href="index.html" class="btn btn-sm"><i class="ti ti-package"></i> Lô hàng</a>
-    <a href="customers.html" class="btn btn-sm"><i class="ti ti-users"></i> Khách hàng</a>
-    <div id="admin-indicator" class="admin-indicator" style="display:none">
-      <i class="ti ti-shield-check" style="font-size:13px"></i> Admin
-    </div>
-    <button class="btn btn-sm" id="btn-login-toggle">
-      <i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span>
-    </button>
-  </div>
-</div>
+<div id="topbar"></div>
 
 <div class="container">
   <div class="toolbar">
@@ -111,6 +90,8 @@
 <script type="module">
 import { db } from "./js/firebase-config.js";
 import { isAdmin, isLoggedIn, logout, onAuthChange } from "./js/auth.js";
+import { initTopbar } from "./js/topbar.js";
+initTopbar("forwarders");
 import { showToast, openModal, closeModal } from "./js/utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy

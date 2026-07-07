@@ -9,14 +9,7 @@ const GREETINGS = [
 ];
 
 function pickGreeting() {
-  const today = new Date().toISOString().slice(0, 10);
-  try {
-    const saved = JSON.parse(sessionStorage.getItem("tbGreet") || "null");
-    if (saved && saved.date === today) return GREETINGS[saved.idx] || GREETINGS[0];
-    const idx = Math.floor(Math.random() * GREETINGS.length);
-    sessionStorage.setItem("tbGreet", JSON.stringify({ date: today, idx }));
-    return GREETINGS[idx];
-  } catch (e) { return GREETINGS[0]; }
+  return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
 }
 
 export function initTopbar(active) {
@@ -51,6 +44,7 @@ export function initTopbar(active) {
 
   <div class="tb-right">
     <span id="user-greeting" style="display:none;font-size:13px;color:var(--text-muted);margin:0 4px"></span>
+    <button class="btn btn-sm" id="btn-to-mobile" style="display:none" title="Chuyển về bản điện thoại"><i class="ti ti-device-mobile"></i> Bản điện thoại</button>
     <div id="admin-indicator" style="display:none;position:relative">
       <button class="btn btn-sm" id="btn-admin-menu"><i class="ti ti-shield-check"></i> Admin ${isFriday ? warnHTML : ""}<i class="ti ti-chevron-down" style="font-size:12px"></i></button>
       <div class="tb-menu" id="admin-menu">
@@ -101,9 +95,26 @@ export function initTopbar(active) {
     });
   }
 
+  // Nút "Bản điện thoại": chỉ hiện khi đang mở desktop TRÊN điện thoại
+  const onPhone = /Android|iPhone/i.test(navigator.userAgent);
+  const toMobileBtn = document.getElementById("btn-to-mobile");
+  if (onPhone && toMobileBtn) {
+    toMobileBtn.style.display = "";
+    toMobileBtn.addEventListener("click", () => {
+      sessionStorage.removeItem("forceDesktop");
+      location.href = "mobile.html";
+    });
+  }
+
   // Hiện/ẩn theo trạng thái đăng nhập + lời chào đa ngôn ngữ
   onAuthChange(() => {
     const on = isLoggedIn();
+    // Trên điện thoại: chỉ admin mới được ở lại desktop; ai khác tự về mobile
+    if (onPhone && on && !isAdmin()) {
+      sessionStorage.removeItem("forceDesktop");
+      location.replace("mobile.html");
+      return;
+    }
     ["btn-nav-list", "nav-customers", "nav-lc", "nav-forwarders", "btn-reports"].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = on ? "" : "none";

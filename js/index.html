@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+// Điện thoại → tự chuyển sang giao diện mobile (trừ khi admin đã gạt "Desktop" trong phiên này)
+if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forceDesktop")) {
+  location.replace("mobile.html");
+}
+// Nạp giao diện sáng/tối đã lưu (mặc định theo cài đặt máy)
+(function(){
+  var t = localStorage.getItem("theme");
+  if (!t) t = (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  document.documentElement.dataset.theme = t;
+})();
+</script>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1B5E3A">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Hệ thống Xuất Khẩu</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23155A2C'/%3E%3Cstop offset='100%25' stop-color='%232E9E54'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='31' fill='url(%23g)'/%3E%3Ctext x='32' y='41' font-family='Arial,sans-serif' font-size='20' font-weight='bold' fill='white' text-anchor='middle'%3ETOS%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
+<!-- Handsontable: Excel trên web -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/handsontable@13.1.0/dist/handsontable.full.min.css">
+<script src="https://cdn.jsdelivr.net/npm/handsontable@13.1.0/dist/handsontable.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  .ht-wrap { margin: 4px 0 12px; }
+  .handsontable { font-size: 12px; font-family: inherit; }
+  .handsontable th { font-weight: 500; background: #f1efea; color: #1a1a1a; }
+  .ht-readonly-cell { background: #faf9f6 !important; color: var(--text-muted) !important; }
+
+  /* Lịch tháng */
+  .cal-wrap { background:#fff; border-radius:12px; border:0.5px solid var(--border-md); overflow:hidden; }
+  .cal-header { background:#155A2C; color:#fff; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; }
+  .cal-header button { background:rgba(255,255,255,0.15); color:#fff; border:none; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:14px; }
+  .cal-header button:hover { background:rgba(255,255,255,0.28); }
+  .cal-legend { display:flex; gap:16px; font-size:12px; color:var(--text-muted); padding:10px 20px; border-bottom:0.5px solid var(--border); }
+  .cal-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+  .cal-dow { text-align:center; font-size:12px; font-weight:500; color:var(--text-muted); padding:8px 0; border-bottom:0.5px solid var(--border); }
+  .cal-dow.sun { color:#993556; }
+  .cal-cell { min-height:96px; border-right:0.5px solid var(--border); border-bottom:0.5px solid var(--border); padding:5px 6px; overflow:hidden; }
+  .cal-cell:nth-child(7n+7) { border-right:none; }
+  .cal-cell.other { background:#FAFAF8; }
+  .cal-daynum { font-size:13px; color:var(--text-primary); margin-bottom:3px; }
+  .cal-daynum.sun { color:#993556; }
+  .cal-daynum.other { color:var(--text-hint); }
+  .cal-cell.today { background:#E6F1FB; outline:2px solid #185FA5; outline-offset:-2px; }
+  .cal-today-num { font-size:13px; font-weight:600; color:#fff; background:#185FA5; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-bottom:3px; }
+  .cal-tag { font-size:10px; padding:2px 4px; margin-bottom:2px; border-radius:0 3px 3px 0; line-height:1.25; cursor:pointer; }
+  .cal-tag.pack { background:#FAEEDA; color:#854F0B; border-left:2px solid #BA7517; }
+  .cal-tag.ship { background:#E6F1FB; color:#0C447C; border-left:2px solid #185FA5; }
+  .cal-tag:hover { filter:brightness(0.95); }
+
+  /* ====== DARK MODE: Lịch tháng + Handsontable ====== */
+  [data-theme="dark"] .cal-wrap { background: var(--bg-card); }
+  [data-theme="dark"] .cal-cell.other { background:#141A22; }
+  [data-theme="dark"] .cal-cell.today { background:#0C2D4A; outline-color:#7CC4F8; }
+  [data-theme="dark"] .cal-daynum { color: var(--text); }
+  [data-theme="dark"] .cal-daynum.other { color: var(--text-hint); }
+  [data-theme="dark"] .cal-daynum.sun, [data-theme="dark"] .cal-dow.sun { color:#F09595; }
+  [data-theme="dark"] .cal-tag.pack { background:#3A2A10; color:#FAC775; border-left-color:#854F0B; }
+  [data-theme="dark"] .cal-tag.ship { background:#0C2D4A; color:#7CC4F8; border-left-color:#185FA5; }
+  [data-theme="dark"] .cal-tag:hover { filter:brightness(1.2); }
+</style>
+</head>
+<body>
+
+<div id="topbar"></div>
+
+<div class="container">
+  <!-- VIEW LỊCH (trang chủ) -->
+  <div id="calendar-view">
+    <div id="cutoff-warning"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <span style="font-size:15px;font-weight:500"><i class="ti ti-calendar-event"></i> Lịch xuất hàng</span>
+    </div>
+    <div id="calendar-box"></div>
+  </div>
+
+  <!-- VIEW DANH SÁCH LÔ -->
+  <div id="list-view" style="display:none">
+    <div class="toolbar">
+      <div class="toolbar-left" style="flex-wrap:wrap">
+        <button class="btn btn-sm" id="btn-back-calendar"><i class="ti ti-calendar"></i> Về lịch</button>
+        <span id="shipment-count" style="font-size:13px;color:var(--text-muted)">Đang tải...</span>
+        <select class="form-select" id="filter-status" style="width:140px;padding:6px 8px">
+          <option value="">Tất cả</option>
+          <option value="pending">Chờ xử lý</option>
+          <option value="booking">Chờ booking</option>
+          <option value="processing">Đang xử lý</option>
+          <option value="done">Hoàn tất</option>
+        </select>
+        <select class="form-select" id="filter-month" style="width:160px;padding:6px 8px">
+          <option value="">Tất cả tháng</option>
+        </select>
+        <select class="form-select" id="filter-customer" style="width:170px;padding:6px 8px">
+          <option value="">Tất cả khách</option>
+        </select>
+        <input class="form-input" id="filter-invoice" placeholder="Tìm số Inv..." style="width:160px;padding:6px 8px">
+      </div>
+      <div class="toolbar-right">
+        <button class="btn" id="btn-import-plan" style="display:none">
+          <i class="ti ti-file-import"></i> Import kế hoạch
+        </button>
+        <button class="btn btn-primary" id="btn-add-shipment" style="display:none">
+          <i class="ti ti-plus"></i> Thêm lô hàng
+        </button>
+      </div>
+    </div>
+    <div id="shipment-list" style="position:relative;min-height:300px">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Import / Thêm bằng bảng Excel -->
+<div class="modal-backdrop" id="modal-import-plan">
+  <div class="modal" style="max-width:1200px;width:96vw">
+    <div class="modal-title">
+      <span id="import-modal-title">Nhập kế hoạch xuất hàng</span>
+      <span class="modal-close" onclick="closeModalById('modal-import-plan')"><i class="ti ti-x"></i></span>
+    </div>
+
+    <div id="import-step1">
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px">
+        Dán dữ liệu từ Excel vào bảng (click ô <b>STUFFING DATE</b> dòng đầu rồi Ctrl+V). Hệ thống tự tách lô theo <b>dòng tổng</b> (dòng chứa 40F*1, 20F*1, AIR, LCL... và không có mã hàng). Dán đúng 9 cột đầu: Stuffing Date, ETD, POD, Customer, Contract, Index, Items, Qty PCS, Qty CTNs.
+      </div>
+      <div id="hot-import" class="ht-wrap"></div>
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:10px">
+        <button class="btn btn-sm" id="btn-clear-import"><i class="ti ti-eraser"></i> Xóa hết</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="closeModalById('modal-import-plan')">Hủy</button>
+          <button class="btn btn-primary" id="btn-parse-plan"><i class="ti ti-analyze"></i> Phân tích & xem trước</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="import-step2" style="display:none">
+      <div style="font-size:13px;font-weight:500;margin-bottom:12px" id="import-summary"></div>
+      <div style="overflow-y:auto;max-height:440px;border:0.5px solid var(--border);border-radius:var(--radius-md)">
+        <table class="data-table" style="table-layout:fixed">
+          <colgroup>
+            <col style="width:36px"><col style="width:110px"><col style="width:90px">
+            <col style="width:70px"><col style="width:60px"><col style="width:90px">
+            <col style="width:130px"><col style="width:auto">
+          </colgroup>
+          <thead><tr>
+            <th></th><th>Cảng / ETD</th><th>Tháng</th><th>Quy cách</th>
+            <th>Đơn</th><th>Trùng</th><th>Xử lý</th>
+            <th>Mã hàng (mẫu)</th><th>Khách hàng</th>
+          </tr></thead>
+          <tbody id="import-preview-tbody"></tbody>
+        </table>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:8px">
+        💡 Lô <span style="color:var(--amber-text);font-weight:500">⚠️ Trùng</span> = đã có (so theo mã hàng). Tick "Ghi đè" để cập nhật đơn hàng, giữ nguyên checklist & thông tin tàu.
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:8px;margin-top:14px">
+        <button class="btn" id="btn-back-import"><i class="ti ti-arrow-left"></i> Sửa lại</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="closeModalById('modal-import-plan')">Hủy</button>
+          <button class="btn btn-primary" id="btn-confirm-import-plan"><i class="ti ti-check"></i> Xác nhận lưu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Sửa đơn hàng (Handsontable) cho 1 lô -->
+<div class="modal-backdrop" id="modal-edit-orders">
+  <div class="modal" style="max-width:1200px;width:96vw">
+    <div class="modal-title">
+      <span id="edit-orders-title">Chỉnh sửa đơn hàng</span>
+      <span class="modal-close" onclick="closeModalById('modal-edit-orders')"><i class="ti ti-x"></i></span>
+    </div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+      Chỉnh sửa trực tiếp như Excel. Copy/paste, kéo fill thoải mái. Qty(Kgs) và CBM tự tính. Xong bấm <b>Lưu</b>.
+    </div>
+    <div id="hot-edit" class="ht-wrap"></div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-top:10px">
+      <button class="btn btn-sm" id="btn-add-edit-row"><i class="ti ti-plus"></i> Thêm dòng</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModalById('modal-edit-orders')">Hủy</button>
+        <button class="btn btn-primary" id="btn-save-edit-orders"><i class="ti ti-device-floppy"></i> Lưu thay đổi</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Đăng nhập -->
+<div class="modal-backdrop" id="modal-login">
+  <div class="modal" style="max-width:360px">
+    <div class="modal-title">
+      Đăng nhập
+      <span class="modal-close" onclick="closeModalById('modal-login')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Email</label>
+      <input type="email" class="form-input" id="f-login-email" placeholder="email@congty.com" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Mật khẩu</label>
+      <input type="password" class="form-input" id="f-admin-pw" placeholder="Nhập mật khẩu" autocomplete="current-password">
+    </div>
+    <div id="login-error" style="color:var(--red-text);font-size:12px;margin-bottom:8px;display:none">Sai email hoặc mật khẩu!</div>
+    <div id="login-info" style="color:var(--green-text);font-size:12px;margin-bottom:8px;display:none"></div>
+    <div style="margin-bottom:10px"><a href="#" id="link-forgot" style="font-size:12px;color:var(--blue-text)">Quên mật khẩu?</a></div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-login')">Hủy</button>
+      <button type="button" class="btn btn-primary" id="btn-do-login"><i class="ti ti-login"></i> Đăng nhập</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Sửa thông tin lô hàng -->
+<div class="modal-backdrop" id="modal-edit-shipment">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-title">
+      Sửa thông tin lô hàng
+      <span class="modal-close" onclick="closeModalById('modal-edit-shipment')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="edit-shipment-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Generate email -->
+<div class="modal-backdrop" id="modal-email">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-title">
+      Email Booking
+      <span class="modal-close" onclick="closeModalById('modal-email')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="email-body"></div>
+    <div class="form-footer">
+      <button class="btn" id="btn-copy-email"><i class="ti ti-copy"></i> Copy nội dung</button>
+      <button class="btn btn-primary" id="btn-open-mail"><i class="ti ti-mail"></i> Mở Mail</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Nhập thông tin In Packing List -->
+<div class="modal-backdrop" id="modal-packing">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">
+      Thông tin in Packing List
+      <span class="modal-close" onclick="closeModalById('modal-packing')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="packing-form-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Shipping Mark -->
+<div class="modal-backdrop" id="modal-shipmark">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">
+      Shipping Mark
+      <span class="modal-close" onclick="closeModalById('modal-shipmark')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="shipmark-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Chọn báo cáo -->
+<div class="modal-backdrop" id="modal-reports">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">
+      Xuất Báo Cáo
+      <span class="modal-close" onclick="closeModalById('modal-reports')"><i class="ti ti-x"></i></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chọn tháng báo cáo</label>
+      <input type="month" class="form-input" id="rp-month">
+    </div>
+    <div class="form-group" id="rp-date-wrap" style="display:none">
+      <label class="form-label">Tính đến ngày (cho báo cáo nguồn thu)</label>
+      <input type="date" class="form-input" id="rp-asof">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
+      <button class="btn" onclick="reportBocXep()" style="justify-content:flex-start;padding:14px">
+        <i class="ti ti-forklift" style="font-size:18px"></i>
+        <div style="text-align:left">
+          <div style="font-weight:500">Báo cáo bốc xếp</div>
+          <div style="font-size:11px;color:var(--text-muted)">Tổng hợp lô hàng trong tháng theo ngày đóng hàng</div>
+        </div>
+      </button>
+      <button class="btn" onclick="reportNguonThu()" style="justify-content:flex-start;padding:14px">
+        <i class="ti ti-cash" style="font-size:18px"></i>
+        <div style="text-align:left">
+          <div style="font-weight:500">Báo cáo nguồn thu</div>
+          <div style="font-size:11px;color:var(--text-muted)">Doanh thu theo khách hàng, tách đã xuất / dự kiến</div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Gán LC -->
+<div class="modal-backdrop" id="modal-assign-lc">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">
+      Gán lô hàng vào LC
+      <span class="modal-close" onclick="closeModalById('modal-assign-lc')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="assign-lc-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Xuất SI (Draft B/L) -->
+<div class="modal-backdrop" id="modal-si">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      Xuất SI (Draft B/L)
+      <span class="modal-close" onclick="closeModalById('modal-si')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="si-form-body"></div>
+  </div>
+</div>
+
+<!-- MODAL: Xem lại / chỉnh sửa Draft CO -->
+<div class="modal-backdrop" id="modal-co-draft">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      <span id="co-draft-title">Xem lại Draft CO</span>
+      <span class="modal-close" onclick="closeModalById('modal-co-draft')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="co-draft-body"></div>
+  </div>
+</div>
+
+<div style="position:fixed;right:10px;bottom:6px;font-size:11px;color:#9a9a9a;z-index:5;pointer-events:none">© 2026 Nguyen Quoc Thi. All rights reserved. (Version 1.0.0)</div>
+<div id="toast" class="toast"></div>
+
+<script type="module" src="js/main.js"></script>
+<script type="module" src="js/exports.js"></script>
+</body>
+</html>

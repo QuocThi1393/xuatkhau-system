@@ -54,6 +54,39 @@ const EDIT_COLS = [
   { data: "note",         title: "Note",          width: 130 },
 ];
 
+// Gột dấu phân cách nghìn ("3,000" -> "3000") cho các cột số khi paste từ Excel
+const NUMERIC_KEYS = ["qty","ctns","kgPerCtn","kgTotal","cbm","tareCtn","unitPrice"];
+function cleanNumericCell(val) {
+  if (typeof val !== "string") return val;
+  const t = val.trim();
+  // Chỉ xử lý chuỗi kiểu số có dấu phẩy phân cách nghìn: 3,000 hoặc 1,234,567 hoặc 3,000.5
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return t.replace(/,/g, "");
+  return val;
+}
+// Gắn beforePaste cho 1 Handsontable instance dựa trên danh sách cột
+function attachPasteCleaner(cols) {
+  return function(data, coords) {
+    if (!data || !coords || !coords.length) return;
+    const startCol = coords[0].startCol;
+    data.forEach(rowArr => {
+      rowArr.forEach((cell, i) => {
+        const colDef = cols[startCol + i];
+        if (colDef && NUMERIC_KEYS.includes(colDef.data)) {
+          rowArr[i] = cleanNumericCell(cell);
+        }
+      });
+    });
+  };
+}
+
+// Suy ra tháng "YYYY-MM" từ 1 chuỗi ngày "YYYY-MM-DD"
+function monthFromDate(dstr) {
+  if (!dstr) return "";
+  const s = String(dstr).trim();
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}` : "";
+}
+
 // Tính kgTotal & cbm cho 1 dòng
 function computeRow(row) {
   const ctns = parseFloat(row.ctns) || 0;
@@ -167,6 +200,7 @@ function initImportHot() {
     minSpareRows: 5,
     contextMenu: true,
     licenseKey: "non-commercial-and-evaluation",
+    beforePaste: attachPasteCleaner(COLS),
     afterChange: (changes, source) => {
       if (source === "loadData") return;
       if (!changes) return;
@@ -301,6 +335,7 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
   });
 
   parsedPlan = shipments;
+  parsedPlan.forEach(ns => { ns.period = monthFromDate(ns.stuffingDate || ns.etd); });
   renderImportPreview();
   document.getElementById("import-summary").textContent =
     `${shipments.length} lô · ${shipments.filter(s=>s.matched).length} trùng · ${shipments.filter(s=>!s.matched).length} mới`;
@@ -316,6 +351,7 @@ function renderImportPreview() {
     return `<tr style="background:${m?'var(--amber-bg)':''}">
       <td style="text-align:center">${m?"⚠️":"🆕"}</td>
       <td><b>${fullPort(ns.pod)}</b><br><span style="font-size:11px;color:var(--text-muted)">ETD ${ns.etd||"—"} · Đóng ${ns.stuffingDate||"—"}</span></td>
+      <td><input type="month" value="${ns.period||""}" onchange="setImportPeriod(${i},this.value)" style="font-size:12px;padding:3px 6px;border:0.5px solid var(--border-md);border-radius:6px;background:var(--bg-card);color:var(--text)"></td>
       <td><span class="badge badge-blue" style="font-size:11px">${ns.container||"?"}</span></td>
       <td>${ns.orders.length}</td>
       <td style="font-size:11px;color:${m?'var(--amber-text)':'var(--green-text)'}">${m?"Có":"Mới"}</td>
@@ -332,6 +368,7 @@ function renderImportPreview() {
   }).join("");
 }
 window.setImportAction = (i,v) => { parsedPlan[i].action = v; };
+window.setImportPeriod = (i,v) => { parsedPlan[i].period = v; };
 
 document.getElementById("btn-confirm-import-plan").addEventListener("click", async () => {
   const create = parsedPlan.filter(s=>s.action==="create");
@@ -340,22 +377,25 @@ document.getElementById("btn-confirm-import-plan").addEventListener("click", asy
   if (!confirm(`Tạo mới ${create.length} · Ghi đè ${ow.length} · Bỏ qua ${skip.length}. Tiếp tục?`)) return;
 
   for (const ns of create) {
+    const period = ns.period || monthFromDate(ns.stuffingDate || ns.etd);
     await addDoc(collection(db,"shipments"), {
       stuffingDate: ns.stuffingDate||null, etd: ns.etd||null, eta: null,
       shipDate: ns.etd || ns.stuffingDate || null,
       port: ns.pod||"", container: ns.container||"",
-      cyCut: null, vessel: null,
+      cyCut: null, vessel: null, period: period||null,
       checklist: {1:"done"}, orders: ns.orders,
       createdAt: serverTimestamp(),
     });
   }
   for (const ns of ow) {
+    const period = ns.period || ns.matched.period || monthFromDate(ns.stuffingDate || ns.matched.stuffingDate || ns.etd);
     await updateDoc(doc(db,"shipments",ns.matched.id), {
       orders: ns.orders,
       port: ns.pod || ns.matched.port,
       container: ns.container || ns.matched.container,
       stuffingDate: ns.stuffingDate || ns.matched.stuffingDate || null,
       etd: ns.etd || ns.matched.etd || null,
+      period: period||null,
     });
   }
   closeModal("modal-import-plan");
@@ -647,6 +687,7 @@ window.openEditOrders = function(shipId) {
       minSpareRows: 3,
       contextMenu: true,
       licenseKey: "non-commercial-and-evaluation",
+      beforePaste: attachPasteCleaner(EDIT_COLS),
       cells: (row, col) => {
         const cp = EDIT_COLS[col];
         if (cp && cp.readOnly) return { className: "ht-readonly-cell", readOnly: true };

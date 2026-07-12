@@ -458,3 +458,84 @@ a { text-decoration: none; color: inherit; }
 /* Nhóm nút xuất (Generate email / Packing List / VGM) - tông xanh dương */
 .btn-export { background: var(--blue-bg); color: var(--blue-text); border-color: var(--blue-border); }
 .btn-export:hover { background: #d7e9fb; }
+
+/* ====== KHUNG MỚI: LOGO + WHEEL + SIDEBAR + FAB ====== */
+.tb-logo { display:flex; flex-direction:column; line-height:1.1; cursor:pointer; flex:0 0 auto; text-decoration:none; }
+.tb-logo b { font-size:21px; letter-spacing:1px; color:#1B5E3A; }
+.tb-logo span { font-size:7.5px; letter-spacing:1.4px; color:#5F8F72; }
+[data-theme="dark"] .tb-logo b { color:#4CC38A; }
+[data-theme="dark"] .tb-logo span { color:#5F8F72; }
+
+/* Wheel ngày */
+.tb-wheel-wrap { flex:1; display:flex; align-items:center; gap:2px; min-width:0; padding:0 8px; }
+.tb-wheel-arrow { border:none; background:none; font-size:15px; color:var(--text-hint); padding:4px; cursor:pointer; }
+.tb-wheel-arrow:hover { color:#1B5E3A; }
+[data-theme="dark"] .tb-wheel-arrow:hover { color:#4CC38A; }
+.tb-wheel { flex:1; display:flex; justify-content:center; align-items:center; gap:2px; overflow:hidden; user-select:none; height:60px; }
+.wday { flex:0 0 70px; text-align:center; cursor:default; transition:transform 0.18s, opacity 0.18s; padding:3px 0; border-radius:8px; }
+.wday:hover { background:var(--bg-secondary); }
+.wday .dow { font-size:9px; color:var(--text-hint); letter-spacing:0.05em; white-space:nowrap; }
+.wday .dd { font-size:14px; font-weight:600; color:var(--text-muted); }
+.wday .dots { height:8px; display:flex; justify-content:center; gap:3px; margin-top:1px; }
+.wday .dot { width:6px; height:6px; border-radius:50%; }
+.dot-pack { background:#EF9F27; }
+.dot-ship { background:#378ADD; }
+.wday[data-off="0"] { transform:scale(1.2); }
+.wday[data-off="0"] .dd { color:#1B5E3A; font-size:16px; }
+.wday[data-off="0"] .dow { color:#1B5E3A; font-weight:600; }
+[data-theme="dark"] .wday[data-off="0"] .dd,
+[data-theme="dark"] .wday[data-off="0"] .dow { color:#4CC38A; }
+.wday[data-off="1"] { opacity:0.75; transform:scale(0.96); }
+.wday[data-off="2"] { opacity:0.5; transform:scale(0.87); }
+.wday[data-off="3"] { opacity:0.3; transform:scale(0.78); }
+.wday[data-off="4"] { opacity:0.15; transform:scale(0.7); }
+.tb-wtip { position:fixed; background:#1a1a1a; color:#fff; border-radius:9px; padding:8px 11px; font-size:11.5px; z-index:400; pointer-events:none; max-width:260px; line-height:1.45; display:none; box-shadow:0 4px 14px rgba(0,0,0,0.3); }
+.tb-wtip .t-pack { color:#FAC775; }
+.tb-wtip .t-ship { color:#85B7EB; }
+@media (max-width:1100px) { .wday[data-off="4"] { display:none; } }
+@media (max-width:980px)  { .wday[data-off="3"] { display:none; } }
+
+/* Layout + Sidebar */
+.layout { max-width:1320px; margin:0 auto; display:flex; gap:14px; padding:0 16px; align-items:flex-start; }
+.layout .container { flex:1; min-width:0; max-width:none; padding:24px 0; }
+.sidebar { flex:0 0 200px; display:flex; flex-direction:column; position:sticky; top:74px; margin-top:24px; max-height:calc(100vh - 100px); }
+.s-nav { background:var(--bg-card); border:0.5px solid var(--border); border-radius:14px; padding:11px 9px; }
+.s-item { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:9px; color:var(--text-muted); font-size:13.5px; cursor:pointer; margin-bottom:2px; text-decoration:none; background:none; border:none; width:100%; text-align:left; font-family:inherit; }
+.s-item:hover { background:var(--bg-secondary); }
+.s-item.s-active { background:var(--green-bg); color:var(--green-text); font-weight:600; }
+.s-item i { font-size:17px; }
+.s-label { font-size:10px; letter-spacing:0.08em; color:var(--text-hint); margin:11px 12px 4px; }
+.s-stats { margin-top:12px; background:var(--green-bg); border:0.5px solid var(--green-border); border-radius:12px; padding:11px 12px; }
+.s-stats h4 { color:var(--green-text); font-size:12px; margin:0 0 8px; }
+.s-row { display:flex; justify-content:space-between; color:var(--green-text); font-size:12px; padding:2.5px 0; }
+.s-row.s-total { border-top:0.5px solid var(--green-border); margin-top:5px; padding-top:6px; }
+.s-art { margin-top:12px; }
+.s-art .art-sky { fill:#EDF4EE; }
+[data-theme="dark"] .s-art .art-sky { fill:#16241C; }
+[data-theme="dark"] .s-art .art-w1 { fill:#1D3A4E; }
+[data-theme="dark"] .s-art .art-w2 { fill:#16303F; }
+[data-theme="dark"] .s-art .art-w3 { fill:#0F2531; }
+@media (max-width:960px) { .sidebar { display:none !important; } }
+
+/* FAB cảnh báo */
+.tb-fab { position:fixed; right:26px; bottom:26px; width:54px; height:54px; border-radius:50%; background:var(--bg-card); border:0.5px solid var(--border-md); box-shadow:0 4px 16px rgba(0,0,0,0.2); display:flex; align-items:center; justify-content:center; font-size:24px; color:#D97706; cursor:pointer; z-index:300; }
+.tb-fab-badge { position:absolute; top:-4px; right:-4px; background:#E24B4A; color:#fff; font-size:11px; font-weight:700; min-width:20px; height:20px; border-radius:99px; display:flex; align-items:center; justify-content:center; padding:0 5px; }
+.tb-fab.pulse::before { content:""; position:absolute; inset:-4px; border-radius:50%; border:3px solid rgba(226,75,74,0.5); animation:tbpl 1.6s ease-out infinite; }
+@keyframes tbpl { 0% { transform:scale(0.9); opacity:1; } 100% { transform:scale(1.45); opacity:0; } }
+.tb-fab-panel { position:fixed; right:26px; bottom:92px; width:330px; background:var(--bg-card); border:0.5px solid var(--border-md); border-radius:14px; box-shadow:0 10px 34px rgba(0,0,0,0.28); z-index:300; display:none; overflow:hidden; }
+.tb-fab-panel.open { display:block; }
+.fp-head { background:#1B5E3A; color:#fff; padding:11px 15px; font-weight:600; font-size:13.5px; display:flex; align-items:center; gap:8px; }
+.fp-item { display:flex; gap:9px; padding:10px 14px; border-bottom:0.5px solid var(--border); cursor:pointer; align-items:flex-start; }
+.fp-item:hover { background:var(--bg-secondary); }
+.fp-item i { font-size:16px; margin-top:1px; }
+.fp-item.fp-today i { color:#E24B4A; }
+.fp-item.fp-tmr i { color:#D97706; }
+.fp-item b { font-size:12.5px; color:var(--text); }
+.fp-sub { color:var(--text-muted); font-size:11px; margin-top:2px; }
+.fp-tag { font-size:10px; padding:1px 7px; border-radius:99px; margin-left:auto; white-space:nowrap; }
+.fp-tag-today { background:var(--red-bg); color:var(--red-text); }
+.fp-tag-tmr { background:var(--amber-bg); color:var(--amber-text); }
+
+/* Hình bản đồ ở sidebar */
+.s-art img { width:100%; display:block; border-radius:12px; }
+[data-theme="dark"] .s-art img { filter: brightness(0.62) saturate(0.8); }

@@ -1,6 +1,6 @@
 import { db } from "./firebase-config.js";
 import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
-import { initTopbar } from "./topbar.js";
+import { initTopbar, updateWheelEvents, updateSidebarStats, updateFabWarnings } from "./topbar.js";
 import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
 import {
   collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
@@ -1712,6 +1712,74 @@ window.openShipmentPopup = function(shipId, month) {
 };
 
 // ====== FIRESTORE REALTIME (chỉ chạy khi đã đăng nhập) ======
+// ====== ĐỒNG BỘ WIDGET TOPBAR/SIDEBAR/FAB ======
+function tbCustLabel(s) {
+  const names = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
+  return names.length ? names.join(" / ") : "—";
+}
+function tbLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function syncTopbarWidgets() {
+  // 1. Wheel ngày: sự kiện đóng hàng / tàu chạy
+  const evMap = {};
+  const ensure = (k) => (evMap[k] = evMap[k] || { pack: [], ship: [] });
+  allShipments.forEach(s => {
+    const label = `${tbCustLabel(s)}${s.invoiceNo ? " · " + s.invoiceNo : ""}`;
+    if (s.stuffingDate) ensure(s.stuffingDate).pack.push(label);
+    if (s.etd) ensure(s.etd).ship.push(label);
+  });
+  updateWheelEvents(evMap);
+
+  // 2. Tổng quan tháng hiện tại
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const inMonth = allShipments.filter(s =>
+    s.period ? s.period === curMonth : (s.stuffingDate||"").slice(0,7) === curMonth
+  );
+  const doneCount = inMonth.filter(s => getProgress(s.checklist).pct >= 100).length;
+  updateSidebarStats({
+    monthLabel: `${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`,
+    total: inMonth.length,
+    working: inMonth.length - doneCount,
+    done: doneCount,
+    pct: inMonth.length ? Math.round(doneCount / inMonth.length * 100) : 0,
+  });
+
+  // 3. FAB cảnh báo: cắt máng hôm nay/mai + chưa tờ khai (bước 8)
+  const today = tbLocalISO(now);
+  const tmrD = new Date(now); tmrD.setDate(tmrD.getDate()+1);
+  const tmr = tbLocalISO(tmrD);
+  const warns = [];
+  allShipments.forEach(s => {
+    if (!s.cyCut) return;
+    const ck8 = (s.checklist||{})[8];
+    if (ck8 === "done" || ck8 === "skip") return;
+    if (s.cyCut !== today && s.cyCut !== tmr) return;
+    warns.push({
+      id: s.id,
+      title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
+      sub: `INV ${s.invoiceNo||"—"} · Cắt máng ${formatDate(s.cyCut)}${s.cyCutTime ? " " + s.cyCutTime : ""}`,
+      when: s.cyCut === today ? "today" : "tomorrow",
+    });
+  });
+  warns.sort(a => a.when === "today" ? -1 : 1);
+  updateFabWarnings(warns, (shipId) => {
+    const s = allShipments.find(x => x.id === shipId);
+    if (!s) return;
+    const m = s.period || (s.stuffingDate||"").slice(0,7) || calMonth;
+    showListView(m);
+    setTimeout(() => {
+      const card = document.getElementById("card-" + shipId);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.style.outline = "2px solid #E24B4A";
+        setTimeout(() => { card.style.outline = ""; }, 2500);
+      }
+    }, 350);
+  });
+}
+
 let _unsubShipments = null;
 function startData() {
   if (_unsubShipments) return;
@@ -1720,6 +1788,7 @@ function startData() {
     allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
     renderList();
     renderCutoffWarnings();
+    syncTopbarWidgets();
     if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
   }, err => { console.warn("Firestore:", err.message); });
 }

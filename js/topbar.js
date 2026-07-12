@@ -1,18 +1,26 @@
-// ====== THANH ĐẦU TRANG DÙNG CHUNG (desktop) ======
-import { isAdmin, isGuest, isLoggedIn, nickname, onAuthChange } from "./auth.js";
+// ====== KHUNG GIAO DIỆN DESKTOP: TOPBAR + SIDEBAR + WHEEL NGÀY + NÚT CẢNH BÁO ======
+import { isAdmin, isGuest, isLoggedIn, nickname, onAuthChange, perms } from "./auth.js";
 import { toggleTheme, themeIcon } from "./utils.js";
 
-// 10 ngôn ngữ chào hỏi — random mỗi ngày / mỗi phiên đăng nhập
 const GREETINGS = [
   "Xin chào", "Hello", "こんにちは", "안녕하세요", "你好",
   "Bonjour", "Hola", "Hallo", "Ciao", "สวัสดี"
 ];
-
 function pickGreeting() {
   return GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
 }
 
+let _active = "";
+let _wheelCenter = 0;           // offset ngày so với hôm nay
+let _wheelEvents = {};          // { "YYYY-MM-DD": { pack:[..], ship:[..] } }
+const DOW = ["CN","T2","T3","T4","T5","T6","T7"];
+
+function localISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
 export function initTopbar(active) {
+  _active = active;
   const host = document.getElementById("topbar");
   if (!host) return;
   host.className = "topbar";
@@ -20,26 +28,16 @@ export function initTopbar(active) {
   const isFriday = new Date().getDay() === 5;
   const warnHTML = `<i class="ti ti-alert-triangle tb-warn" title="Thứ 6 — nhớ Backup dữ liệu!"></i>`;
 
-  const navBtn = (key, html) => {
-    const cls = "btn btn-sm tb-nav-btn" + (active === key ? " tb-active" : "");
-    return html.replace("__CLS__", cls);
-  };
-
+  // ---------- TOPBAR ----------
   host.innerHTML = `
-  <div class="tb-nav">
-    ${active === "index"
-      ? navBtn("index", `<button class="__CLS__" id="btn-nav-list" style="display:none"><i class="ti ti-package"></i> Lô hàng</button>`)
-      : navBtn("index", `<a href="index.html" class="__CLS__" id="btn-nav-list" style="display:none"><i class="ti ti-package"></i> Lô hàng</a>`)}
-    ${navBtn("customers", `<a href="customers.html" class="__CLS__" id="nav-customers" style="display:none"><i class="ti ti-users"></i> Khách hàng</a>`)}
-    ${navBtn("lc", `<a href="lc.html" class="__CLS__" id="nav-lc" style="display:none"><i class="ti ti-credit-card"></i> LC</a>`)}
-    ${navBtn("forwarders", `<a href="forwarders.html" class="__CLS__" id="nav-forwarders" style="display:none"><i class="ti ti-truck-delivery"></i> Forwarder</a>`)}
-    ${navBtn("reports", `<button class="__CLS__" id="btn-reports" style="display:none"><i class="ti ti-report"></i> Báo cáo</button>`)}
-  </div>
+  ${active === "index"
+    ? `<span class="tb-logo" id="btn-home" title="Về trang chủ (Lịch)"><b>TOSGAMEX</b><span>TOMIYA SUMMIT GARMENT EXPORT</span></span>`
+    : `<a class="tb-logo" href="index.html" title="Về trang chủ"><b>TOSGAMEX</b><span>TOMIYA SUMMIT GARMENT EXPORT</span></a>`}
 
-  <div class="tb-center">
-    ${active === "index"
-      ? `<span id="btn-home" style="cursor:pointer;line-height:0;display:inline-block" title="Về trang chủ (Lịch)">__SVG__</span>`
-      : `<a href="index.html" style="line-height:0;display:inline-block" title="Về trang chủ">__SVG__</a>`}
+  <div class="tb-wheel-wrap" id="tb-wheel-wrap" style="display:none">
+    <button class="tb-wheel-arrow" id="tb-wheel-prev" aria-label="Lùi ngày"><i class="ti ti-chevron-left"></i></button>
+    <div class="tb-wheel" id="tb-wheel"></div>
+    <button class="tb-wheel-arrow" id="tb-wheel-next" aria-label="Tiến ngày"><i class="ti ti-chevron-right"></i></button>
   </div>
 
   <div class="tb-right">
@@ -56,46 +54,102 @@ export function initTopbar(active) {
     <button class="btn btn-sm" id="btn-login-toggle"><i class="ti ti-lock"></i> <span id="login-label">Đăng nhập</span></button>
   </div>`;
 
-  // Chèn banner TOS (giữ nguyên kích thước 280x52)
-  const svg = `<svg width="280" height="52" viewBox="0 0 280 52">
-    <defs><linearGradient id="tosgradTB" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#155A2C"/><stop offset="100%" stop-color="#2E9E54"/>
-    </linearGradient></defs>
-    <rect x="0" y="2" width="280" height="48" rx="8" fill="url(#tosgradTB)"/>
-    <text x="140" y="28" font-family="'Trebuchet MS', Arial, sans-serif" font-size="26" font-weight="bold" fill="#FFFFFF" text-anchor="middle" letter-spacing="2">TOSGAMEX</text>
-    <text x="140" y="43" font-family="Arial, sans-serif" font-size="8" fill="#D4EDDA" text-anchor="middle" letter-spacing="1.5">TOMIYA SUMMIT GARMENT EXPORT</text>
-  </svg>`;
-  host.innerHTML = host.innerHTML.replace(/__SVG__/g, svg);
+  // ---------- SIDEBAR: bọc .container sẵn có ----------
+  const container = document.querySelector(".container");
+  if (container) {
+    const layout = document.createElement("div");
+    layout.className = "layout";
+    container.parentNode.insertBefore(layout, container);
 
-  // Nút đổi sáng/tối
+    const side = document.createElement("aside");
+    side.className = "sidebar";
+    side.id = "tb-sidebar";
+    side.style.display = "none";
+    side.innerHTML = `
+      <div class="s-nav">
+        ${active === "index"
+          ? `<button class="s-item ${active==="index"?"s-active":""}" id="btn-nav-list"><i class="ti ti-package"></i> Lô hàng</button>`
+          : `<a class="s-item ${active==="index"?"s-active":""}" id="btn-nav-list" href="index.html"><i class="ti ti-package"></i> Lô hàng</a>`}
+        <a class="s-item ${active==="customers"?"s-active":""}" id="nav-customers" href="customers.html"><i class="ti ti-users"></i> Khách hàng</a>
+        <a class="s-item ${active==="lc"?"s-active":""}" id="nav-lc" href="lc.html"><i class="ti ti-credit-card"></i> LC</a>
+        <a class="s-item ${active==="forwarders"?"s-active":""}" id="nav-forwarders" href="forwarders.html"><i class="ti ti-truck-delivery"></i> Forwarder</a>
+        <div class="s-label">TIỆN ÍCH</div>
+        <button class="s-item" id="tb-side-cal"><i class="ti ti-calendar"></i> Về lịch</button>
+        <button class="s-item" id="tb-side-import" style="display:none"><i class="ti ti-upload"></i> Import kế hoạch</button>
+        <button class="s-item" id="btn-reports"><i class="ti ti-chart-bar"></i> Báo cáo</button>
+      </div>
+      <div class="s-stats" id="tb-stats" style="display:none"></div>
+      <div class="s-art" aria-hidden="true">
+        <img src="sidebar-map.jpg" alt="" loading="lazy">
+      </div>`;
+    layout.appendChild(side);
+    layout.appendChild(container);
+  }
+
+  // ---------- FAB CẢNH BÁO ----------
+  const fab = document.createElement("div");
+  fab.innerHTML = `
+    <div class="tb-fab" id="tb-fab" style="display:none">
+      <i class="ti ti-alert-triangle"></i>
+      <span class="tb-fab-badge" id="tb-fab-badge">0</span>
+    </div>
+    <div class="tb-fab-panel" id="tb-fab-panel">
+      <div class="fp-head"><i class="ti ti-alert-triangle"></i> Cảnh báo cắt máng — chưa tờ khai</div>
+      <div id="tb-fab-list"></div>
+    </div>`;
+  document.body.appendChild(fab);
+  document.getElementById("tb-fab").addEventListener("click", (e) => {
+    e.stopPropagation();
+    document.getElementById("tb-fab-panel").classList.toggle("open");
+  });
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest(".tb-fab") && !e.target.closest(".tb-fab-panel"))
+      document.getElementById("tb-fab-panel").classList.remove("open");
+  });
+
+  // ---------- Tooltip wheel ----------
+  const tip = document.createElement("div");
+  tip.className = "tb-wtip";
+  tip.id = "tb-wtip";
+  document.body.appendChild(tip);
+
+  // ---------- SỰ KIỆN ----------
   themeIcon(document.getElementById("theme-icon"));
   document.getElementById("btn-theme").addEventListener("click", () => {
     toggleTheme();
     themeIcon(document.getElementById("theme-icon"));
   });
 
-  // Menu Admin xổ xuống
   const menuBtn = document.getElementById("btn-admin-menu");
   const menu = document.getElementById("admin-menu");
-  menuBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    menu.classList.toggle("open");
-  });
+  menuBtn.addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#admin-indicator")) menu.classList.remove("open");
   });
 
-  // Báo cáo / Backup ở trang khác index -> chuyển về index và tự chạy
-  if (active !== "index") {
-    document.getElementById("btn-reports").addEventListener("click", () => {
-      location.href = "index.html#reports";
-    });
-    document.getElementById("btn-backup").addEventListener("click", () => {
-      location.href = "index.html#backup";
-    });
+  // Wheel: mũi tên + lăn chuột
+  document.getElementById("tb-wheel-prev").addEventListener("click", () => { _wheelCenter--; renderWheel(); });
+  document.getElementById("tb-wheel-next").addEventListener("click", () => { _wheelCenter++; renderWheel(); });
+  document.getElementById("tb-wheel").addEventListener("wheel", (e) => {
+    e.preventDefault();
+    _wheelCenter += e.deltaY > 0 ? 1 : -1;
+    renderWheel();
+  }, { passive: false });
+
+  // Sidebar tiện ích
+  const sideCal = document.getElementById("tb-side-cal");
+  const sideImport = document.getElementById("tb-side-import");
+  if (active === "index") {
+    sideCal.addEventListener("click", () => document.getElementById("btn-home")?.click());
+    sideImport.addEventListener("click", () => document.getElementById("btn-import-plan")?.click());
+  } else {
+    sideCal.addEventListener("click", () => location.href = "index.html");
+    sideImport.addEventListener("click", () => location.href = "index.html");
+    document.getElementById("btn-reports").addEventListener("click", () => location.href = "index.html#reports");
+    document.getElementById("btn-backup").addEventListener("click", () => location.href = "index.html#backup");
   }
 
-  // Nút "Bản điện thoại": chỉ hiện khi đang mở desktop TRÊN điện thoại
+  // Nút về mobile (chỉ hiện khi đang mở desktop trên điện thoại)
   const onPhone = /Android|iPhone/i.test(navigator.userAgent);
   const toMobileBtn = document.getElementById("btn-to-mobile");
   if (onPhone && toMobileBtn) {
@@ -106,33 +160,130 @@ export function initTopbar(active) {
     });
   }
 
-  // Hiện/ẩn theo trạng thái đăng nhập + lời chào đa ngôn ngữ
+  // ---------- AUTH ----------
   onAuthChange(() => {
     const on = isLoggedIn();
-    // Trên điện thoại: chỉ admin mới được ở lại desktop; ai khác tự về mobile
     if (onPhone && on && !isAdmin()) {
       sessionStorage.removeItem("forceDesktop");
       location.replace("mobile.html");
       return;
     }
-    ["btn-nav-list", "nav-customers", "nav-lc", "nav-forwarders", "btn-reports"].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.style.display = on ? "" : "none";
-    });
-    // Khách: ẩn Báo cáo
-    if (on && isGuest()) {
-      const rp = document.getElementById("btn-reports");
-      if (rp) rp.style.display = "none";
-    }
+    const side = document.getElementById("tb-sidebar");
+    if (side) side.style.display = on ? "" : "none";
+    document.getElementById("tb-wheel-wrap").style.display = on ? "" : "none";
+    if (on) renderWheel();
+    // Khách: ẩn Báo cáo; Import: theo quyền addDelete
+    const rp = document.getElementById("btn-reports");
+    if (rp) rp.style.display = (on && !isGuest()) ? "" : "none";
+    const im = document.getElementById("tb-side-import");
+    if (im) im.style.display = (on && perms().addDelete) ? "" : "none";
     document.getElementById("admin-indicator").style.display = (on && isAdmin()) ? "flex" : "none";
     const g = document.getElementById("user-greeting");
-    if (on) {
-      g.style.display = "";
-      g.textContent = `${pickGreeting()} ${nickname() || ""}!`;
-    } else {
-      g.style.display = "none";
-    }
+    if (on) { g.style.display = ""; g.textContent = `${pickGreeting()} ${nickname() || ""}!`; }
+    else { g.style.display = "none"; }
     const lbl = document.getElementById("login-label");
     if (lbl) lbl.textContent = on ? "Đăng xuất" : "Đăng nhập";
+    if (!on) {
+      const fabEl = document.getElementById("tb-fab");
+      if (fabEl) fabEl.style.display = "none";
+    }
+  });
+}
+
+// ---------- WHEEL NGÀY ----------
+function renderWheel() {
+  const w = document.getElementById("tb-wheel");
+  if (!w) return;
+  w.innerHTML = "";
+  const today = new Date();
+  for (let off = -4; off <= 4; off++) {
+    const d = new Date(today);
+    d.setDate(d.getDate() + _wheelCenter + off);
+    const iso = localISO(d);
+    const ev = _wheelEvents[iso];
+    const isToday = (_wheelCenter + off) === 0;
+    const el = document.createElement("div");
+    el.className = "wday";
+    el.dataset.off = Math.abs(off);
+    el.innerHTML = `
+      <div class="dow">${DOW[d.getDay()]}${isToday ? " · HÔM NAY" : ""}</div>
+      <div class="dd">${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}</div>
+      <div class="dots">
+        ${ev && ev.pack.length ? '<span class="dot dot-pack"></span>' : ""}
+        ${ev && ev.ship.length ? '<span class="dot dot-ship"></span>' : ""}
+      </div>`;
+    el.addEventListener("mousemove", (e) => showWheelTip(e, d, ev));
+    el.addEventListener("mouseleave", hideWheelTip);
+    w.appendChild(el);
+  }
+}
+
+function showWheelTip(e, d, ev) {
+  const tip = document.getElementById("tb-wtip");
+  if (!tip) return;
+  const ds = `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  let html = `<b>${ds}</b><br>`;
+  if (!ev || (!ev.pack.length && !ev.ship.length)) {
+    html += `<span style="opacity:0.6">Không có sự kiện</span>`;
+  } else {
+    ev.pack.forEach(p => html += `<span class="t-pack">● Đóng hàng:</span> ${p}<br>`);
+    ev.ship.forEach(s => html += `<span class="t-ship">● Tàu chạy:</span> ${s}<br>`);
+  }
+  tip.innerHTML = html;
+  tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 270) + "px";
+  tip.style.top = (e.clientY + 16) + "px";
+}
+function hideWheelTip() {
+  const tip = document.getElementById("tb-wtip");
+  if (tip) tip.style.display = "none";
+}
+
+// main.js gọi sau khi có dữ liệu: evMap = { "YYYY-MM-DD": {pack:[..], ship:[..]} }
+export function updateWheelEvents(evMap) {
+  _wheelEvents = evMap || {};
+  renderWheel();
+}
+
+// ---------- KHỐI TỔNG QUAN SIDEBAR ----------
+// stats = { monthLabel, total, working, done, pct }
+export function updateSidebarStats(stats) {
+  const el = document.getElementById("tb-stats");
+  if (!el) return;
+  if (!stats || !stats.total) { el.style.display = "none"; return; }
+  el.style.display = "";
+  el.innerHTML = `
+    <h4>Tổng quan tháng ${stats.monthLabel}</h4>
+    <div class="s-row"><span>Lô hàng</span><b>${stats.total}</b></div>
+    <div class="s-row"><span>Đang xử lý</span><b>${stats.working}</b></div>
+    <div class="s-row"><span>Hoàn thành</span><b>${stats.done}</b></div>
+    <div class="s-row s-total"><span>Tỷ lệ hoàn tất</span><b>${stats.pct}%</b></div>`;
+}
+
+// ---------- FAB CẢNH BÁO ----------
+// warns = [{ id, title, sub, when: "today"|"tomorrow" }], onClick(id)
+export function updateFabWarnings(warns, onClick) {
+  const fab = document.getElementById("tb-fab");
+  const list = document.getElementById("tb-fab-list");
+  if (!fab || !list) return;
+  if (!warns || !warns.length) {
+    fab.style.display = "none";
+    document.getElementById("tb-fab-panel").classList.remove("open");
+    return;
+  }
+  fab.style.display = "flex";
+  document.getElementById("tb-fab-badge").textContent = warns.length;
+  fab.classList.toggle("pulse", warns.some(w => w.when === "today"));
+  list.innerHTML = warns.map((w, i) => `
+    <div class="fp-item ${w.when === "today" ? "fp-today" : "fp-tmr"}" data-i="${i}">
+      <i class="ti ti-${w.when === "today" ? "alert-triangle" : "clock"}"></i>
+      <div><b>${w.title}</b><div class="fp-sub">${w.sub}</div></div>
+      <span class="fp-tag ${w.when === "today" ? "fp-tag-today" : "fp-tag-tmr"}">${w.when === "today" ? "Hôm nay" : "Ngày mai"}</span>
+    </div>`).join("");
+  list.querySelectorAll(".fp-item").forEach(el => {
+    el.addEventListener("click", () => {
+      document.getElementById("tb-fab-panel").classList.remove("open");
+      if (onClick) onClick(warns[parseInt(el.dataset.i)].id);
+    });
   });
 }

@@ -481,17 +481,28 @@ function buildCard(s, admin) {
   // Card hoàn tất → nền xanh nhẹ (có bản dark trong style.css)
   if (isDone) card.classList.add("card-done");
 
-  // === Lộ trình vận chuyển: 4 mốc ===
+  // === Lộ trình vận chuyển: 4 mốc (tô theo mốc đã qua, cắt máng khẩn cấp nháy đỏ) ===
+  const _todayISO = tbLocalISO(new Date());
+  const _tmrD = new Date(); _tmrD.setDate(_tmrD.getDate()+1);
+  const _tmrISO = tbLocalISO(_tmrD);
+  const _ck8 = (s.checklist||{})[8];
+  const cutUrgent = s.cyCut && _ck8 !== "done" && _ck8 !== "skip" && (s.cyCut === _todayISO || s.cyCut === _tmrISO);
   const routeNodes = [
-    { ic:"building-warehouse", color:"blue", date:formatDate(s.stuffingDate), label:"Đóng hàng" },
-    { ic:"scissors",           color:"pink", date:formatDate(s.cyCut),        label:"Cắt máng" },
-    { ic:"plane-departure",    color:"blue", date:formatDate(s.etd),          label:"ETD" },
-    { ic:"ship",               color:"blue", date:formatDate(s.eta),          label:"Arrival" },
+    { ic:"building-warehouse", date:s.stuffingDate, label:"Đóng hàng" },
+    { ic:"scissors",           date:s.cyCut,        label:"Cắt máng", urgent:cutUrgent },
+    { ic:"plane-departure",    date:s.etd,          label:"ETD" },
+    { ic:"ship",               date:s.eta,          label:"Arrival" },
   ];
   let timelineHTML = "";
   routeNodes.forEach((n,i) => {
-    if (i>0) timelineHTML += `<div class="ch-tl-line${(i===1||i===2)?" pink":""}"></div>`;
-    timelineHTML += `<div class="ch-tl-node"><div class="ch-tl-ic ${n.color}"><i class="ti ti-${n.ic}"></i></div><div class="ch-tl-date">${n.date}</div><div class="ch-tl-lbl">${n.label}</div></div>`;
+    const passed = n.date && n.date <= _todayISO;
+    if (i>0) {
+      const prev = routeNodes[i-1];
+      const prevPassed = prev.date && prev.date <= _todayISO;
+      timelineHTML += `<div class="ch-tl-line${prevPassed?" tlp":""}"></div>`;
+    }
+    const icCls = n.urgent ? "tlu" : passed ? "tlp" : "tlo";
+    timelineHTML += `<div class="ch-tl-node"><div class="ch-tl-ic ${icCls}"><i class="ti ti-${n.ic}"></i></div><div class="ch-tl-date${n.urgent?" tlu-date":""}">${formatDate(n.date)}</div><div class="ch-tl-lbl">${n.label}</div></div>`;
   });
 
   // === Tàu + container / hình thức xuất ===
@@ -538,6 +549,7 @@ function buildCard(s, admin) {
   const periodLabel = s.period ? (() => { const [y,mo]=s.period.split("-"); return `Tháng ${mo}/${y}`; })() : "";
 
   card.innerHTML = `
+    <div class="sc-accent ${isDone?"ok":""}"></div>
     <div class="card-head">
       <div class="ch-id">
         <div class="ch-title"><i class="ti ti-world ch-globe"></i><span>${custLabel}${fullPort(s.port)}</span></div>
@@ -1737,13 +1749,26 @@ function syncTopbarWidgets() {
   const inMonth = allShipments.filter(s =>
     s.period ? s.period === curMonth : (s.stuffingDate||"").slice(0,7) === curMonth
   );
-  const doneCount = inMonth.filter(s => getProgress(s.checklist).pct >= 100).length;
+  const stepDone = (s, id) => {
+    const v = (s.checklist||{})[id];
+    return v === "done" || v === "skip";
+  };
+  const PIPELINE_STEPS = [
+    { id: 3,  label: "Booking (B3)" },
+    { id: 4,  label: "Thông tin tàu (B4)" },
+    { id: 5,  label: "HS & CO Form (B5)" },
+    { id: 8,  label: "Tờ khai HQ (B8)" },
+    { id: 9,  label: "Chứng từ nháp (B9)" },
+    { id: 11, label: "Hoàn thành (B11)", last: true },
+  ];
   updateSidebarStats({
     monthLabel: `${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`,
     total: inMonth.length,
-    working: inMonth.length - doneCount,
-    done: doneCount,
-    pct: inMonth.length ? Math.round(doneCount / inMonth.length * 100) : 0,
+    rows: PIPELINE_STEPS.map(p => ({
+      label: p.label,
+      count: inMonth.filter(s => stepDone(s, p.id)).length,
+      last: !!p.last,
+    })),
   });
 
   // 3. FAB cảnh báo: cắt máng hôm nay/mai + chưa tờ khai (bước 8)
@@ -1844,8 +1869,11 @@ onAuthChange(user => {
   if (user) {
     startData();
     maybeFridayBackup();
-    // Vào từ trang khác qua nút Báo cáo / Backup trong menu
-    if (location.hash === "#reports" && !isGuest()) {
+    // Vào từ trang khác qua nút Lô hàng / Báo cáo / Backup
+    if (location.hash === "#list") {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => showListView(calMonth), 300);
+    } else if (location.hash === "#reports" && !isGuest()) {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => document.getElementById("btn-reports")?.click(), 600);
     } else if (location.hash === "#backup" && isAdmin()) {

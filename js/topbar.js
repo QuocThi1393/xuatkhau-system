@@ -30,10 +30,6 @@ export function initTopbar(active) {
 
   // ---------- TOPBAR ----------
   host.innerHTML = `
-  ${active === "index"
-    ? `<span class="tb-logo" id="btn-home" title="Về trang chủ (Lịch)"><b>TOSGAMEX</b><span>TOMIYA SUMMIT GARMENT EXPORT</span></span>`
-    : `<a class="tb-logo" href="index.html" title="Về trang chủ"><b>TOSGAMEX</b><span>TOMIYA SUMMIT GARMENT EXPORT</span></a>`}
-
   <div class="tb-wheel-wrap" id="tb-wheel-wrap" style="display:none">
     <button class="tb-wheel-arrow" id="tb-wheel-prev" aria-label="Lùi ngày"><i class="ti ti-chevron-left"></i></button>
     <div class="tb-wheel" id="tb-wheel"></div>
@@ -66,10 +62,13 @@ export function initTopbar(active) {
     side.id = "tb-sidebar";
     side.style.display = "none";
     side.innerHTML = `
+      ${active === "index"
+        ? `<button class="s-logo" id="btn-home" title="Về trang chủ (Lịch)"><b>TOSGAMEX</b><span>Tomiya Summit Garment Export</span></button>`
+        : `<a class="s-logo" href="index.html" title="Về trang chủ"><b>TOSGAMEX</b><span>Tomiya Summit Garment Export</span></a>`}
       <div class="s-nav">
         ${active === "index"
-          ? `<button class="s-item ${active==="index"?"s-active":""}" id="btn-nav-list"><i class="ti ti-package"></i> Lô hàng</button>`
-          : `<a class="s-item ${active==="index"?"s-active":""}" id="btn-nav-list" href="index.html"><i class="ti ti-package"></i> Lô hàng</a>`}
+          ? `<button class="s-item s-active" id="btn-nav-list"><i class="ti ti-package"></i> Lô hàng</button>`
+          : `<a class="s-item" id="btn-nav-list" href="index.html#list"><i class="ti ti-package"></i> Lô hàng</a>`}
         <a class="s-item ${active==="customers"?"s-active":""}" id="nav-customers" href="customers.html"><i class="ti ti-users"></i> Khách hàng</a>
         <a class="s-item ${active==="lc"?"s-active":""}" id="nav-lc" href="lc.html"><i class="ti ti-credit-card"></i> LC</a>
         <a class="s-item ${active==="forwarders"?"s-active":""}" id="nav-forwarders" href="forwarders.html"><i class="ti ti-truck-delivery"></i> Forwarder</a>
@@ -183,6 +182,8 @@ export function initTopbar(active) {
     else { g.style.display = "none"; }
     const lbl = document.getElementById("login-label");
     if (lbl) lbl.textContent = on ? "Đăng xuất" : "Đăng nhập";
+    const lg = document.getElementById("btn-login-toggle");
+    if (lg) lg.classList.toggle("tb-logout", on);
     if (!on) {
       const fabEl = document.getElementById("tb-fab");
       if (fabEl) fabEl.style.display = "none";
@@ -245,19 +246,24 @@ export function updateWheelEvents(evMap) {
   renderWheel();
 }
 
-// ---------- KHỐI TỔNG QUAN SIDEBAR ----------
-// stats = { monthLabel, total, working, done, pct }
+// ---------- KHỐI TIẾN ĐỘ THÁNG (pipeline) ----------
+// stats = { monthLabel, total, rows: [{label, count, last}] }
 export function updateSidebarStats(stats) {
   const el = document.getElementById("tb-stats");
   if (!el) return;
   if (!stats || !stats.total) { el.style.display = "none"; return; }
   el.style.display = "";
+  const rowsHTML = (stats.rows || []).map(r => {
+    const pct = stats.total ? Math.round(r.count / stats.total * 100) : 0;
+    const op = r.last ? 1 : (0.55 + 0.45 * (stats.total ? r.count / stats.total : 0)).toFixed(2);
+    return `<div class="s-pl-row">
+      <div class="s-pl-lbl"><span>${r.label}</span><b>${r.count}/${stats.total}</b></div>
+      <div class="s-pl-bar"><div class="s-pl-fill${r.last ? " last" : ""}" style="width:${pct}%;opacity:${op}"></div></div>
+    </div>`;
+  }).join("");
   el.innerHTML = `
-    <h4>Tổng quan tháng ${stats.monthLabel}</h4>
-    <div class="s-row"><span>Lô hàng</span><b>${stats.total}</b></div>
-    <div class="s-row"><span>Đang xử lý</span><b>${stats.working}</b></div>
-    <div class="s-row"><span>Hoàn thành</span><b>${stats.done}</b></div>
-    <div class="s-row s-total"><span>Tỷ lệ hoàn tất</span><b>${stats.pct}%</b></div>`;
+    <div class="s-pl-head"><b>Tiến độ tháng ${stats.monthLabel}</b><span><strong>${stats.total}</strong> lô</span></div>
+    ${rowsHTML}`;
 }
 
 // ---------- FAB CẢNH BÁO ----------

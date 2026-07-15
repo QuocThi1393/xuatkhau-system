@@ -37,15 +37,13 @@
 }
 
 /* Dark: sửa các thành phần có màu hardcode sáng */
-[data-theme="dark"] .btn-primary { color: #10151D; }
-[data-theme="dark"] .btn-primary:hover { background: #C7CFD8; }
 [data-theme="dark"] .btn-export:hover { background: #12385C; }
 [data-theme="dark"] .rich-edit { background: var(--bg-card); }
 [data-theme="dark"] .ch-tl-ic.pink { background: #3A1F2B; }
 
 /* Card lô hoàn tất 100% */
-.card-done { background: #EBF3FB; }
-[data-theme="dark"] .card-done { background: #16345A; border-color: #2C5A8A; }
+.shipment-card.card-done { background: #EBF3FB; }
+[data-theme="dark"] .shipment-card.card-done { background: #16345A; border-color: #2C5A8A; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -106,8 +104,8 @@ a { text-decoration: none; color: inherit; }
   transition: background .15s;
 }
 .btn:hover { background: var(--bg-secondary); }
-.btn-primary { background: var(--text); color: #fff; border-color: var(--text); }
-.btn-primary:hover { background: #333; }
+.btn-primary { background: #1B5E3A; color: #fff; border-color: #1B5E3A; }
+.btn-primary:hover { background: #164C30; }
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 .btn-danger { color: var(--red-text); border-color: var(--red-border); }
 .btn-danger:hover { background: var(--red-bg); }
@@ -539,3 +537,41 @@ a { text-decoration: none; color: inherit; }
 /* Hình bản đồ ở sidebar */
 .s-art img { width:100%; display:block; border-radius:12px; }
 [data-theme="dark"] .s-art img { filter: brightness(0.62) saturate(0.8); }
+
+/* ====== REDESIGN ĐỢT 2: logo sidebar, pipeline, thẻ lô, logout đỏ ====== */
+/* Logo trong sidebar */
+.s-logo { display:flex; flex-direction:column; line-height:1.15; padding:4px 12px 12px; cursor:pointer; text-decoration:none; border:none; background:none; text-align:left; font-family:inherit; width:100%; }
+.s-logo b { font-size:20px; letter-spacing:0.8px; color:#1B5E3A; font-weight:800; }
+.s-logo span { font-size:8px; letter-spacing:1.2px; color:#5F8F72; text-transform:uppercase; font-weight:600; }
+[data-theme="dark"] .s-logo b { color:#4CC38A; }
+
+/* Khối Tiến độ tháng (pipeline) */
+.s-pl-head { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+.s-pl-head b { font-size:12px; color:var(--green-text); }
+.s-pl-head span { font-size:11px; color:var(--green-text); }
+.s-pl-head span strong { font-size:14px; }
+.s-pl-row { margin-bottom:7px; }
+.s-pl-lbl { display:flex; justify-content:space-between; font-size:11px; color:var(--green-text); margin-bottom:2.5px; }
+.s-pl-bar { height:6px; background:rgba(0,0,0,0.09); border-radius:4px; overflow:hidden; }
+[data-theme="dark"] .s-pl-bar { background:rgba(255,255,255,0.12); }
+.s-pl-fill { height:100%; border-radius:4px; background:#2E9E54; }
+.s-pl-fill.last { background:#1D9E75; }
+
+/* Nút Đăng xuất đỏ khi đã đăng nhập */
+.tb-logout { background:var(--red-bg) !important; color:var(--red-text) !important; border-color:var(--red-border) !important; }
+
+/* Vạch màu trạng thái mép trái thẻ lô */
+.shipment-card { position:relative; overflow:hidden; }
+.sc-accent { position:absolute; left:0; top:0; bottom:0; width:4px; background:var(--amber-border); }
+.sc-accent.ok { background:#1D9E75; }
+
+/* Lộ trình: mốc đã qua / chưa tới / khẩn cấp */
+.ch-tl-ic.tlp { background:#1B5E3A; color:#fff; }
+.ch-tl-ic.tlo { background:var(--bg-secondary); color:var(--text-hint); border:2px solid var(--border-md); width:26px; height:26px; font-size:14px; }
+.ch-tl-ic.tlu { background:#FCEBEB; color:#C93B3B; border:2px solid #E24B4A; width:26px; height:26px; animation:tlublink 1.4s ease-in-out infinite; }
+[data-theme="dark"] .ch-tl-ic.tlp { background:#2E9E54; }
+[data-theme="dark"] .ch-tl-ic.tlu { background:#3A1B1B; color:#F7C1C1; }
+@keyframes tlublink { 0%,100% { box-shadow:0 0 0 0 rgba(226,75,74,0.4); } 50% { box-shadow:0 0 0 5px rgba(226,75,74,0); } }
+.ch-tl-line.tlp { background:#1B5E3A; }
+[data-theme="dark"] .ch-tl-line.tlp { background:#2E9E54; }
+.ch-tl-date.tlu-date { color:#C93B3B; font-weight:700; }

@@ -150,3 +150,23 @@ export function themeIcon(el) {
   if (!el) return;
   el.className = currentTheme() === "dark" ? "ti ti-sun" : "ti ti-moon";
 }
+
+// ====== BẢO VỆ THAO TÁC LƯU ======
+// Bọc mọi lệnh ghi Firestore: thành công -> toast xanh; thất bại (mất mạng, hết quyền...)
+// -> toast cảnh báo, KHÔNG im lặng nuốt lỗi.
+// Dùng: if (!await saveGuard(updateDoc(...), "Đã lưu!")) return;
+export async function saveGuard(promise, okMsg) {
+  try {
+    await promise;
+    if (okMsg) showToast(okMsg);
+    return true;
+  } catch (e) {
+    const msg = String(e?.code || e?.message || e);
+    let human = "Lưu thất bại — chưa ghi được lên hệ thống.";
+    if (msg.includes("permission-denied")) human = "Lưu thất bại: tài khoản không có quyền sửa mục này.";
+    else if (msg.includes("unavailable") || msg.includes("network") || msg.includes("offline")) human = "Lưu thất bại: mất kết nối mạng. Kiểm tra mạng rồi thử lại!";
+    showToast("⚠ " + human);
+    console.warn("saveGuard:", e);
+    return false;
+  }
+}

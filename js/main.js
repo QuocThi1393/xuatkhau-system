@@ -1,9 +1,9 @@
 import { db } from "./firebase-config.js";
 import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
 import { initTopbar, updateWheelEvents, updateSidebarStats, updateFabWarnings } from "./topbar.js";
-import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
+import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, saveGuard } from "./utils.js";
 import {
-  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, setDoc, writeBatch, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 window.closeModalById = closeModal;
@@ -672,7 +672,7 @@ window.ckToggle = async function(shipId, stepId, state, skippable) {
   else if (state==="done") next="pending";
   else next="pending";
   const s = allShipments.find(x=>x.id===shipId);
-  await updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} });
+  await saveGuard(updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} }));
 };
 
 // ====== SỬA ĐƠN HÀNG BẰNG HANDSONTABLE ======
@@ -740,7 +740,7 @@ document.getElementById("btn-save-edit-orders").addEventListener("click", async 
       hsCode:o.hsCode||"", coForm:o.coForm||"", note:o.note||"",
       stuffingDate:o.stuffingDate||"", etd:o.etd||"",
     }));
-  await updateDoc(doc(db,"shipments",editShipId), { orders: data });
+  if (!await saveGuard(updateDoc(doc(db,"shipments",editShipId), { orders: data }))) return;
   closeModal("modal-edit-orders");
   showToast(`Đã lưu ${data.length} đơn hàng!`);
 });
@@ -890,7 +890,7 @@ window.openEditShipment = function(id) {
 
 window.deleteShipment = async function(id) {
   if (!confirm("Xóa toàn bộ lô hàng này? Không thể hoàn tác!")) return;
-  await deleteDoc(doc(db,"shipments",id));
+  if (!await saveGuard(deleteDoc(doc(db,"shipments",id)))) return;
   showToast("Đã xóa lô hàng!");
 };
 
@@ -1281,7 +1281,7 @@ window.saveAssignLC = async function(shipId) {
     }
   }
 
-  await updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null });
+  if (!await saveGuard(updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null }))) return;
   closeModal("modal-assign-lc");
   showToast(lcId ? "Đã gán LC cho lô hàng!" : "Đã bỏ gán LC.");
 };
@@ -1310,11 +1310,164 @@ window.openShipMark = function(shipId) {
     showToast("Đã copy shipping mark!");
   });
   document.getElementById("sm-save").addEventListener("click", async () => {
-    await updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("sm-text").value });
+    if (!await saveGuard(updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("sm-text").value }))) return;
     closeModal("modal-shipmark");
     showToast("Đã lưu shipping mark!");
   });
   openModal("modal-shipmark");
+};
+
+// ====== THỐNG KÊ NHIỀU THÁNG ======
+window.openStats = function() {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
+  let m = document.getElementById("modal-stats");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal-backdrop";
+    m.id = "modal-stats";
+    m.innerHTML = `<div class="modal" style="max-width:720px">
+      <div class="modal-title">
+        <span><i class="ti ti-chart-histogram"></i> Thống kê theo tháng</span>
+        <span class="modal-close" onclick="closeModalById('modal-stats')"><i class="ti ti-x"></i></span>
+      </div>
+      <div id="stats-body"></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  const now = new Date();
+  const toM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const f = new Date(now.getFullYear(), now.getMonth()-2, 1);
+  const fromM = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("stats-body").innerHTML = `
+    <div class="form-row-3" style="align-items:flex-end">
+      <div class="form-group"><label class="form-label">Từ tháng</label><input type="month" class="form-input" id="st-from" value="${fromM}"></div>
+      <div class="form-group"><label class="form-label">Đến tháng</label><input type="month" class="form-input" id="st-to" value="${toM}"></div>
+      <div class="form-group"><button type="button" class="btn btn-primary" style="width:100%" onclick="runStats()"><i class="ti ti-search"></i> Xem thống kê</button></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <button type="button" class="btn btn-sm" onclick="statsQuick(3)">3 tháng gần nhất</button>
+      <button type="button" class="btn btn-sm" onclick="statsQuick(6)">6 tháng</button>
+      <button type="button" class="btn btn-sm" onclick="statsQuick(12)">12 tháng</button>
+      <button type="button" class="btn btn-sm" onclick="statsYear()">Năm nay</button>
+    </div>
+    <div id="stats-result"></div>`;
+  openModal("modal-stats");
+  runStats();
+};
+
+window.statsQuick = function(n) {
+  const now = new Date();
+  const f = new Date(now.getFullYear(), now.getMonth()-(n-1), 1);
+  document.getElementById("st-from").value = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("st-to").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  runStats();
+};
+window.statsYear = function() {
+  const y = new Date().getFullYear();
+  document.getElementById("st-from").value = `${y}-01`;
+  document.getElementById("st-to").value = `${y}-12`;
+  runStats();
+};
+
+function monthRange(from, to) {
+  const out = [];
+  let [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  if (fy > ty || (fy === ty && fm > tm)) return out;
+  while (fy < ty || (fy === ty && fm <= tm)) {
+    out.push(`${fy}-${String(fm).padStart(2,"0")}`);
+    fm++; if (fm > 12) { fm = 1; fy++; }
+    if (out.length > 60) break;
+  }
+  return out;
+}
+
+let _statsRows = [];
+window.runStats = function() {
+  const from = document.getElementById("st-from").value;
+  const to = document.getElementById("st-to").value;
+  const box = document.getElementById("stats-result");
+  if (!from || !to) { box.innerHTML = ""; return; }
+  const months = monthRange(from, to);
+  if (!months.length) {
+    box.innerHTML = `<div style="color:var(--red-text);font-size:13px">"Từ tháng" phải trước "Đến tháng".</div>`;
+    return;
+  }
+  _statsRows = months.map(mo => {
+    const list = shipmentsOfMonth(mo);
+    const done = list.filter(s => getProgress(s.checklist).pct >= 100).length;
+    return {
+      month: mo,
+      lots: list.length,
+      done,
+      pcs: list.reduce((a,s) => a + (s.orders||[]).reduce((x,o)=>x+(parseFloat(o.qty)||0),0), 0),
+      ctns: list.reduce((a,s) => a + totalCtnsShip(s), 0),
+      kg: list.reduce((a,s) => a + totalGW(s), 0),
+      cbm: list.reduce((a,s) => a + totalCBM(s), 0),
+    };
+  });
+  const sum = _statsRows.reduce((a,r) => ({
+    lots:a.lots+r.lots, done:a.done+r.done, pcs:a.pcs+r.pcs, ctns:a.ctns+r.ctns, kg:a.kg+r.kg, cbm:a.cbm+r.cbm
+  }), {lots:0,done:0,pcs:0,ctns:0,kg:0,cbm:0});
+  const maxPcs = Math.max(1, ..._statsRows.map(r => r.pcs));
+  const n0 = v => Math.round(v).toLocaleString("vi-VN");
+  const n2 = v => (Math.round(v*100)/100).toLocaleString("vi-VN");
+
+  box.innerHTML = `
+    <table class="data-table" style="font-size:12.5px">
+      <thead><tr>
+        <th>Tháng</th><th style="text-align:right">Lô</th><th style="text-align:right">Xong</th>
+        <th style="text-align:right">PCS</th><th style="text-align:right">CTNs</th>
+        <th style="text-align:right">Kgs</th><th style="text-align:right">CBM</th>
+        <th style="width:110px">Sản lượng</th>
+      </tr></thead>
+      <tbody>
+        ${_statsRows.map(r => `<tr>
+          <td><b>${r.month.slice(5)}/${r.month.slice(0,4)}</b></td>
+          <td style="text-align:right">${r.lots}</td>
+          <td style="text-align:right;color:var(--green-text)">${r.done}</td>
+          <td style="text-align:right">${n0(r.pcs)}</td>
+          <td style="text-align:right">${n0(r.ctns)}</td>
+          <td style="text-align:right">${n0(r.kg)}</td>
+          <td style="text-align:right">${n2(r.cbm)}</td>
+          <td><div style="height:7px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="width:${Math.round(r.pcs/maxPcs*100)}%;height:100%;background:#2E9E54;border-radius:4px"></div></div></td>
+        </tr>`).join("")}
+      </tbody>
+      <tfoot><tr style="border-top:1.5px solid var(--border-md);font-weight:600">
+        <td>Tổng ${_statsRows.length} tháng</td>
+        <td style="text-align:right">${sum.lots}</td>
+        <td style="text-align:right;color:var(--green-text)">${sum.done}</td>
+        <td style="text-align:right">${n0(sum.pcs)}</td>
+        <td style="text-align:right">${n0(sum.ctns)}</td>
+        <td style="text-align:right">${n0(sum.kg)}</td>
+        <td style="text-align:right">${n2(sum.cbm)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-stats')">Đóng</button>
+      <button type="button" class="btn btn-primary" onclick="exportStats()"><i class="ti ti-file-spreadsheet"></i> Xuất Excel</button>
+    </div>`;
+};
+
+window.exportStats = function() {
+  if (!_statsRows.length) return;
+  const aoa = [
+    ["THỐNG KÊ THEO THÁNG"],
+    [`Từ ${document.getElementById("st-from").value} đến ${document.getElementById("st-to").value}`],
+    [],
+    ["Tháng","Số lô","Hoàn tất","PCS","CTNs","Kgs","CBM"],
+    ..._statsRows.map(r => [r.month, r.lots, r.done, Math.round(r.pcs), Math.round(r.ctns), Math.round(r.kg), Math.round(r.cbm*100)/100]),
+  ];
+  const sum = _statsRows.reduce((a,r) => ({
+    lots:a.lots+r.lots, done:a.done+r.done, pcs:a.pcs+r.pcs, ctns:a.ctns+r.ctns, kg:a.kg+r.kg, cbm:a.cbm+r.cbm
+  }), {lots:0,done:0,pcs:0,ctns:0,kg:0,cbm:0});
+  aoa.push(["TỔNG", sum.lots, sum.done, Math.round(sum.pcs), Math.round(sum.ctns), Math.round(sum.kg), Math.round(sum.cbm*100)/100]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:12},{wch:8},{wch:10},{wch:12},{wch:10},{wch:12},{wch:10}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Thống kê");
+  XLSX.writeFile(wb, `Thong ke ${document.getElementById("st-from").value} - ${document.getElementById("st-to").value}.xlsx`);
 };
 
 // ====== BÁO CÁO ======
@@ -1597,6 +1750,14 @@ window.gotoShipment = function(id) {
 };
 
 document.getElementById("btn-home").addEventListener("click", showCalendar);
+
+// Bấm 1 ngày trên wheel -> mở lịch đúng tháng đó
+window.__onWheelDayClick = function(iso) {
+  const month = String(iso).slice(0, 7);
+  if (month && month !== calMonth) calMonth = month;
+  showCalendar();
+  document.getElementById("calendar-view").scrollIntoView({ behavior: "smooth", block: "start" });
+};
 document.getElementById("btn-nav-list").addEventListener("click", () => showListView(calMonth));
 document.getElementById("btn-back-calendar").addEventListener("click", showCalendar);
 
@@ -1771,24 +1932,38 @@ function syncTopbarWidgets() {
     })),
   });
 
-  // 3. FAB cảnh báo: cắt máng hôm nay/mai + chưa tờ khai (bước 8)
+  // 3. FAB cảnh báo: (a) cắt máng hôm nay/mai chưa tờ khai, (b) tàu chạy >5 ngày chưa hoàn tất
   const today = tbLocalISO(now);
   const tmrD = new Date(now); tmrD.setDate(tmrD.getDate()+1);
   const tmr = tbLocalISO(tmrD);
+  const d5 = new Date(now); d5.setDate(d5.getDate()-5);
+  const iso5 = tbLocalISO(d5);
   const warns = [];
   allShipments.forEach(s => {
-    if (!s.cyCut) return;
+    // (a) chưa tờ khai mà sắp cắt máng
     const ck8 = (s.checklist||{})[8];
-    if (ck8 === "done" || ck8 === "skip") return;
-    if (s.cyCut !== today && s.cyCut !== tmr) return;
-    warns.push({
-      id: s.id,
-      title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
-      sub: `INV ${s.invoiceNo||"—"} · Cắt máng ${formatDate(s.cyCut)}${s.cyCutTime ? " " + s.cyCutTime : ""}`,
-      when: s.cyCut === today ? "today" : "tomorrow",
-    });
+    if (s.cyCut && ck8 !== "done" && ck8 !== "skip" && (s.cyCut === today || s.cyCut === tmr)) {
+      warns.push({
+        id: s.id,
+        title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
+        sub: `INV ${s.invoiceNo||"—"} · Cắt máng ${formatDate(s.cyCut)}${s.cyCutTime ? " " + s.cyCutTime : ""} · chưa tờ khai`,
+        when: s.cyCut === today ? "today" : "tomorrow",
+      });
+      return;
+    }
+    // (b) tàu đã chạy quá 5 ngày mà lô chưa hoàn tất (hay quên gửi chứng từ gốc)
+    if (s.etd && s.etd <= iso5 && getProgress(s.checklist).pct < 100) {
+      const days = Math.round((now - new Date(s.etd)) / 86400000);
+      warns.push({
+        id: s.id,
+        title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
+        sub: `INV ${s.invoiceNo||"—"} · Tàu chạy ${days} ngày trước · lô chưa hoàn tất`,
+        when: "late",
+      });
+    }
   });
-  warns.sort(a => a.when === "today" ? -1 : 1);
+  const _rank = { today: 0, tomorrow: 1, late: 2 };
+  warns.sort((a,b) => _rank[a.when] - _rank[b.when]);
   updateFabWarnings(warns, (shipId) => {
     const s = allShipments.find(x => x.id === shipId);
     if (!s) return;
@@ -1848,6 +2023,155 @@ async function downloadBackup() {
 }
 const _btnBackup = document.getElementById("btn-backup");
 if (_btnBackup) _btnBackup.addEventListener("click", downloadBackup);
+const _btnRestore = document.getElementById("btn-restore");
+if (_btnRestore) _btnRestore.addEventListener("click", () => openRestore());
+const _btnStats = document.getElementById("btn-stats");
+if (_btnStats) _btnStats.addEventListener("click", () => openStats());
+
+// ====== KHÔI PHỤC TỪ FILE BACKUP (chỉ admin) ======
+const RESTORE_COLS = ["shipments", "customers", "lc", "forwarders"];
+const RESTORE_LABEL = { shipments:"Lô hàng", customers:"Khách hàng", lc:"LC", forwarders:"Forwarder" };
+let _restoreData = null;
+
+window.openRestore = function() {
+  if (!isAdmin()) { showToast("Chỉ Admin mới được khôi phục dữ liệu."); return; }
+  let m = document.getElementById("modal-restore");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal-backdrop";
+    m.id = "modal-restore";
+    m.innerHTML = `<div class="modal" style="max-width:560px">
+      <div class="modal-title">
+        <span><i class="ti ti-database-import"></i> Khôi phục từ file backup</span>
+        <span class="modal-close" onclick="closeModalById('modal-restore')"><i class="ti ti-x"></i></span>
+      </div>
+      <div id="restore-body"></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById("restore-body").innerHTML = `
+    <div style="background:var(--amber-bg);border:0.5px solid var(--amber-border);color:var(--amber-text);border-radius:8px;padding:10px 14px;font-size:12.5px;margin-bottom:14px">
+      <b>Đọc kỹ trước khi dùng:</b> chức năng này ghi dữ liệu từ file backup vào hệ thống đang chạy.
+      Nên <b>bấm Backup dữ liệu ngay bây giờ</b> để có bản lùi, phòng khi chọn nhầm file.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chọn file backup (.json)</label>
+      <input type="file" class="form-input" id="restore-file" accept=".json,application/json">
+    </div>
+    <div id="restore-preview"></div>`;
+  document.getElementById("restore-file").addEventListener("change", handleRestoreFile);
+  openModal("modal-restore");
+};
+
+async function handleRestoreFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const box = document.getElementById("restore-preview");
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const bad = RESTORE_COLS.every(c => !Array.isArray(data[c]));
+    if (bad) throw new Error("Không thấy dữ liệu quen thuộc trong file này.");
+    _restoreData = data;
+
+    // Đếm hiện trạng để so sánh
+    const cur = {};
+    for (const c of RESTORE_COLS) {
+      const snap = await getDocs(collection(db, c));
+      cur[c] = new Set(snap.docs.map(d => d.id));
+    }
+
+    const rows = RESTORE_COLS.map(c => {
+      const arr = Array.isArray(data[c]) ? data[c] : [];
+      const add = arr.filter(x => x.id && !cur[c].has(x.id)).length;
+      const over = arr.filter(x => x.id && cur[c].has(x.id)).length;
+      return `<tr>
+        <td>${RESTORE_LABEL[c]}</td>
+        <td style="text-align:right">${cur[c].size}</td>
+        <td style="text-align:right">${arr.length}</td>
+        <td style="text-align:right;color:var(--green-text)"><b>+${add}</b></td>
+        <td style="text-align:right;color:var(--amber-text)">${over}</td>
+      </tr>`;
+    }).join("");
+
+    box.innerHTML = `
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px">
+        File tạo lúc: <b>${data._exportedAt ? new Date(data._exportedAt).toLocaleString("vi-VN") : "không rõ"}</b>
+      </div>
+      <table class="data-table" style="font-size:12.5px;margin-bottom:14px">
+        <thead><tr>
+          <th>Nhóm</th><th style="text-align:right">Đang có</th><th style="text-align:right">Trong file</th>
+          <th style="text-align:right">Sẽ thêm</th><th style="text-align:right">Trùng ID</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="form-group">
+        <label class="form-label">Cách khôi phục</label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="rst-mode" value="add" checked style="margin-top:3px">
+          <span><b>Chỉ thêm mục còn thiếu</b> <span style="color:var(--green-text)">(an toàn)</span><br>
+          <span style="color:var(--text-muted);font-size:12px">Mục đang có giữ nguyên, không bị đụng tới. Dùng khi lỡ xóa nhầm.</span></span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
+          <input type="radio" name="rst-mode" value="overwrite" style="margin-top:3px">
+          <span><b>Ghi đè bằng dữ liệu trong file</b> <span style="color:var(--red-text)">(nguy hiểm)</span><br>
+          <span style="color:var(--text-muted);font-size:12px">Mục trùng ID sẽ bị thay bằng bản trong file — sửa đổi sau ngày backup sẽ mất.</span></span>
+        </label>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-restore')">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="doRestore()"><i class="ti ti-database-import"></i> Khôi phục</button>
+      </div>`;
+  } catch (err) {
+    _restoreData = null;
+    box.innerHTML = `<div style="background:var(--red-bg);border:0.5px solid var(--red-border);color:var(--red-text);border-radius:8px;padding:10px 14px;font-size:12.5px">
+      Không đọc được file: ${err.message||err}<br>Hãy chọn đúng file <b>backup-xuatkhau-....json</b> tải từ nút Backup.
+    </div>`;
+  }
+}
+
+window.doRestore = async function() {
+  if (!_restoreData) return;
+  if (!isAdmin()) { showToast("Chỉ Admin mới được khôi phục dữ liệu."); return; }
+  const mode = document.querySelector('input[name="rst-mode"]:checked')?.value || "add";
+
+  // Xác nhận 2 lớp
+  if (!confirm(mode === "overwrite"
+    ? "GHI ĐÈ dữ liệu hiện tại bằng file backup?\n\nCác sửa đổi sau ngày backup sẽ MẤT. Tiếp tục?"
+    : "Thêm các mục còn thiếu từ file backup vào hệ thống?")) return;
+  if (mode === "overwrite") {
+    const t = prompt('Xác nhận lần cuối: gõ chữ GHI DE (không dấu) rồi bấm OK:');
+    if ((t||"").trim().toUpperCase() !== "GHI DE") { showToast("Đã hủy khôi phục."); return; }
+  }
+
+  try {
+    showToast("Đang khôi phục, đừng đóng trình duyệt...");
+    let added = 0, over = 0;
+    for (const c of RESTORE_COLS) {
+      const arr = Array.isArray(_restoreData[c]) ? _restoreData[c] : [];
+      if (!arr.length) continue;
+      const snap = await getDocs(collection(db, c));
+      const existing = new Set(snap.docs.map(d => d.id));
+
+      let batch = writeBatch(db);
+      let n = 0;
+      for (const item of arr) {
+        if (!item.id) continue;
+        const exists = existing.has(item.id);
+        if (exists && mode === "add") continue;   // giữ nguyên bản đang có
+        const { id, ...body } = item;
+        batch.set(doc(db, c, id), body);
+        exists ? over++ : added++;
+        if (++n >= 400) { await batch.commit(); batch = writeBatch(db); n = 0; }
+      }
+      if (n) await batch.commit();
+    }
+    closeModal("modal-restore");
+    showToast(`Khôi phục xong: thêm ${added} mục${over ? `, ghi đè ${over} mục` : ""}.`);
+  } catch (e) {
+    showToast("Lỗi khôi phục: " + (e.message||e));
+  }
+};
 
 // Nhắc backup mỗi thứ 6 (chỉ admin, mỗi ngày 1 lần)
 function maybeFridayBackup() {
@@ -1870,7 +2194,11 @@ onAuthChange(user => {
     startData();
     maybeFridayBackup();
     // Vào từ trang khác qua nút Lô hàng / Báo cáo / Backup
-    if (location.hash === "#list") {
+    if (location.hash.startsWith("#cal-")) {
+      const iso = location.hash.slice(5);
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => window.__onWheelDayClick(iso), 400);
+    } else if (location.hash === "#list") {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => showListView(calMonth), 300);
     } else if (location.hash === "#reports" && !isGuest()) {
@@ -1879,6 +2207,12 @@ onAuthChange(user => {
     } else if (location.hash === "#backup" && isAdmin()) {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => downloadBackup(), 600);
+    } else if (location.hash === "#restore" && isAdmin()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => openRestore(), 600);
+    } else if (location.hash === "#stats" && !isGuest()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => openStats(), 600);
     }
   } else {
     stopData();

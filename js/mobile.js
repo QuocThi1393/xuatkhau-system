@@ -1,7 +1,7 @@
 // ====== GIAO DIỆN ĐIỆN THOẠI ======
 import { db } from "./firebase-config.js";
 import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, canEditAnyCol } from "./auth.js";
-import { showToast, formatDate, fullPort, getProgress, CHECKLIST_STEPS, openModal, closeModal, normName, toggleTheme, themeIcon } from "./utils.js";
+import { showToast, formatDate, fullPort, getProgress, CHECKLIST_STEPS, openModal, closeModal, normName, toggleTheme, themeIcon, saveGuard } from "./utils.js";
 import {
   collection, onSnapshot, doc, updateDoc
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -309,16 +309,15 @@ window.mEditVessel = function(shipId) {
 };
 
 window.mSaveVessel = async function(shipId) {
-  await updateDoc(doc(db,"shipments",shipId), {
+  const ok = await saveGuard(updateDoc(doc(db,"shipments",shipId), {
     vessel: document.getElementById("me-vessel").value.trim(),
     stuffingDate: document.getElementById("me-stuffing").value || null,
     cyCut: document.getElementById("me-cycut").value || null,
     etd: document.getElementById("me-etd").value || null,
     eta: document.getElementById("me-eta").value || null,
     booking: document.getElementById("me-booking").value.trim(),
-  });
-  closeModal("modal-m-edit");
-  showToast("Đã lưu!");
+  }), "Đã lưu!");
+  if (ok) closeModal("modal-m-edit");
 };
 
 window.mEditCont = function(shipId) {
@@ -361,9 +360,8 @@ window.mSaveCont = async function(shipId) {
     const old = oldConts[i] || {};
     return { type, no, seal, tare: old.tare||"", gw: old.gw||"" };
   }).filter(c => c.type || c.no || c.seal);
-  await updateDoc(doc(db,"shipments",shipId), { containers });
-  closeModal("modal-m-edit");
-  showToast("Đã lưu container!");
+  const ok = await saveGuard(updateDoc(doc(db,"shipments",shipId), { containers }), "Đã lưu container!");
+  if (ok) closeModal("modal-m-edit");
 };
 
 window.mEditShipMark = function(shipId) {
@@ -392,9 +390,8 @@ window.mCopyShipMark = function() {
 };
 
 window.mSaveShipMark = async function(shipId) {
-  await updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("me-shipmark").value });
-  closeModal("modal-m-edit");
-  showToast("Đã lưu shipping mark!");
+  const ok = await saveGuard(updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("me-shipmark").value }), "Đã lưu shipping mark!");
+  if (ok) closeModal("modal-m-edit");
 };
 
 window.mEditChecklist = function(shipId) {
@@ -427,7 +424,7 @@ window.mCkToggle = async function(shipId, stepId, state, skippable) {
   else if (state==="done" && skippable) next="skip";
   else next="pending";
   const s = allShipments.find(x=>x.id===shipId);
-  await updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} });
+  await saveGuard(updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} }));
   // Cập nhật lại danh sách trong modal sau khi snapshot về
   setTimeout(() => {
     const s2 = allShipments.find(x=>x.id===shipId);

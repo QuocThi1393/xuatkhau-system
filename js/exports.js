@@ -510,12 +510,18 @@ window.openCODraft = async function(shipId, type) {
         <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" id="cod-vessel" value="${(s.vessel||"").replace(/"/g,"&quot;")}"></div>
         <div class="form-group"><label class="form-label">Port of Discharge</label><input class="form-input" id="cod-pod" value="${fullPort(s.port)}, JAPAN"></div>
       </div>
-      <div class="form-group">
-        <label class="form-label">8. Number and kind of packages — hiện cột nào</label>
-        <div style="display:flex;gap:16px">
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-contract" checked> Contract</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-index" checked> Index</label>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-items" checked> Items</label>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tên hàng (box 8)</label>
+          <input class="form-input" id="cod-goods" value="${goodsDescription}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">8. Number and kind of packages — hiện cột nào</label>
+          <div style="display:flex;gap:16px;padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-contract" checked> Contract</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-index" checked> Index</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-items" checked> Items</label>
+          </div>
         </div>
       </div>
       <div class="form-group">
@@ -561,6 +567,7 @@ window.confirmExportCO = function() {
       shipperText: document.getElementById("cod-shipper").value,
       consigneeText: document.getElementById("cod-consignee").value,
       producerText: document.getElementById("cod-producer").value,
+      goodsDescription: document.getElementById("cod-goods").value,
       depDate: document.getElementById("cod-depdate").value,
       vessel: document.getElementById("cod-vessel").value,
       pod: document.getElementById("cod-pod").value,
@@ -572,7 +579,7 @@ window.confirmExportCO = function() {
       retro: document.getElementById("cod-retro").checked,
     };
     closeModal("modal-co-draft");
-    renderCOPrintRCEP(s, d.type, d.groups, d.goodsDescription, overrides);
+    renderCOPrintRCEP(s, d.type, d.groups, overrides.goodsDescription || d.goodsDescription, overrides);
   }
 };
 

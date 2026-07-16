@@ -44,6 +44,7 @@ export function initTopbar(active) {
       <div class="tb-menu" id="admin-menu">
         <a href="users.html" class="tb-menu-item" id="nav-users"><i class="ti ti-user-cog"></i> Tài khoản</a>
         <button type="button" class="tb-menu-item" id="btn-backup"><i class="ti ti-database-export"></i> Backup dữ liệu ${isFriday ? warnHTML : ""}</button>
+        <button type="button" class="tb-menu-item" id="btn-restore"><i class="ti ti-database-import"></i> Khôi phục từ backup</button>
       </div>
     </div>
     <button class="btn btn-sm" id="btn-theme" title="Đổi giao diện sáng/tối"><i class="ti ti-moon" id="theme-icon"></i></button>
@@ -76,6 +77,7 @@ export function initTopbar(active) {
         <button class="s-item" id="tb-side-cal"><i class="ti ti-calendar"></i> Về lịch</button>
         <button class="s-item" id="tb-side-import" style="display:none"><i class="ti ti-upload"></i> Import kế hoạch</button>
         <button class="s-item" id="btn-reports"><i class="ti ti-chart-bar"></i> Báo cáo</button>
+        <button class="s-item" id="btn-stats"><i class="ti ti-chart-histogram"></i> Thống kê</button>
       </div>
       <div class="s-stats" id="tb-stats" style="display:none"></div>
       <div class="s-art" aria-hidden="true">
@@ -93,7 +95,7 @@ export function initTopbar(active) {
       <span class="tb-fab-badge" id="tb-fab-badge">0</span>
     </div>
     <div class="tb-fab-panel" id="tb-fab-panel">
-      <div class="fp-head"><i class="ti ti-alert-triangle"></i> Cảnh báo cắt máng — chưa tờ khai</div>
+      <div class="fp-head"><i class="ti ti-alert-triangle"></i> Việc cần chú ý</div>
       <div id="tb-fab-list"></div>
     </div>`;
   document.body.appendChild(fab);
@@ -146,6 +148,8 @@ export function initTopbar(active) {
     sideImport.addEventListener("click", () => location.href = "index.html");
     document.getElementById("btn-reports").addEventListener("click", () => location.href = "index.html#reports");
     document.getElementById("btn-backup").addEventListener("click", () => location.href = "index.html#backup");
+    document.getElementById("btn-restore").addEventListener("click", () => location.href = "index.html#restore");
+    document.getElementById("btn-stats").addEventListener("click", () => location.href = "index.html#stats");
   }
 
   // Nút về mobile (chỉ hiện khi đang mở desktop trên điện thoại)
@@ -174,6 +178,8 @@ export function initTopbar(active) {
     // Khách: ẩn Báo cáo; Import: theo quyền addDelete
     const rp = document.getElementById("btn-reports");
     if (rp) rp.style.display = (on && !isGuest()) ? "" : "none";
+    const stb = document.getElementById("btn-stats");
+    if (stb) stb.style.display = (on && !isGuest()) ? "" : "none";
     const im = document.getElementById("tb-side-import");
     if (im) im.style.display = (on && perms().addDelete) ? "" : "none";
     document.getElementById("admin-indicator").style.display = (on && isAdmin()) ? "flex" : "none";
@@ -213,6 +219,13 @@ function renderWheel() {
         ${ev && ev.pack.length ? '<span class="dot dot-pack"></span>' : ""}
         ${ev && ev.ship.length ? '<span class="dot dot-ship"></span>' : ""}
       </div>`;
+    el.style.cursor = "pointer";
+    el.title = "Bấm để xem lịch tháng này";
+    el.addEventListener("click", () => {
+      hideWheelTip();
+      if (window.__onWheelDayClick) window.__onWheelDayClick(iso);
+      else location.href = "index.html#cal-" + iso;
+    });
     el.addEventListener("mousemove", (e) => showWheelTip(e, d, ev));
     el.addEventListener("mouseleave", hideWheelTip);
     w.appendChild(el);
@@ -280,12 +293,19 @@ export function updateFabWarnings(warns, onClick) {
   fab.style.display = "flex";
   document.getElementById("tb-fab-badge").textContent = warns.length;
   fab.classList.toggle("pulse", warns.some(w => w.when === "today"));
-  list.innerHTML = warns.map((w, i) => `
-    <div class="fp-item ${w.when === "today" ? "fp-today" : "fp-tmr"}" data-i="${i}">
-      <i class="ti ti-${w.when === "today" ? "alert-triangle" : "clock"}"></i>
+  const META = {
+    today:    { cls:"fp-today", ic:"alert-triangle", tag:"fp-tag-today", text:"Hôm nay" },
+    tomorrow: { cls:"fp-tmr",   ic:"clock",          tag:"fp-tag-tmr",   text:"Ngày mai" },
+    late:     { cls:"fp-late",  ic:"package-off",    tag:"fp-tag-late",  text:"Chưa xong" },
+  };
+  list.innerHTML = warns.map((w, i) => {
+    const m = META[w.when] || META.late;
+    return `<div class="fp-item ${m.cls}" data-i="${i}">
+      <i class="ti ti-${m.ic}"></i>
       <div><b>${w.title}</b><div class="fp-sub">${w.sub}</div></div>
-      <span class="fp-tag ${w.when === "today" ? "fp-tag-today" : "fp-tag-tmr"}">${w.when === "today" ? "Hôm nay" : "Ngày mai"}</span>
-    </div>`).join("");
+      <span class="fp-tag ${m.tag}">${m.text}</span>
+    </div>`;
+  }).join("");
   list.querySelectorAll(".fp-item").forEach(el => {
     el.addEventListener("click", () => {
       document.getElementById("tb-fab-panel").classList.remove("open");

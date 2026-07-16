@@ -575,3 +575,6 @@ a { text-decoration: none; color: inherit; }
 .ch-tl-line.tlp { background:#1B5E3A; }
 [data-theme="dark"] .ch-tl-line.tlp { background:#2E9E54; }
 .ch-tl-date.tlu-date { color:#C93B3B; font-weight:700; }
+.fp-item.fp-late i { color:#7C6AAE; }
+.fp-tag-late { background:#EDE9F6; color:#5B4B8A; }
+[data-theme="dark"] .fp-tag-late { background:#2A2440; color:#B9A7E8; }

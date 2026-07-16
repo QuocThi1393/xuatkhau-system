@@ -402,7 +402,7 @@ window.mEditChecklist = function(shipId) {
   if (!s || !isAdmin()) return;
   document.getElementById("m-edit-title").textContent = "Tick tiến trình";
   document.getElementById("m-edit-body").innerHTML = `
-    <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Bấm để đổi: chưa làm → xong${""} (bước 10 bấm thêm lần nữa = bỏ qua)</div>
+    <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">Bấm để đổi: chưa làm → xong → chưa làm</div>
     <div id="me-ck-list">${renderCkList(s)}</div>
     <div class="form-footer">
       <button type="button" class="btn btn-primary" onclick="closeModalById('modal-m-edit')">Xong</button>

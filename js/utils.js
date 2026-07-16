@@ -41,18 +41,19 @@ export function calcCBM(d, w, h) {
   return Math.round(v * 100) / 100;
 }
 
+// LƯU Ý: bước cuối giữ id 11 (không đổi thành 10) để dữ liệu các lô cũ trong
+// Firebase vẫn khớp; chỉ số hiển thị (short) là 10. Bước id 10 cũ đã bỏ.
 export const CHECKLIST_STEPS = [
-  { id: 1,  label: "Nhập đơn hàng",         short: "1",  skippable: false },
-  { id: 2,  label: "Kích thước + KG",        short: "2",  skippable: false },
-  { id: 3,  label: "Booking / Email",         short: "3",  skippable: false },
-  { id: 4,  label: "Thông tin tàu",          short: "4",  skippable: false },
-  { id: 5,  label: "HS Code + C/O Form",     short: "5",  skippable: false },
-  { id: 6,  label: "Tạo định mức",           short: "6",  skippable: false },
-  { id: 7,  label: "Bill of Lading",         short: "7",  skippable: false },
-  { id: 8,  label: "Tờ khai Hải quan",       short: "8",  skippable: false },
-  { id: 9,  label: "Gửi chứng từ nháp",      short: "9",  skippable: false },
-  { id: 10, label: "CO + chứng từ còn lại",  short: "10", skippable: true  },
-  { id: 11, label: "Gửi chứng từ hoàn chỉnh",short: "11",skippable: false },
+  { id: 1,  label: "Nhập đơn hàng",                       short: "1",  skippable: false },
+  { id: 2,  label: "Nhập Kích thước - trọng lượng",       short: "2",  skippable: false },
+  { id: 3,  label: "Request booking + HS Code/CO form",   short: "3",  skippable: false },
+  { id: 4,  label: "Đã có Booking",                       short: "4",  skippable: false },
+  { id: 5,  label: "Đã có thông tin HS code + CO form",   short: "5",  skippable: false },
+  { id: 6,  label: "Tạo định mức",                        short: "6",  skippable: false },
+  { id: 7,  label: "Gửi SI + VGM / Làm Bill",             short: "7",  skippable: false },
+  { id: 8,  label: "Tờ khai hải quan",                    short: "8",  skippable: false },
+  { id: 9,  label: "Gửi chứng từ nháp",                   short: "9",  skippable: false },
+  { id: 11, label: "Gửi chứng từ gốc + hoàn tất lô hàng", short: "10", skippable: false },
 ];
 
 export function getProgress(checklist = {}) {

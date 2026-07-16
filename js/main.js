@@ -527,7 +527,7 @@ function buildCard(s, admin) {
     contHTML = `<div class="ch-cont-box ch-cont-big"><span class="ch-big ${big.color}">${big.txt}</span></div>`;
   }
 
-  // === Thanh 11 bước (bấm để đổi trạng thái nếu là admin) ===
+  // === Thanh tiến trình các bước (bấm để đổi trạng thái nếu là admin) ===
   const stepbarHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
     const cls = state==="done"?"done":state==="skip"?"skip":"pending";
@@ -1754,12 +1754,12 @@ function syncTopbarWidgets() {
     return v === "done" || v === "skip";
   };
   const PIPELINE_STEPS = [
-    { id: 3,  label: "Booking (B3)" },
-    { id: 4,  label: "Thông tin tàu (B4)" },
-    { id: 5,  label: "HS & CO Form (B5)" },
-    { id: 8,  label: "Tờ khai HQ (B8)" },
-    { id: 9,  label: "Chứng từ nháp (B9)" },
-    { id: 11, label: "Hoàn thành (B11)", last: true },
+    { id: 3,  label: "Request Booking" },
+    { id: 4,  label: "Đã có Booking" },
+    { id: 5,  label: "Đã có HS + CO Form" },
+    { id: 8,  label: "Tờ khai hải quan" },
+    { id: 9,  label: "Gửi chứng từ nháp" },
+    { id: 11, label: "Hoàn tất lô hàng", last: true },
   ];
   updateSidebarStats({
     monthLabel: `${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`,

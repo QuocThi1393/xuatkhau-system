@@ -1494,87 +1494,158 @@ function totalCBM(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.cbm)||
 function totalCtnsShip(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.ctns)||0),0); }
 
 // --- BÁO CÁO BỐC XẾP ---
-window.reportBocXep = function() {
+window.reportBocXep = async function() {
   const month = document.getElementById("rp-month").value;
   if (!month) { showToast("Chọn tháng!"); return; }
   let list = shipmentsOfMonth(month);
   if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
-  // sắp theo ngày đóng hàng
   list = [...list].sort((a,b)=>(a.stuffingDate||"9999")<(b.stuffingDate||"9999")?-1:1);
   const [y,mo] = month.split("-");
 
-  const rows = list.map((s,i) => {
-    const cont = (s.container||"").toUpperCase();
-    let hinhthuc = s.container || "—";
-    // Nếu là container thật → ghi loại + cont/seal
-    const isAir = cont.includes("AIR");
-    const isLcl = cont.includes("LCL");
-    if (!isAir && !isLcl) {
-      const conts = (s.containers && s.containers.length) ? s.containers
-                  : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
-      if (conts.length) {
-        hinhthuc = `${s.container||""}<br><span style="font-size:10px">${conts.map(c=>`${c.type?c.type+" ":""}${c.no||"—"}/${c.seal||"—"}`).join("<br>")}</span>`;
-      }
-    }
+  try { await loadExcelJS(); }
+  catch(e) { showToast("Lỗi mạng: không tải được thư viện Excel. Thử lại!"); return; }
+
+  const today = new Date();
+  const todayVN = `${String(today.getDate()).padStart(2,"0")}/${String(today.getMonth()+1).padStart(2,"0")}/${today.getFullYear()}`;
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet(todayVN.replaceAll("/","-"));
+  ws.columns = [
+    { width: 3.5 },  // A STT
+    { width: 10.5 }, // B Ngày đóng hàng
+    { width: 15 },   // C Số INV
+    { width: 22 },   // D Khách hàng
+    { width: 9 },    // E Cảng đến
+    { width: 8 },    // F Số carton
+    { width: 9.5 },  // G G.W
+    { width: 7.5 },  // H CBM
+    { width: 8 },    // I Hình thức xuất
+    { width: 6.5 },  // J Loại cont
+    { width: 13 },   // K Số cont
+    { width: 11 }    // L Số seal
+  ];
+  ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+    margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } };
+
+  const FONT   = { name: "Arial", size: 10 };
+  const FONT_B = { name: "Arial", size: 10, bold: true };
+  const FONT_H = { name: "Arial", size: 8, bold: true };
+  const THIN   = { style: "thin" };
+  const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
+  const setCell = (r, c, val, opt={}) => {
+    const cell = ws.getCell(r, c);
+    if (val !== undefined && val !== null && val !== "") cell.value = val;
+    cell.font = opt.header ? FONT_H : (opt.bold ? FONT_B : FONT);
+    if (opt.numFmt) cell.numFmt = opt.numFmt;
+    if (opt.align)  cell.alignment = opt.align;
+    cell.border = BOX;
+    return cell;
+  };
+  const boxRow = r => { for (let c=1;c<=12;c++){ const cell=ws.getCell(r,c); cell.border=BOX; if(!cell.font) cell.font=FONT; } };
+
+  // ===== Tiêu đề =====
+  ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
+  ws.getCell("A1").font = { name: "Arial", size: 12, bold: true };
+  ws.getCell("A2").value = "Phòng Xuất Nhập Khẩu";
+  ws.getCell("A2").font = { name: "Arial", size: 12, bold: true };
+  ws.mergeCells("A3:L3");
+  ws.getCell("A3").value = "BÁO CÁO BỐC XẾP";
+  ws.getCell("A3").font = { name: "Arial", size: 13, bold: true };
+  ws.getCell("A3").alignment = { horizontal: "center" };
+  ws.mergeCells("A4:L4");
+  ws.getCell("A4").value = `Tháng ${mo}/${y}`;
+  ws.getCell("A4").font = FONT;
+  ws.getCell("A4").alignment = { horizontal: "center" };
+
+  // ===== Header (dòng 6) =====
+  const HC = { horizontal: "center", vertical: "center", wrapText: true };
+  const heads = ["STT","NGÀY ĐÓNG\nHÀNG","SỐ INV","KHÁCH HÀNG","CẢNG\nĐẾN","SỐ\nCARTON","G.W\n(KGS)","CBM","HÌNH THỨC\nXUẤT","LOẠI\nCONT","SỐ CONT","SỐ SEAL"];
+  heads.forEach((h,i) => setCell(6, i+1, h, {header:true, align:HC}));
+
+  // ===== Dữ liệu =====
+  let row = 7;
+  const firstRows = [];   // dòng đầu mỗi lô (chứa số) — để SUM
+  let cFCL = 0, cLCL = 0, cAIR = 0, nCont = 0;
+
+  list.forEach((s, i) => {
+    const contUp = (s.container||"").toUpperCase();
+    const conts = (s.containers && s.containers.length) ? s.containers.filter(c=>c.no||c.type||c.seal)
+                : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo}] : [];
+    const isAir = contUp.includes("AIR");
+    const isFcl = conts.length > 0 && !isAir;
+    const hinhthuc = isFcl ? "FCL" : (isAir ? "AIR" : (s.container || "—"));
+    if (isFcl) { cFCL++; nCont += conts.length; }
+    else if (isAir) cAIR++;
+    else cLCL++;
+
     const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ");
-    return `<tr>
-      <td style="text-align:center">${i+1}</td>
-      <td>${fmtDateVN(s.stuffingDate)}</td>
-      <td>${custs} — ${fullPort(s.port)}</td>
-      <td style="text-align:right">${Math.round(totalCtnsShip(s)).toLocaleString()}</td>
-      <td style="text-align:right">${Math.round(totalGW(s)).toLocaleString()}</td>
-      <td style="text-align:right">${(Math.round(totalCBM(s)*100)/100).toLocaleString()}</td>
-      <td>${hinhthuc}</td>
-    </tr>`;
-  }).join("");
+    const nRows = Math.max(1, conts.length);
+    const first = row;
+    firstRows.push(first);
 
-  const sumCtns = Math.round(list.reduce((a,s)=>a+totalCtnsShip(s),0));
-  const sumGW = Math.round(list.reduce((a,s)=>a+totalGW(s),0));
-  const sumCBM = Math.round(list.reduce((a,s)=>a+totalCBM(s),0)*100)/100;
+    for (let k = 0; k < nRows; k++) {
+      const c = conts[k] || {};
+      if (k === 0) {
+        setCell(row,1, i+1, {align:{horizontal:"center"}});
+        setCell(row,2, fmtDateVN(s.stuffingDate), {align:{horizontal:"center"}});
+        setCell(row,3, s.invoiceNo || "");
+        setCell(row,4, custs);
+        setCell(row,5, s.port || "", {align:{horizontal:"center"}});
+        setCell(row,6, Math.round(totalCtnsShip(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,7, Math.round(totalGW(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,8, Math.round(totalCBM(s)*100)/100, {numFmt:"#,##0.00", align:{horizontal:"right"}});
+        setCell(row,9, hinhthuc, {align:{horizontal:"center"}});
+      }
+      setCell(row,10, c.type || "", {align:{horizontal:"center"}});
+      setCell(row,11, c.no || "");
+      setCell(row,12, c.seal || "");
+      boxRow(row);
+      row++;
+    }
+  });
 
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-  @page { size: A4; margin: 12mm; }
-  body { font-family: "Times New Roman", serif; font-size: 13px; margin:0; }
-  h2 { text-align:center; margin:4px 0; }
-  .sub { text-align:center; font-size:12px; margin-bottom:14px; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { border:1px solid #000; padding:5px 7px; }
-  th { background:#e8e8e8; font-size:12px; }
-  tfoot td { font-weight:bold; background:#f5f5f5; }
-  .company { font-size:12px; }
-  @media print { .no-print{display:none;} }
-</style></head><body>
-<div class="company"><b>CTY TNHH TOMIYA SUMMIT GARMENT EXPORT</b><br>Phòng Xuất Nhập Khẩu</div>
-<h2>BÁO CÁO BỐC XẾP</h2>
-<div class="sub">Tháng ${mo}/${y}</div>
-<table>
-  <thead><tr>
-    <th style="width:30px">STT</th><th style="width:65px">Ngày đóng hàng</th>
-    <th style="width:130px">Khách hàng — Cảng</th><th style="width:55px">Số Carton</th>
-    <th style="width:70px">G.W (KGS)</th>
-    <th style="width:55px">CBM</th><th>Hình thức xuất</th>
-  </tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot><tr>
-    <td colspan="3" style="text-align:right">TỔNG CỘNG</td>
-    <td style="text-align:right">${sumCtns.toLocaleString()}</td>
-    <td style="text-align:right">${sumGW.toLocaleString()}</td>
-    <td style="text-align:right">${sumCBM.toLocaleString()}</td>
-    <td></td>
-  </tr></tfoot>
-</table>
-<div style="margin-top:30px;text-align:right;padding-right:40px">
-  <div>Ngày ${new Date().getDate()} tháng ${new Date().getMonth()+1} năm ${new Date().getFullYear()}</div>
-  <div style="margin-top:6px">Lập bởi: Phòng XNK</div>
-  <div style="margin-top:40px;font-weight:bold">NGUYEN QUOC THI</div>
-</div>
-<div class="no-print" style="text-align:center;margin-top:20px">
-  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
-</div>
-</body></html>`;
+  // ===== TỔNG CỘNG (công thức) =====
+  ws.mergeCells(row,1,row,5);
+  setCell(row,1,"TỔNG CỘNG:",{bold:true,align:{horizontal:"right"}});
+  const sumF = col => firstRows.map(r=>`${col}${r}`).join("+") || "0";
+  setCell(row,6, { formula: sumF("F") }, {bold:true,numFmt:"#,##0", align:{horizontal:"right"}});
+  setCell(row,7, { formula: sumF("G") }, {bold:true,numFmt:"#,##0", align:{horizontal:"right"}});
+  setCell(row,8, { formula: sumF("H") }, {bold:true,numFmt:"#,##0.00", align:{horizontal:"right"}});
+  boxRow(row);
+  row++;
+
+  // Tóm tắt hình thức xuất
+  const parts = [];
+  if (cFCL) parts.push(`FCL × ${cFCL} lô (${nCont} cont)`);
+  if (cLCL) parts.push(`LCL × ${cLCL}`);
+  if (cAIR) parts.push(`AIR × ${cAIR}`);
+  ws.getCell(row,1).value = `Tóm tắt: ${parts.join(" · ")} — Tổng ${list.length} lô`;
+  ws.getCell(row,1).font = FONT_B;
+  row += 2;
+
+  // ===== Chân ký =====
+  ws.getCell(row,9).value = `Ngày ${String(today.getDate()).padStart(2,"0")} tháng ${String(today.getMonth()+1).padStart(2,"0")} năm ${today.getFullYear()}`;
+  ws.getCell(row,9).font = FONT;
+  row++;
+  ws.getCell(row,2).value = "Duyệt bởi:"; ws.getCell(row,2).font = FONT;
+  ws.getCell(row,9).value = "Lập bởi:";   ws.getCell(row,9).font = FONT;
+  row++;
+  ws.getCell(row,9).value = "Phòng XNK";  ws.getCell(row,9).font = FONT;
+  row += 4;
+  ws.getCell(row,9).value = "NGUYỄN QUỐC THI"; ws.getCell(row,9).font = FONT_B;
+
+  // ===== Tải file =====
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const [td, tm, ty] = todayVN.split("/");
+  a.download = `Báo cáo bốc xếp ${td} ${tm} ${ty.slice(2)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+
   closeModal("modal-reports");
-  const w = window.open("","_blank"); w.document.write(html); w.document.close();
+  showToast("Đã xuất Excel Báo cáo Bốc xếp!");
 };
 
 // --- BÁO CÁO NGUỒN THU (xuất Excel, ExcelJS — kẻ khung + công thức) ---

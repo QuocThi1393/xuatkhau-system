@@ -1,13 +1,16 @@
 import { db } from "./firebase-config.js";
-import { isAdmin, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
-import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal } from "./utils.js";
+import { isAdmin, isGuest, isLoggedIn, loginUser, logout, onAuthChange, perms, canEditAnyCol, nickname, resetPassword } from "./auth.js";
+import { initTopbar, updateWheelEvents, updateSidebarStats, updateFabWarnings } from "./topbar.js";
+import { showToast, formatDate, fullPort, getProgress, getStatus, progColor, CHECKLIST_STEPS, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, saveGuard } from "./utils.js";
 import {
-  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy
+  collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, serverTimestamp, query, orderBy, setDoc, writeBatch, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 window.closeModalById = closeModal;
+initTopbar("index");
 
 let allShipments = [];
+window.__getAllShipments = () => allShipments;
 let importHot = null;   // Handsontable instance cho import
 let editHot = null;     // Handsontable instance cho sửa
 let editShipId = null;
@@ -20,13 +23,13 @@ const COLS = [
   { data: "customer",     title: "Customer",      width: 100 },
   { data: "contract",     title: "Contract",      width: 90 },
   { data: "index",        title: "Index",         width: 90 },
-  { data: "items",        title: "Items",         width: 100 },
-  { data: "qty",          title: "Qty (PCS)",     width: 75, type: "numeric" },
-  { data: "ctns",         title: "Qty (CTNs)",    width: 75, type: "numeric" },
-  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 80, type: "numeric" },
-  { data: "kgTotal",      title: "Qty (Kgs)",     width: 80, type: "numeric", readOnly: true },
+  { data: "items",        title: "Items",         width: 170 },
+  { data: "qty",          title: "Qty (PCS)",     width: 60, type: "numeric" },
+  { data: "ctns",         title: "Qty (CTNs)",    width: 60, type: "numeric" },
+  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 65, type: "numeric" },
+  { data: "kgTotal",      title: "Qty (Kgs)",     width: 65, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 95 },
-  { data: "cbm",          title: "CBM",           width: 70, type: "numeric", readOnly: true },
+  { data: "cbm",          title: "CBM",           width: 55, type: "numeric", readOnly: true },
   { data: "hsCode",       title: "HS CODE",       width: 80 },
   { data: "coForm",       title: "C/O FORM",      width: 80 },
   { data: "note",         title: "Note",          width: 120 },
@@ -37,19 +40,52 @@ const EDIT_COLS = [
   { data: "customer",     title: "Customer",      width: 110 },
   { data: "contract",     title: "Contract",      width: 95 },
   { data: "index",        title: "Index",         width: 95 },
-  { data: "items",        title: "Items",         width: 105 },
-  { data: "qty",          title: "Qty (PCS)",     width: 80, type: "numeric" },
-  { data: "ctns",         title: "Qty (CTNs)",    width: 80, type: "numeric" },
-  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 85, type: "numeric" },
-  { data: "kgTotal",      title: "Qty (Kgs)",     width: 85, type: "numeric", readOnly: true },
+  { data: "items",        title: "Items",         width: 175 },
+  { data: "qty",          title: "Qty (PCS)",     width: 65, type: "numeric" },
+  { data: "ctns",         title: "Qty (CTNs)",    width: 65, type: "numeric" },
+  { data: "kgPerCtn",     title: "Kgs/Carton",    width: 70, type: "numeric" },
+  { data: "kgTotal",      title: "Qty (Kgs)",     width: 70, type: "numeric", readOnly: true },
   { data: "dimension",    title: "Dimension",     width: 100 },
-  { data: "tareCtn",      title: "Tare thùng",    width: 90, type: "numeric" },
-  { data: "cbm",          title: "CBM",           width: 75, type: "numeric", readOnly: true },
-  { data: "unitPrice",    title: "Giá GC (USD)",  width: 90, type: "numeric" },
+  { data: "tareCtn",      title: "Tare thùng",    width: 70, type: "numeric" },
+  { data: "cbm",          title: "CBM",           width: 60, type: "numeric", readOnly: true },
+  { data: "unitPrice",    title: "Giá GC (USD)",  width: 75, type: "numeric" },
   { data: "hsCode",       title: "HS CODE",       width: 85 },
   { data: "coForm",       title: "C/O FORM",      width: 85 },
   { data: "note",         title: "Note",          width: 130 },
 ];
+
+// Gột dấu phân cách nghìn ("3,000" -> "3000") cho các cột số khi paste từ Excel
+const NUMERIC_KEYS = ["qty","ctns","kgPerCtn","kgTotal","cbm","tareCtn","unitPrice"];
+function cleanNumericCell(val) {
+  if (typeof val !== "string") return val;
+  const t = val.trim();
+  // Chỉ xử lý chuỗi kiểu số có dấu phẩy phân cách nghìn: 3,000 hoặc 1,234,567 hoặc 3,000.5
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return t.replace(/,/g, "");
+  return val;
+}
+// Gắn beforePaste cho 1 Handsontable instance dựa trên danh sách cột
+function attachPasteCleaner(cols) {
+  return function(data, coords) {
+    if (!data || !coords || !coords.length) return;
+    const startCol = coords[0].startCol;
+    data.forEach(rowArr => {
+      rowArr.forEach((cell, i) => {
+        const colDef = cols[startCol + i];
+        if (colDef && NUMERIC_KEYS.includes(colDef.data)) {
+          rowArr[i] = cleanNumericCell(cell);
+        }
+      });
+    });
+  };
+}
+
+// Suy ra tháng "YYYY-MM" từ 1 chuỗi ngày "YYYY-MM-DD"
+function monthFromDate(dstr) {
+  if (!dstr) return "";
+  const s = String(dstr).trim();
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  return m ? `${m[1]}-${m[2]}` : "";
+}
 
 // Tính kgTotal & cbm cho 1 dòng
 function computeRow(row) {
@@ -74,17 +110,20 @@ function updateAdminUI() {
   const p = perms();
   document.getElementById("admin-indicator").style.display = admin ? "flex" : "none";
   document.getElementById("login-label").textContent = on ? "Đăng xuất" : "Đăng nhập";
-  // Lời chào
-  const g = document.getElementById("user-greeting");
-  if (on) { g.style.display = ""; g.textContent = "Xin chào " + (nickname() || "") + "!"; }
-  else { g.style.display = "none"; }
   // Nav cần đăng nhập
   ["btn-nav-list","nav-customers","nav-lc","nav-forwarders","btn-reports"].forEach(id => {
     const el = document.getElementById(id); if (el) el.style.display = on ? "" : "none";
   });
+  // Vai trò Khách: không thấy Báo cáo
+  if (on && isGuest()) {
+    const rp = document.getElementById("btn-reports");
+    if (rp) rp.style.display = "none";
+  }
   // Nút quản lý tài khoản: chỉ admin
   const navUsers = document.getElementById("nav-users");
   if (navUsers) navUsers.style.display = admin ? "" : "none";
+  const btnBk = document.getElementById("btn-backup");
+  if (btnBk) btnBk.style.display = admin ? "" : "none";
   // Thêm / Import lô: chỉ vai trò được thêm-xóa (admin)
   document.getElementById("btn-add-shipment").style.display = p.addDelete ? "flex" : "none";
   document.getElementById("btn-import-plan").style.display = p.addDelete ? "flex" : "none";
@@ -161,6 +200,7 @@ function initImportHot() {
     minSpareRows: 5,
     contextMenu: true,
     licenseKey: "non-commercial-and-evaluation",
+    beforePaste: attachPasteCleaner(COLS),
     afterChange: (changes, source) => {
       if (source === "loadData") return;
       if (!changes) return;
@@ -290,10 +330,12 @@ document.getElementById("btn-parse-plan").addEventListener("click", () => {
       let overlap = 0; newItems.forEach(i => { if (exItems.has(i)) overlap++; });
       return overlap > 0 && overlap >= Math.min(newItems.size, exItems.size) * 0.3;
     });
-    ns.overwrite = !!ns.matched;
+    // action: "overwrite" (ghi đè lô cũ) | "create" (ghi mới, tách riêng) | "skip" (bỏ qua)
+    ns.action = ns.matched ? "overwrite" : "create";
   });
 
   parsedPlan = shipments;
+  parsedPlan.forEach(ns => { ns.period = monthFromDate(ns.stuffingDate || ns.etd); });
   renderImportPreview();
   document.getElementById("import-summary").textContent =
     `${shipments.length} lô · ${shipments.filter(s=>s.matched).length} trùng · ${shipments.filter(s=>!s.matched).length} mới`;
@@ -309,42 +351,51 @@ function renderImportPreview() {
     return `<tr style="background:${m?'var(--amber-bg)':''}">
       <td style="text-align:center">${m?"⚠️":"🆕"}</td>
       <td><b>${fullPort(ns.pod)}</b><br><span style="font-size:11px;color:var(--text-muted)">ETD ${ns.etd||"—"} · Đóng ${ns.stuffingDate||"—"}</span></td>
+      <td><input type="month" value="${ns.period||""}" onchange="setImportPeriod(${i},this.value)" style="font-size:12px;padding:3px 6px;border:0.5px solid var(--border-md);border-radius:6px;background:var(--bg-card);color:var(--text)"></td>
       <td><span class="badge badge-blue" style="font-size:11px">${ns.container||"?"}</span></td>
       <td>${ns.orders.length}</td>
       <td style="font-size:11px;color:${m?'var(--amber-text)':'var(--green-text)'}">${m?"Có":"Mới"}</td>
       <td>${m
-        ? `<label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer"><input type="checkbox" ${ns.overwrite?"checked":""} onchange="toggleOW(${i},this.checked)"> Ghi đè</label>`
+        ? `<select style="font-size:12px;padding:3px 6px;border:0.5px solid var(--border-md);border-radius:6px;background:var(--bg-card)" onchange="setImportAction(${i},this.value)">
+             <option value="overwrite" ${ns.action==="overwrite"?"selected":""}>Ghi đè lô cũ</option>
+             <option value="create" ${ns.action==="create"?"selected":""}>Ghi mới (tách riêng)</option>
+             <option value="skip" ${ns.action==="skip"?"selected":""}>Bỏ qua</option>
+           </select>`
         : `<span style="font-size:11px;color:var(--green-text)">Tạo mới</span>`}</td>
       <td style="font-size:11px;color:var(--text-muted)">${sample}${ns.orders.length>2?"...":""}</td>
       <td style="font-size:12px">${custs}</td>
     </tr>`;
   }).join("");
 }
-window.toggleOW = (i,v) => { parsedPlan[i].overwrite = v; };
+window.setImportAction = (i,v) => { parsedPlan[i].action = v; };
+window.setImportPeriod = (i,v) => { parsedPlan[i].period = v; };
 
 document.getElementById("btn-confirm-import-plan").addEventListener("click", async () => {
-  const create = parsedPlan.filter(s=>!s.matched);
-  const ow = parsedPlan.filter(s=>s.matched && s.overwrite);
-  const skip = parsedPlan.filter(s=>s.matched && !s.overwrite);
+  const create = parsedPlan.filter(s=>s.action==="create");
+  const ow = parsedPlan.filter(s=>s.action==="overwrite" && s.matched);
+  const skip = parsedPlan.filter(s=>s.action==="skip");
   if (!confirm(`Tạo mới ${create.length} · Ghi đè ${ow.length} · Bỏ qua ${skip.length}. Tiếp tục?`)) return;
 
   for (const ns of create) {
+    const period = ns.period || monthFromDate(ns.stuffingDate || ns.etd);
     await addDoc(collection(db,"shipments"), {
       stuffingDate: ns.stuffingDate||null, etd: ns.etd||null, eta: null,
       shipDate: ns.etd || ns.stuffingDate || null,
       port: ns.pod||"", container: ns.container||"",
-      cyCut: null, vessel: null,
+      cyCut: null, vessel: null, period: period||null,
       checklist: {1:"done"}, orders: ns.orders,
       createdAt: serverTimestamp(),
     });
   }
   for (const ns of ow) {
+    const period = ns.period || ns.matched.period || monthFromDate(ns.stuffingDate || ns.matched.stuffingDate || ns.etd);
     await updateDoc(doc(db,"shipments",ns.matched.id), {
       orders: ns.orders,
       port: ns.pod || ns.matched.port,
       container: ns.container || ns.matched.container,
       stuffingDate: ns.stuffingDate || ns.matched.stuffingDate || null,
       etd: ns.etd || ns.matched.etd || null,
+      period: period||null,
     });
   }
   closeModal("modal-import-plan");
@@ -364,6 +415,8 @@ function sortShipments(list) {
 function renderList() {
   const filterVal = document.getElementById("filter-status").value;
   const filterMonth = document.getElementById("filter-month").value;
+  const filterCust = document.getElementById("filter-customer").value;
+  const filterInv = (document.getElementById("filter-invoice").value || "").trim().toLowerCase();
   const container = document.getElementById("shipment-list");
   const admin = isAdmin();
 
@@ -375,6 +428,13 @@ function renderList() {
     const [y,mo] = m.split("-");
     return `<option value="${m}" ${m===curMonth?"selected":""}>Tháng ${mo}/${y}</option>`;
   }).join("");
+
+  // Đổ danh sách khách hàng vào dropdown (lấy từ đơn hàng các lô)
+  const custs = [...new Set(allShipments.flatMap(s => (s.orders||[]).map(o=>o.customer)).filter(Boolean))].sort();
+  const custSel = document.getElementById("filter-customer");
+  const curCust = custSel.value;
+  custSel.innerHTML = `<option value="">Tất cả khách</option>` + custs.map(c =>
+    `<option value="${c}" ${c===curCust?"selected":""}>${c}</option>`).join("");
 
   const openCards = new Set();
   document.querySelectorAll(".card-detail.open").forEach(el => openCards.add(el.id.replace("detail-","")));
@@ -389,6 +449,12 @@ function renderList() {
   }
   if (filterMonth) {
     list = list.filter(s => s.period === filterMonth);
+  }
+  if (filterCust) {
+    list = list.filter(s => (s.orders||[]).some(o => o.customer === filterCust));
+  }
+  if (filterInv) {
+    list = list.filter(s => (s.invoiceNo||"").toLowerCase().includes(filterInv));
   }
 
   document.getElementById("shipment-count").textContent = list.length + " lô hàng · sắp theo ngày đóng hàng";
@@ -412,20 +478,31 @@ function buildCard(s, admin) {
   const card = document.createElement("div");
   card.className = "shipment-card";
   card.id = "card-"+s.id;
-  // Card hoàn tất → nền xanh nhẹ
-  if (isDone) card.style.background = "#EBF3FB";
+  // Card hoàn tất → nền xanh nhẹ (có bản dark trong style.css)
+  if (isDone) card.classList.add("card-done");
 
-  // === Lộ trình vận chuyển: 4 mốc ===
+  // === Lộ trình vận chuyển: 4 mốc (tô theo mốc đã qua, cắt máng khẩn cấp nháy đỏ) ===
+  const _todayISO = tbLocalISO(new Date());
+  const _tmrD = new Date(); _tmrD.setDate(_tmrD.getDate()+1);
+  const _tmrISO = tbLocalISO(_tmrD);
+  const _ck8 = (s.checklist||{})[8];
+  const cutUrgent = s.cyCut && _ck8 !== "done" && _ck8 !== "skip" && (s.cyCut === _todayISO || s.cyCut === _tmrISO);
   const routeNodes = [
-    { ic:"building-warehouse", color:"blue", date:formatDate(s.stuffingDate), label:"Đóng hàng" },
-    { ic:"scissors",           color:"pink", date:formatDate(s.cyCut),        label:"Cắt máng" },
-    { ic:"plane-departure",    color:"blue", date:formatDate(s.etd),          label:"ETD" },
-    { ic:"ship",               color:"blue", date:formatDate(s.eta),          label:"Arrival" },
+    { ic:"building-warehouse", date:s.stuffingDate, label:"Đóng hàng" },
+    { ic:"scissors",           date:s.cyCut,        label:"Cắt máng", urgent:cutUrgent },
+    { ic:"plane-departure",    date:s.etd,          label:"ETD" },
+    { ic:"ship",               date:s.eta,          label:"Arrival" },
   ];
   let timelineHTML = "";
   routeNodes.forEach((n,i) => {
-    if (i>0) timelineHTML += `<div class="ch-tl-line${(i===1||i===2)?" pink":""}"></div>`;
-    timelineHTML += `<div class="ch-tl-node"><div class="ch-tl-ic ${n.color}"><i class="ti ti-${n.ic}"></i></div><div class="ch-tl-date">${n.date}</div><div class="ch-tl-lbl">${n.label}</div></div>`;
+    const passed = n.date && n.date <= _todayISO;
+    if (i>0) {
+      const prev = routeNodes[i-1];
+      const prevPassed = prev.date && prev.date <= _todayISO;
+      timelineHTML += `<div class="ch-tl-line${prevPassed?" tlp":""}"></div>`;
+    }
+    const icCls = n.urgent ? "tlu" : passed ? "tlp" : "tlo";
+    timelineHTML += `<div class="ch-tl-node"><div class="ch-tl-ic ${icCls}"><i class="ti ti-${n.ic}"></i></div><div class="ch-tl-date${n.urgent?" tlu-date":""}">${formatDate(n.date)}</div><div class="ch-tl-lbl">${n.label}</div></div>`;
   });
 
   // === Tàu + container / hình thức xuất ===
@@ -450,7 +527,7 @@ function buildCard(s, admin) {
     contHTML = `<div class="ch-cont-box ch-cont-big"><span class="ch-big ${big.color}">${big.txt}</span></div>`;
   }
 
-  // === Thanh 11 bước (bấm để đổi trạng thái nếu là admin) ===
+  // === Thanh tiến trình các bước (bấm để đổi trạng thái nếu là admin) ===
   const stepbarHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
     const cls = state==="done"?"done":state==="skip"?"skip":"pending";
@@ -472,6 +549,7 @@ function buildCard(s, admin) {
   const periodLabel = s.period ? (() => { const [y,mo]=s.period.split("-"); return `Tháng ${mo}/${y}`; })() : "";
 
   card.innerHTML = `
+    <div class="sc-accent ${isDone?"ok":""}"></div>
     <div class="card-head">
       <div class="ch-id">
         <div class="ch-title"><i class="ti ti-world ch-globe"></i><span>${custLabel}${fullPort(s.port)}</span></div>
@@ -512,6 +590,7 @@ function buildCard(s, admin) {
             ${buildReadonlyTable(s.orders||[])}
             <div class="action-row" style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
               ${canEditAnyCol() ? `<button class="btn btn-sm btn-primary" onclick="openEditOrders('${s.id}')"><i class="ti ti-table"></i> Chỉnh sửa (Excel)</button>` : ""}
+              ${canEditAnyCol() ? `<button class="btn btn-sm" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openAssignLC('${s.id}')"><i class="ti ti-credit-card"></i> Gán LC</button>` : ""}
               ${admin ? `<button class="btn btn-sm" onclick="openEditShipment('${s.id}')"><i class="ti ti-edit"></i> Sửa lô hàng</button>` : ""}
               ${admin ? `<button class="btn btn-sm btn-danger" onclick="deleteShipment('${s.id}')"><i class="ti ti-trash"></i> Xóa lô</button>` : ""}
@@ -522,10 +601,11 @@ function buildCard(s, admin) {
           <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
           <div class="ck-list">${listHTML}</div>
           <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);display:flex;flex-direction:column;gap:6px">
-            <button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
+            ${!isGuest() ? `<button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
-            <button class="btn btn-sm btn-export" onclick="openShipMark('${s.id}')"><i class="ti ti-tag"></i> Shipping Mark</button>
+            <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
+            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>` : ""}
           </div>
         </div>
       </div>
@@ -592,7 +672,7 @@ window.ckToggle = async function(shipId, stepId, state, skippable) {
   else if (state==="done") next="pending";
   else next="pending";
   const s = allShipments.find(x=>x.id===shipId);
-  await updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} });
+  await saveGuard(updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} }));
 };
 
 // ====== SỬA ĐƠN HÀNG BẰNG HANDSONTABLE ======
@@ -619,6 +699,7 @@ window.openEditOrders = function(shipId) {
       minSpareRows: 3,
       contextMenu: true,
       licenseKey: "non-commercial-and-evaluation",
+      beforePaste: attachPasteCleaner(EDIT_COLS),
       cells: (row, col) => {
         const cp = EDIT_COLS[col];
         if (cp && cp.readOnly) return { className: "ht-readonly-cell", readOnly: true };
@@ -659,7 +740,7 @@ document.getElementById("btn-save-edit-orders").addEventListener("click", async 
       hsCode:o.hsCode||"", coForm:o.coForm||"", note:o.note||"",
       stuffingDate:o.stuffingDate||"", etd:o.etd||"",
     }));
-  await updateDoc(doc(db,"shipments",editShipId), { orders: data });
+  if (!await saveGuard(updateDoc(doc(db,"shipments",editShipId), { orders: data }))) return;
   closeModal("modal-edit-orders");
   showToast(`Đã lưu ${data.length} đơn hàng!`);
 });
@@ -676,7 +757,7 @@ window.openEditShipment = function(id) {
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Cảng (POD)</label><input class="form-input" id="es-port" value="${s.port||""}"></div>
-        <div class="form-group"><label class="form-label">Quy cách (Container)</label><input class="form-input" id="es-container" value="${s.container||""}" placeholder="1x20GP, 40HC, AIR..."></div>
+        <div class="form-group"><label class="form-label">Phương thức vận chuyển</label><input class="form-input" id="es-container" value="${s.container||""}" placeholder="20F*1, 40HC*2, AIR, LCL, KNQ..." oninput="window._refreshFclLock&&window._refreshFclLock()"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Tên tàu / Hãng bay</label><input class="form-input" id="es-vessel" value="${s.vessel||""}"></div>
@@ -694,6 +775,7 @@ window.openEditShipment = function(id) {
         <label class="form-label">Danh sách Container</label>
         <div id="es-cont-list"></div>
         <button type="button" class="btn btn-sm" id="es-add-cont" style="margin-top:6px"><i class="ti ti-plus"></i> Thêm container</button>
+        <div id="es-cont-note" style="display:none;font-size:12px;color:var(--text-muted);margin-top:6px"><i class="ti ti-lock"></i> Phương thức này không dùng container — danh sách đã khóa.</div>
       </div>
       <div class="form-group">
         <label class="form-label">Lô hàng thuộc tháng (MM/YYYY)</label>
@@ -751,16 +833,35 @@ window.openEditShipment = function(id) {
 
   // Khởi tạo danh sách container
   const contListEl = document.getElementById("es-cont-list");
+  const contNoteEl = document.getElementById("es-cont-note");
+  const addContBtn = document.getElementById("es-add-cont");
+
+  // FCL = có 20F/40F (hoặc bất kỳ thứ gì không phải AIR/LCL/KNQ/CPN). Trống cũng coi như FCL.
+  function isFclMethod() {
+    const v = (document.getElementById("es-container").value || "").toUpperCase();
+    return !/AIR|LCL|KNQ|CPN/.test(v);
+  }
   function refreshGwState() {
+    const fcl = isFclMethod();
     const rows = contListEl.querySelectorAll(".es-cont-row");
     const multi = rows.length > 1;
     rows.forEach(r => {
       const gw = r.querySelector(".ec-gw");
-      gw.disabled = !multi;
-      gw.placeholder = multi ? "G.W cont" : "= tổng lô";
-      gw.style.opacity = multi ? "1" : "0.45";
+      const on = fcl && multi;
+      gw.disabled = !on;
+      gw.placeholder = !fcl ? "" : (multi ? "G.W cont" : "= tổng lô");
+      gw.style.opacity = on ? "1" : "0.45";
     });
   }
+  window._refreshFclLock = function() {
+    const fcl = isFclMethod();
+    contListEl.style.opacity = fcl ? "1" : "0.45";
+    contListEl.querySelectorAll("input,select,button").forEach(el => { el.disabled = !fcl; });
+    addContBtn.disabled = !fcl;
+    addContBtn.style.opacity = fcl ? "1" : "0.45";
+    if (contNoteEl) contNoteEl.style.display = fcl ? "none" : "block";
+    if (fcl) refreshGwState();
+  };
   function addContRow(c = {}) {
     const row = document.createElement("div");
     row.className = "es-cont-row";
@@ -774,40 +875,196 @@ window.openEditShipment = function(id) {
       <input class="form-input ec-tare" type="number" placeholder="Tare" value="${c.tare||""}" style="width:74px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
       <input class="form-input ec-gw" type="number" placeholder="G.W cont" value="${c.gw||""}" style="width:86px;flex-shrink:0" title="G.W riêng cont này (chỉ cần khi lô có từ 2 cont)">
       <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
-    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); refreshGwState(); });
+    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); });
     contListEl.appendChild(row);
-    refreshGwState();
+    window._refreshFclLock();
   }
   // Nạp dữ liệu cũ: ưu tiên mảng containers, fallback contNo/sealNo cũ
   const existing = (s.containers && s.containers.length) ? s.containers
                  : (s.contNo||s.sealNo) ? [{type:"20GP", no:s.contNo||"", seal:s.sealNo||""}] : [];
   if (existing.length) existing.forEach(addContRow); else addContRow();
-  document.getElementById("es-add-cont").addEventListener("click", () => addContRow());
+  addContBtn.addEventListener("click", () => { if (isFclMethod()) addContRow(); });
+  window._refreshFclLock();
   openModal("modal-edit-shipment");
 };
 
 window.deleteShipment = async function(id) {
   if (!confirm("Xóa toàn bộ lô hàng này? Không thể hoàn tác!")) return;
-  await deleteDoc(doc(db,"shipments",id));
+  if (!await saveGuard(deleteDoc(doc(db,"shipments",id)))) return;
   showToast("Đã xóa lô hàng!");
 };
 
 // ====== EMAIL BOOKING ======
+function fillEmailTemplate(tpl, vars) {
+  return (tpl||"").replace(/\{(\w+)\}/g, (m,k) => (vars[k] !== undefined && vars[k] !== null) ? String(vars[k]) : "");
+}
+
+function cleanEmailHtml(html) {
+  if (!html) return html;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = html;
+
+  tmp.querySelectorAll("*").forEach(node => {
+    node.style.removeProperty("height");
+    node.style.removeProperty("min-height");
+    node.style.removeProperty("margin-top");
+    node.style.removeProperty("margin-bottom");
+    node.style.removeProperty("margin");
+    node.style.removeProperty("padding-top");
+    node.style.removeProperty("padding-bottom");
+    if (node.getAttribute("style") === "") node.removeAttribute("style");
+    if (node.tagName === "DIV" || node.tagName === "P" || node.tagName === "SPAN") node.removeAttribute("height");
+  });
+
+  function isEmptyBlock(node) {
+    if (node.querySelector && node.querySelector("table, img")) return false;
+    const text = node.textContent.replace(/\u00a0/g, " ").trim();
+    return !text;
+  }
+
+  function collapseEmptyBlocks(parent) {
+    let consecutiveEmpty = 0;
+    Array.from(parent.children).forEach(node => {
+      const tag = node.tagName;
+      if (tag === "DIV" || tag === "P") {
+        if (isEmptyBlock(node)) {
+          consecutiveEmpty++;
+          if (consecutiveEmpty > 1) { node.remove(); return; }
+        } else {
+          consecutiveEmpty = 0;
+        }
+      } else {
+        consecutiveEmpty = 0;
+      }
+      collapseEmptyBlocks(node);
+    });
+  }
+  collapseEmptyBlocks(tmp);
+
+  let out = tmp.innerHTML;
+  out = out.replace(/(<br\s*\/?>\s*){3,}/gi, "<br><br>");
+  return out;
+}
+function setupRichEditor(el) {
+  if (!el || el._richSetup) return;
+  el._richSetup = true;
+  try { document.execCommand("defaultParagraphSeparator", false, "br"); } catch(e){}
+  el.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const html = e.clipboardData && e.clipboardData.getData("text/html");
+    const text = e.clipboardData && e.clipboardData.getData("text/plain");
+    if (html) {
+      document.execCommand("insertHTML", false, cleanEmailHtml(html));
+    } else if (text) {
+      document.execCommand("insertText", false, text);
+    }
+  });
+}
+
+function buildEmailTable1(s) {
+  const orders = s.orders || [];
+  if (!orders.length) return "";
+  const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
+  const pod = fullPort(s.port);
+  const cust = siCustomerName(s);
+  const td = "border:1px solid #000;padding:4px 8px;line-height:1.3;margin:0";
+  const rows = orders.map((o,i) => `<tr style="text-align:center">
+    ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
+    <td style="${td}" rowspan="${orders.length}">${pod}</td>
+    <td style="${td}" rowspan="${orders.length}">${cust}</td>` : ""}
+    <td style="${td}">${o.contract||""}</td>
+    <td style="${td}">${o.index||o.items||""}</td>
+    <td style="${td}">${Math.round(parseFloat(o.qty)||0).toLocaleString()}</td>
+    <td style="${td}">${Math.round(parseFloat(o.ctns)||0).toLocaleString()}</td>
+    <td style="${td}">${Math.round(parseFloat(o.kgTotal)||0).toLocaleString()}</td>
+    <td style="${td}">${(parseFloat(o.cbm)||0).toFixed(2)}</td>
+  </tr>`).join("");
+  const tQty = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
+  const tCtns= orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+  const tKg  = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
+  const tCbm = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
+  return `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.3;font-family:Arial,Helvetica,sans-serif;margin:0">
+    <tr style="text-align:center;font-weight:bold">
+      <td style="${td};color:#1a56db">ETD</td>
+      <td style="${td}">POD</td>
+      <td style="${td}">Customer</td>
+      <td style="${td}">ORDER</td>
+      <td style="${td}">STYLE</td>
+      <td style="${td}">Qty<br>(PCS)</td>
+      <td style="${td}">Qty<br>(CTNs)</td>
+      <td style="${td}">Qty<br>(Kgs)</td>
+      <td style="${td}">CBM</td>
+    </tr>
+    ${rows}
+    <tr style="text-align:center;font-weight:bold;color:#C0392B">
+      <td style="${td}" colspan="5">${s.container||""}</td>
+      <td style="${td}">${Math.round(tQty).toLocaleString()}</td>
+      <td style="${td}">${Math.round(tCtns).toLocaleString()}</td>
+      <td style="${td}">${Math.round(tKg).toLocaleString()}</td>
+      <td style="${td}">${tCbm.toFixed(2)}</td>
+    </tr>
+  </table>`;
+}
+
+function buildEmailTable2(s) {
+  const orders = s.orders || [];
+  if (!orders.length) return "";
+  const etd = s.etd ? new Date(s.etd).toLocaleDateString("en-GB",{day:"2-digit",month:"2-digit"}) : "";
+  const pod = fullPort(s.port);
+  const cust = siCustomerName(s);
+  const td = "border:1px solid #000;padding:4px 8px;line-height:1.3;margin:0";
+  const rows = orders.map((o,i) => `<tr style="text-align:center">
+    ${i===0 ? `<td style="${td};color:#1a56db;font-weight:bold" rowspan="${orders.length}">${etd}</td>
+    <td style="${td}" rowspan="${orders.length}">${pod}</td>
+    <td style="${td}" rowspan="${orders.length}">${cust}</td>` : ""}
+    <td style="${td}">${o.contract||""}</td>
+    <td style="${td}">${o.index||o.items||""}</td>
+    <td style="${td}">${Math.round(parseFloat(o.qty)||0).toLocaleString()}</td>
+    <td style="${td}">${o.hsCode||""}</td>
+    <td style="${td}">${o.coForm||""}</td>
+  </tr>`).join("");
+  const tQty = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
+  return `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;line-height:1.3;font-family:Arial,Helvetica,sans-serif;margin:0">
+    <tr style="text-align:center;font-weight:bold">
+      <td style="${td};color:#1a56db">ETD</td>
+      <td style="${td}">POD</td>
+      <td style="${td}">Customer</td>
+      <td style="${td}">Contract</td>
+      <td style="${td}">Items</td>
+      <td style="${td}">Qty<br>(PCS)</td>
+      <td style="${td};background:#FFFF00">HS CODE</td>
+      <td style="${td};background:#C6E0B4">C/O FORM<br>(RCEP or AJ)</td>
+    </tr>
+    ${rows}
+    <tr style="text-align:center;font-weight:bold;color:#C0392B">
+      <td style="${td}" colspan="5">${s.container||""}</td>
+      <td style="${td}">${Math.round(tQty).toLocaleString()}</td>
+      <td style="${td}"></td>
+      <td style="${td}"></td>
+    </tr>
+  </table>`;
+}
+
+window.cleanCurrentEditor = function(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = cleanEmailHtml(el.innerHTML);
+  showToast("Đã dọn khoảng trắng!");
+};
+
 window.openEmailModal = async function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
   const s = allShipments.find(x=>x.id===shipId);
   if (!s) return;
-  let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="";
+  let consignee="—", description="SHIRTS", note="", mailTo="", mailCc="", shortName="", emailTemplate=null;
   const first = (s.orders||[])[0];
   if (first?.customer) {
-    try {
-      const { collection:col, query:q, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      const snap = await getDocs(q(col(db,"customers"), where("name","==",first.customer)));
-      if (!snap.empty) {
-        const c = snap.docs[0].data();
-        consignee=c.consignee||"—"; description=c.description||"SHIRTS"; note=c.note||"";
-        mailTo=c.mailTo||""; mailCc=c.mailCc||""; shortName=c.shortName||c.name||"";
-      }
-    } catch(e){}
+    const c = await findCustomerByName(db, first.customer);
+    if (c && Object.keys(c).length) {
+      consignee=c.consignee||"—"; description=c.description||"SHIRTS"; note=c.note||"";
+      mailTo=c.mailTo||""; mailCc=c.mailCc||""; shortName=c.shortName||c.name||"";
+      emailTemplate = c.emailTemplate || null;
+    }
   }
   const contracts = [...new Set((s.orders||[]).map(o=>o.contract).filter(Boolean))];
   const firstContract = contracts[0] || "";
@@ -818,23 +1075,43 @@ window.openEmailModal = async function(shipId) {
   const etdStr = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}).toUpperCase() : "???";
   const etdShort = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"short",day:"2-digit"}).toUpperCase() : "???";
 
-  // Subject: New Booking 1x20 shipments //HCM-BANGKOK, THAILAND/ ETD 24 JUN / Consignee: FLEX THAILAND//V26TS006
-  const subject = `New Booking ${s.container||""} shipments //HCM-${fullPort(s.port)}/ ETD ${etdShort} / Consignee: ${shortName}//${firstContract}`;
+  const vars = {
+    container: s.container||"???",
+    port: fullPort(s.port),
+    etd: etdStr,
+    etdShort: etdShort,
+    description,
+    contract: contracts.join(", ") || firstContract,
+    qty: tPcs.toLocaleString(),
+    ctns: tCtns,
+    kg: tKg,
+    cbm: tCbm,
+    consignee,
+    note: note ? "\nNote: "+note : "",
+    shortName,
+    table1: buildEmailTable1(s),
+    table2: buildEmailTable2(s),
+  };
+  vars.table = vars.table1;
 
-  const body = `Please arrange for our NEW FCL BOOKING as follows!
+  const subjectTpl = emailTemplate?.subject || "New Booking {container} shipments //HCM-{port}/ ETD {etdShort} / Consignee: {shortName}//{contract}";
+  const bodyTpl = emailTemplate?.body || `Please arrange for our NEW FCL BOOKING as follows!
 
-${s.container||"???"} TO ${fullPort(s.port)}, JAPAN:
+{container} TO {port}, JAPAN:
 
-ETD: ~ ${etdStr}  TO: ${fullPort(s.port)}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
+ETD: ~ {etd}  TO: {port}: ETA:???  VESSEL: AS YOUR ARRANGEMENT
 
-Description: ${description}
-Contract number: ${contracts.join(", ")}
-Quantity: ${tPcs.toLocaleString()} pcs = (about) ${tCtns} cartons = (about) ${tKg} kgs = (about) ${tCbm} cbm
+Description: {description}
+Contract number: {contract}
+Quantity: {qty} pcs = (about) {ctns} cartons = (about) {kg} kgs = (about) {cbm} cbm
 
-Consignee: ${consignee}
-${note ? "\nNote: "+note : ""}
+Consignee: {consignee}
+{note}
 
 Best regards,`;
+
+  const subject = fillEmailTemplate(subjectTpl, vars);
+  const bodyHtml = cleanEmailHtml(fillEmailTemplate(bodyTpl, vars).replace(/\n/g,"<br>"));
 
   document.getElementById("email-body").innerHTML = `
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px">
@@ -851,27 +1128,60 @@ Best regards,`;
         <input class="form-input" id="em-subject" value="${subject.replace(/"/g,'&quot;')}" style="flex:1;font-size:12px">
       </div>
     </div>
-    <textarea id="em-body" style="width:100%;height:280px;font-size:13px;line-height:1.6;border:0.5px solid var(--border);border-radius:var(--radius-md);padding:12px;font-family:inherit;resize:vertical;outline:none">${body}</textarea>`;
+    <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <span>Sửa trực tiếp nội dung bên dưới nếu cần. "Copy nội dung" giữ nguyên bảng khi dán vào Gmail/Outlook; "Mở Mail" chỉ gửi được bản chữ thường (giới hạn của mailto).</span>
+      <button type="button" class="btn btn-sm" onclick="cleanCurrentEditor('em-body')"><i class="ti ti-eraser"></i> Dọn khoảng trắng</button>
+    </div>
+    <div class="rich-edit" id="em-body" contenteditable="true">${bodyHtml}</div>`;
+  setupRichEditor(document.getElementById("em-body"));
 
   window._emailData = { mailTo, mailCc };
   openModal("modal-email");
 };
-document.getElementById("btn-copy-email").addEventListener("click", () => {
-  const body = document.getElementById("em-body")?.value || "";
-  navigator.clipboard.writeText(body);
-  showToast("Đã copy nội dung email!");
+document.getElementById("btn-copy-email").addEventListener("click", async () => {
+  const el = document.getElementById("em-body");
+  if (!el) return;
+  const html = el.innerHTML;
+  const text = el.innerText;
+  try {
+    if (navigator.clipboard && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], {type:"text/html"}),
+          "text/plain": new Blob([text], {type:"text/plain"}),
+        })
+      ]);
+    } else {
+      await navigator.clipboard.writeText(text);
+    }
+    showToast("Đã copy nội dung email (giữ nguyên bảng)!");
+  } catch(e) {
+    try {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(range);
+      document.execCommand("copy");
+      sel.removeAllRanges();
+      showToast("Đã copy nội dung email!");
+    } catch(e2) {
+      showToast("Không copy được, anh bôi đen rồi Ctrl+C thử nhé.");
+    }
+  }
 });
 document.getElementById("btn-open-mail").addEventListener("click", () => {
   const to = document.getElementById("em-to")?.value || "";
   const cc = document.getElementById("em-cc")?.value || "";
   const subject = document.getElementById("em-subject")?.value || "";
-  const body = document.getElementById("em-body")?.value || "";
+  const body = document.getElementById("em-body")?.innerText || "";
   const link = `mailto:${encodeURIComponent(to)}?cc=${encodeURIComponent(cc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = link;
 });
 
 document.getElementById("filter-status").addEventListener("change", renderList);
 document.getElementById("filter-month").addEventListener("change", renderList);
+document.getElementById("filter-customer").addEventListener("change", renderList);
+document.getElementById("filter-invoice").addEventListener("input", renderList);
 
 // ====== GÁN LC ======
 window.openAssignLC = async function(shipId) {
@@ -971,290 +1281,12 @@ window.saveAssignLC = async function(shipId) {
     }
   }
 
-  await updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null });
+  if (!await saveGuard(updateDoc(doc(db,"shipments",shipId), { lcId: lcId || null }))) return;
   closeModal("modal-assign-lc");
   showToast(lcId ? "Đã gán LC cho lô hàng!" : "Đã bỏ gán LC.");
 };
 
 // ====== PACKING LIST ======
-window.openPackingList = async function(shipId) {
-  const s = allShipments.find(x=>x.id===shipId);
-  if (!s) return;
-
-  // Lấy thông tin khách hàng
-  const firstCust = (s.orders||[])[0]?.customer;
-  let cust = {};
-  if (firstCust) {
-    try {
-      const { collection:col, query:q, where, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-      const snap = await getDocs(q(col(db,"customers"), where("name","==",firstCust)));
-      if (!snap.empty) cust = snap.docs[0].data();
-    } catch(e){}
-  }
-
-  const orders = s.orders || [];
-  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
-  const totalPcs  = orders.reduce((a,o)=>a+(parseFloat(o.qty)||0),0);
-  const totalGW   = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);  // kgTotal = GW
-  // Net Weight = Σ (GW từng dòng − tare thùng × số thùng của dòng đó)
-  const totalNW = orders.reduce((a,o)=>{
-    const gw = parseFloat(o.kgTotal)||0, tare = parseFloat(o.tareCtn)||0, ct = parseFloat(o.ctns)||0;
-    return a + (gw - tare*ct);
-  }, 0);
-  const totalCBM  = orders.reduce((a,o)=>a+(parseFloat(o.cbm)||0),0);
-
-  // Container: tare lấy sẵn từ lô hàng (nhập ở "Sửa lô hàng")
-  const conts = (s.containers && s.containers.length) ? s.containers
-              : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,seal:s.sealNo,tare:0}] : [];
-  const totalTareCont = conts.reduce((a,c)=>a+(parseFloat(c.tare)||0),0);
-  let contData;
-  if (conts.length === 1) {
-    const c = conts[0];
-    const tare = parseFloat(c.tare)||0;
-    contData = [{ label:`01 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: totalGW, vgm: Math.round(totalGW+tare) }];
-  } else if (conts.length > 1) {
-    contData = conts.map((c,i) => {
-      const tare = parseFloat(c.tare)||0;
-      const gw = parseFloat(c.gw)||0;
-      return { label:`${String(i+1).padStart(2,"0")} X ${c.type||""}: ${c.no||""} / ${c.seal||""}`, tare, gw: gw||null, vgm: gw?Math.round(gw+tare):null };
-    });
-    const sumGw = conts.reduce((a,c)=>a+(parseFloat(c.gw)||0),0);
-    const gwTot = sumGw || totalGW;
-    contData.push({ label:"TOTAL", tare: totalTareCont, gw: gwTot, vgm: Math.round(gwTot+totalTareCont), isTotal:true });
-  } else {
-    contData = [{ label:`${s.container||""}`, tare:0, gw: totalGW, vgm:0 }];
-  }
-  const vgm = Math.round(totalGW + totalTareCont);
-
-  // TERM OF PAYMENT: mặc định T/T; khách có L/C thì hỏi (1 cú bấm)
-  const U = (firstCust||"").toUpperCase();
-  const isLcCust = ["MITSUWA","SANMARINO","ACROS","HEMD"].some(n => U.includes(n));
-  let term = "T/T";
-  if (isLcCust) {
-    const useLC = confirm(`Khách hàng "${firstCust}" có L/C.\n\nLô này thanh toán bằng L/C?\n\n• OK = L/C\n• Cancel = T/T`);
-    term = useLC ? "L/C" : "T/T";
-  }
-
-  renderPackingA4(s, cust, { invoice:s.invoiceNo||"", invDate:s.invoiceDate||"", term, contData,
-    totalCtns, totalPcs, totalGW, totalNW, totalCBM, vgm });
-};
-
-function renderPackingA4(s, cust, p) {
-  const fmtNum = (n, dec=2) => Number(n).toLocaleString("en-US",{minimumFractionDigits:dec, maximumFractionDigits:dec});
-  const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
-  const dateStr = p.invDate ? new Date(p.invDate).toLocaleDateString("en-US",{month:"short",day:"2-digit",year:"numeric"}).toUpperCase() : "";
-  const etdStr  = s.etd ? new Date(s.etd).toLocaleDateString("en-US",{month:"long",day:"2-digit",year:"numeric"}) : "";
-
-  // Rows đơn hàng
-  const rows = (s.orders||[]).map(o => `
-    <tr>
-      <td style="padding:2px 4px">${o.contract||""}</td>
-      <td style="padding:2px 4px">${o.index||o.items||""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.ctns?fmtInt(o.ctns):""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.qty?fmtInt(o.qty):""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum((parseFloat(o.kgTotal)||0)-((parseFloat(o.tareCtn)||0)*(parseFloat(o.ctns)||0))):""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.kgTotal?fmtNum(o.kgTotal):""}</td>
-      <td style="text-align:right;padding:2px 4px">${o.cbm?fmtNum(o.cbm):""}</td>
-    </tr>`).join("");
-
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<style>
-  @page { size: A4; margin: 10mm; }
-  * { box-sizing: border-box; }
-  body { font-family: "Times New Roman", serif; font-size: 12px; color:#000; margin:0; }
-  .pl-header { text-align:center; position:relative; border-bottom:0; }
-  .company-name { font-size:15px; font-weight:bold; }
-  .company-info { font-size:10px; }
-  .logo { position:absolute; left:0; top:0; font-size:20px; font-weight:bold; font-style:italic; }
-  .title { text-align:center; font-size:20px; font-weight:bold; margin:10px 0; }
-  table.info { width:100%; border-collapse:collapse; }
-  table.info td { border:1px solid #000; padding:4px 6px; vertical-align:top; font-size:11px; }
-  .label { font-weight:bold; font-size:10px; }
-  table.goods { width:100%; border-collapse:collapse; margin-top:0; }
-  table.goods th, table.goods td { border:1px solid #000; font-size:11px; }
-  table.goods th { padding:3px; background:#f0f0f0; font-size:10px; }
-  .totals td { font-weight:bold; }
-  .footer-sign { margin-top:30px; text-align:right; padding-right:40px; }
-  @media print { .no-print { display:none; } }
-</style></head><body>
-
-<div class="pl-header">
-  <div class="logo">TOS GAMEX</div>
-  <div class="company-name">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
-  <div class="company-info">LOT B1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
-  <div class="company-info">TEL: 84 - 251- 3992537&nbsp;&nbsp;&nbsp;&nbsp;FAX: 84 - 251- 3992540</div>
-</div>
-
-<div class="title">PACKING LIST/ WEIGHT LIST</div>
-
-<table class="info">
-  <tr>
-    <td style="width:55%"><span class="label">MESSRS :</span><br><span style="white-space:pre-line">${cust.messrs||""}</span></td>
-    <td><span class="label">INVOICE NO. AND DATE</span><br>${p.invoice||""} &nbsp;&nbsp;&nbsp; ${dateStr}<br><br><span class="label">TERM OF PAYMENT</span><br>${p.term||"T/T"}</td>
-  </tr>
-  <tr>
-    <td><span class="label">CONSIGNEE:</span><br><span style="white-space:pre-line">${cust.consignee||""}</span></td>
-    <td><span class="label">REFERENCE:</span><br>${cust.hdgc||""}<br><br><span class="label">BK NO.:</span> ${s.booking||""}</td>
-  </tr>
-  <tr>
-    <td><span class="label">FROM:</span> HOCHIMINH, VIETNAM &nbsp;&nbsp; <span class="label">TO:</span> ${fullPort(s.port)}, JAPAN</td>
-    <td><span class="label">VESSEL / FLIGHT NO.</span> ${s.vessel||""}<br><span class="label">DEPARTURE DATE:</span> ${etdStr}</td>
-  </tr>
-</table>
-
-<table class="goods">
-  <thead>
-    <tr>
-      <th colspan="2" style="width:48%">GOODS DESCRIPTION</th>
-      <th>NO. OF CTNS</th><th>Q'TY ( PCS )</th><th>N.W (KGS)</th><th>G.W (KGS)</th><th>CBM</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr><td colspan="2" style="font-weight:bold;padding:4px">${cust.description||"SHIRTS"}</td><td></td><td></td><td></td><td></td><td></td></tr>
-    ${rows}
-    <tr class="totals">
-      <td colspan="2" style="padding:4px">TOTAL</td>
-      <td style="text-align:right;padding:2px 4px">${fmtInt(p.totalCtns)}</td>
-      <td style="text-align:right;padding:2px 4px">${fmtInt(p.totalPcs)}</td>
-      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalNW)}</td>
-      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalGW)}</td>
-      <td style="text-align:right;padding:2px 4px">${fmtNum(p.totalCBM)}</td>
-    </tr>
-  </tbody>
-</table>
-
-<table class="goods" style="margin-top:10px">
-  <thead><tr><th style="width:55%;text-align:left;padding:3px 6px">CTN NO.</th><th>Tare</th><th>GW</th><th>VGM</th></tr></thead>
-  <tbody>
-    ${(p.contData||[]).map(cd => `<tr${cd.isTotal?' class="totals"':''}>
-      <td style="font-weight:bold;padding:3px 6px">${cd.label}</td>
-      <td style="text-align:right;padding:2px 4px">${cd.tare?fmtNum(cd.tare):""}</td>
-      <td style="text-align:right;padding:2px 4px">${cd.gw?fmtNum(cd.gw):""}</td>
-      <td style="text-align:right;padding:2px 4px">${cd.vgm?fmtInt(cd.vgm):""}</td>
-    </tr>`).join("")}
-  </tbody>
-</table>
-
-<div class="footer-sign">
-  <div style="font-weight:bold">TOMIYA SUMMIT GARMENT EXPORT CO.,LTD</div>
-  <div style="margin-top:40px;font-weight:bold">NGUYEN THI OANH</div>
-  <div style="font-weight:bold">IMP-EXP DEPT LEADER</div>
-</div>
-
-<div class="no-print" style="text-align:center;margin-top:20px">
-  <button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button>
-</div>
-</body></html>`;
-
-  const w = window.open("", "_blank");
-  w.document.write(html);
-  w.document.close();
-}
-
-// ====== XUẤT VGM ======
-window.openVGM = function(shipId) {
-  const s = allShipments.find(x=>x.id===shipId);
-  if (!s) return;
-  const C = (s.container||"").toUpperCase();
-  if (C.includes("AIR") || C.includes("CPN") || C.includes("KNQ")) { showToast("Hàng AIR/CPN/KNQ không cần VGM."); return; }
-  const isLcl = C.includes("LCL");
-
-  const orders = s.orders || [];
-  const totalGW   = orders.reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0);
-  const totalCtns = orders.reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
-  const now = new Date();
-  const dateStr = `Long Bình, ngày ${now.getDate()} tháng ${now.getMonth()+1} năm ${now.getFullYear()}`;
-  const fmt = n => Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
-
-  const css = `@page{size:A4 landscape;margin:12mm;} *{box-sizing:border-box;}
-    body{font-family:"Times New Roman",serif;font-size:13px;color:#1f3864;margin:0;}
-    .center{text-align:center;} .title{font-weight:bold;font-size:15px;margin-top:6px;}
-    .title-en{font-weight:bold;font-style:italic;font-size:14px;}
-    table.vgm{width:100%;border-collapse:collapse;margin-top:10px;}
-    table.vgm th,table.vgm td{border:1px solid #1f3864;padding:5px;font-size:12px;vertical-align:middle;height:26px;}
-    table.vgm th{font-weight:bold;text-align:center;} td.c{text-align:center;}
-    @media print{.no-print{display:none;}}`;
-  const printBtn = `<div class="no-print center" style="margin-top:20px"><button onclick="window.print()" style="padding:10px 24px;font-size:14px;cursor:pointer;background:#1a1a1a;color:#fff;border:none;border-radius:6px">🖨 In / Lưu PDF</button></div>`;
-  const signCont = `<table style="width:100%;margin-top:14px"><tr>
-    <td class="center" style="width:50%"><b>ĐƠN VỊ CÂN<br>WEIGHING SCALE</b><br><span style="font-style:italic">(ký, ghi rõ họ tên)<br>(signed full name, stamped)</span><div style="margin-top:50px"><b>NGUYEN QUOC THI</b><br><b>IMP-EXP DEPT</b></div></td>
-    <td class="center" style="width:50%"><b>NGƯỜI GỬI HÀNG<br>SHIPPER</b><br><span style="font-style:italic">(ký, ghi rõ họ tên)<br>(signed full name, stamped)</span><div style="margin-top:50px"><b>NGUYEN QUOC THI</b><br><b>IMP-EXP DEPT</b></div></td>
-  </tr></table>`;
-
-  let html;
-  if (isLcl) {
-    html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>
-<div class="center title">BẢN XÁC NHẬN KHỐI LƯỢNG HÀNG HÓA VẬN CHUYỂN QUỐC TẾ</div>
-<div class="center title-en">VERIFIED GROSS MASS OF LCL CARGO ON INTERNATIONAL TRANSPORT</div>
-<p style="margin-top:16px"><b>1. Tên người gửi hàng:</b> CÔNG TY TNHH TOMIYA SUMMIT GARMENT EXPORT<br><span style="font-style:italic">&nbsp;&nbsp;&nbsp;Name of shipper:</span></p>
-<p><b>2. Khai báo thông tin và khối lượng toàn bộ LÔ HÀNG LCL đã đóng hàng:</b><br><span style="font-style:italic">LCL Cargo declaration/VGM of packed shipment</span></p>
-<table class="vgm">
-<thead><tr>
-  <th style="width:12%">Số thứ tự<br>No.</th><th style="width:28%">Số booking<br>Booking no</th>
-  <th style="width:20%">Loại bao bì<br>Package type</th><th style="width:18%">Số kiện<br>Number of Package</th>
-  <th style="width:22%">Tổng trọng lượng<br>VGM (KG)</th>
-</tr></thead>
-<tbody>
-  <tr><td class="c">1</td><td class="c"><b>${s.booking||""}</b></td><td class="c">CARTON</td><td class="c">${totalCtns}</td><td class="c">${fmt(totalGW)}</td></tr>
-  <tr><td></td><td></td><td></td><td></td><td></td></tr>
-  <tr><td class="c">...</td><td></td><td></td><td></td><td></td></tr>
-  <tr><td class="c"><b>Total</b></td><td></td><td></td><td></td><td class="c"><b>${fmt(totalGW)}</b></td></tr>
-</tbody>
-</table>
-<p style="margin-top:14px">Chúng tôi cam kết và chịu trách nhiệm việc xác nhận khối lượng toàn bộ lô hàng trên là đúng sự thật.<br>We are committed to and responsible for VGM of the above mentioned LCL shipment (s) is true.</p>
-<p style="margin:14px 0 0">Ghi chú/Note:</p>
-<p style="margin:4px 0">1. Thời hạn cung cấp VGM :</p>
-<p style="margin:4px 0">2. Thời hạn chỉnh sửa VGM:</p>
-${signCont}
-${printBtn}
-</body></html>`;
-  } else {
-    const conts = (s.containers && s.containers.length) ? s.containers
-                : (s.contNo||s.sealNo) ? [{type:"",no:s.contNo,tare:0}] : [];
-    const sizeMap = { "20GP":"20'GP", "40HC":"40'HC", "40DC":"40'DC" };
-    const maxMap  = { "20GP":30480, "40HC":32500, "40DC":32500 };
-    const rows = conts.map((c,i) => {
-      const gw   = conts.length === 1 ? totalGW : (parseFloat(c.gw)||0);
-      const tare = parseFloat(c.tare)||0;
-      const vgm  = gw + tare;
-      const size = sizeMap[c.type] || c.type || "";
-      const mx   = maxMap[c.type] || 0;
-      return `<tr><td class="c">${i+1}</td><td class="c">${c.no||""}</td><td class="c">${size}</td><td class="c">${mx?fmt(mx)+" KGS":""}</td><td class="c">${fmt(vgm)} KGS</td><td></td></tr>`;
-    }).join("");
-    let extra = "";
-    for (let k = conts.length; k < 3; k++) extra += `<tr><td class="c">${k+1}</td><td></td><td></td><td></td><td></td><td></td></tr>`;
-    extra += `<tr><td class="c">...</td><td></td><td></td><td></td><td></td><td></td></tr>`;
-    html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>${css}</style></head><body>
-<div class="center">Biểu mẫu</div>
-<div class="center">(Ban hành kèm theo Văn bản số 2428/CHHVN-VTDVHH</div>
-<div class="center">Ngày 15 tháng 6 năm 2016 của Cục Hàng hải Việt Nam</div>
-<div class="center">--------------------</div>
-<div class="center title">XÁC NHẬN KHỐI LƯỢNG TOÀN BỘ CÔNG-TE-NƠ VẬN CHUYỂN QUỐC TẾ</div>
-<div class="center title-en">VERIFIED GROSS MASS OF CONTAINER ON INTERNATIONAL TRANSPORT (VGM)</div>
-<div style="text-align:right;margin-top:10px">${dateStr}</div>
-<p style="margin-top:8px"><b>1. Tên người gửi hàng, địa chỉ, số điện thoại /Name of Shipper, address, phone number:</b></p>
-<div style="padding-left:16px">CÔNG TY TNHH TOMIYA SUMMIT GARMENT EXPORT<br>LÔ B1, KCX LONG BÌNH, PHƯỜNG LONG BÌNH, THÀNH PHỐ ĐỒNG NAI.<br>ĐIỆN THOẠI: 0251.3992537</div>
-<p style="margin-top:10px"><b>2. Thông số công-te-nơ/ Container's particular :</b></p>
-<table class="vgm">
-<thead><tr>
-  <th style="width:6%">Stt<br>Seq</th>
-  <th style="width:18%">Số Công-te-nơ<br>Container no.</th>
-  <th style="width:16%">Kích cỡ công-te-nơ<br>Size of container<br>(20'/40'/other)</th>
-  <th style="width:20%">Khối lượng sử dụng lớn nhất<br>Max gross weight (kg)</th>
-  <th style="width:22%">Xác nhận khối lượng toàn bộ công-te-nơ<br>Verified gross mass of a packed container (kg)</th>
-  <th style="width:18%">Tên đơn vị, địa chỉ cân<br>Name of weighing scale, Address</th>
-</tr></thead>
-<tbody>${rows}${extra}</tbody>
-</table>
-<p style="margin-top:12px">Chúng tôi cam kết và chịu trách nhiệm việc xác nhận khối lượng toàn bộ công-te-nơ trên là đúng sự thật.<br>We are committed to and responsible for VGM of the above mentioned container(s) is true.</p>
-${signCont}
-${printBtn}
-</body></html>`;
-  }
-  const w = window.open("", "_blank");
-  w.document.write(html);
-  w.document.close();
-};
-
 // ====== SHIPPING MARK (ghi chú theo lô, copy được) ======
 window.openShipMark = function(shipId) {
   const s = allShipments.find(x=>x.id===shipId);
@@ -1278,15 +1310,169 @@ window.openShipMark = function(shipId) {
     showToast("Đã copy shipping mark!");
   });
   document.getElementById("sm-save").addEventListener("click", async () => {
-    await updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("sm-text").value });
+    if (!await saveGuard(updateDoc(doc(db,"shipments",shipId), { shipMark: document.getElementById("sm-text").value }))) return;
     closeModal("modal-shipmark");
     showToast("Đã lưu shipping mark!");
   });
   openModal("modal-shipmark");
 };
 
+// ====== THỐNG KÊ NHIỀU THÁNG ======
+window.openStats = function() {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
+  let m = document.getElementById("modal-stats");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal-backdrop";
+    m.id = "modal-stats";
+    m.innerHTML = `<div class="modal" style="max-width:720px">
+      <div class="modal-title">
+        <span><i class="ti ti-chart-histogram"></i> Thống kê theo tháng</span>
+        <span class="modal-close" onclick="closeModalById('modal-stats')"><i class="ti ti-x"></i></span>
+      </div>
+      <div id="stats-body"></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  const now = new Date();
+  const toM = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const f = new Date(now.getFullYear(), now.getMonth()-2, 1);
+  const fromM = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("stats-body").innerHTML = `
+    <div class="form-row-3" style="align-items:flex-end">
+      <div class="form-group"><label class="form-label">Từ tháng</label><input type="month" class="form-input" id="st-from" value="${fromM}"></div>
+      <div class="form-group"><label class="form-label">Đến tháng</label><input type="month" class="form-input" id="st-to" value="${toM}"></div>
+      <div class="form-group"><button type="button" class="btn btn-primary" style="width:100%" onclick="runStats()"><i class="ti ti-search"></i> Xem thống kê</button></div>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      <button type="button" class="btn btn-sm" onclick="statsQuick(3)">3 tháng gần nhất</button>
+      <button type="button" class="btn btn-sm" onclick="statsQuick(6)">6 tháng</button>
+      <button type="button" class="btn btn-sm" onclick="statsQuick(12)">12 tháng</button>
+      <button type="button" class="btn btn-sm" onclick="statsYear()">Năm nay</button>
+    </div>
+    <div id="stats-result"></div>`;
+  openModal("modal-stats");
+  runStats();
+};
+
+window.statsQuick = function(n) {
+  const now = new Date();
+  const f = new Date(now.getFullYear(), now.getMonth()-(n-1), 1);
+  document.getElementById("st-from").value = `${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}`;
+  document.getElementById("st-to").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  runStats();
+};
+window.statsYear = function() {
+  const y = new Date().getFullYear();
+  document.getElementById("st-from").value = `${y}-01`;
+  document.getElementById("st-to").value = `${y}-12`;
+  runStats();
+};
+
+function monthRange(from, to) {
+  const out = [];
+  let [fy, fm] = from.split("-").map(Number);
+  const [ty, tm] = to.split("-").map(Number);
+  if (fy > ty || (fy === ty && fm > tm)) return out;
+  while (fy < ty || (fy === ty && fm <= tm)) {
+    out.push(`${fy}-${String(fm).padStart(2,"0")}`);
+    fm++; if (fm > 12) { fm = 1; fy++; }
+    if (out.length > 60) break;
+  }
+  return out;
+}
+
+let _statsRows = [];
+window.runStats = function() {
+  const from = document.getElementById("st-from").value;
+  const to = document.getElementById("st-to").value;
+  const box = document.getElementById("stats-result");
+  if (!from || !to) { box.innerHTML = ""; return; }
+  const months = monthRange(from, to);
+  if (!months.length) {
+    box.innerHTML = `<div style="color:var(--red-text);font-size:13px">"Từ tháng" phải trước "Đến tháng".</div>`;
+    return;
+  }
+  _statsRows = months.map(mo => {
+    const list = shipmentsOfMonth(mo);
+    const done = list.filter(s => getProgress(s.checklist).pct >= 100).length;
+    return {
+      month: mo,
+      lots: list.length,
+      done,
+      pcs: list.reduce((a,s) => a + (s.orders||[]).reduce((x,o)=>x+(parseFloat(o.qty)||0),0), 0),
+      ctns: list.reduce((a,s) => a + totalCtnsShip(s), 0),
+      kg: list.reduce((a,s) => a + totalGW(s), 0),
+      cbm: list.reduce((a,s) => a + totalCBM(s), 0),
+    };
+  });
+  const sum = _statsRows.reduce((a,r) => ({
+    lots:a.lots+r.lots, done:a.done+r.done, pcs:a.pcs+r.pcs, ctns:a.ctns+r.ctns, kg:a.kg+r.kg, cbm:a.cbm+r.cbm
+  }), {lots:0,done:0,pcs:0,ctns:0,kg:0,cbm:0});
+  const maxPcs = Math.max(1, ..._statsRows.map(r => r.pcs));
+  const n0 = v => Math.round(v).toLocaleString("vi-VN");
+  const n2 = v => (Math.round(v*100)/100).toLocaleString("vi-VN");
+
+  box.innerHTML = `
+    <table class="data-table" style="font-size:12.5px">
+      <thead><tr>
+        <th>Tháng</th><th style="text-align:right">Lô</th><th style="text-align:right">Xong</th>
+        <th style="text-align:right">PCS</th><th style="text-align:right">CTNs</th>
+        <th style="text-align:right">Kgs</th><th style="text-align:right">CBM</th>
+        <th style="width:110px">Sản lượng</th>
+      </tr></thead>
+      <tbody>
+        ${_statsRows.map(r => `<tr>
+          <td><b>${r.month.slice(5)}/${r.month.slice(0,4)}</b></td>
+          <td style="text-align:right">${r.lots}</td>
+          <td style="text-align:right;color:var(--green-text)">${r.done}</td>
+          <td style="text-align:right">${n0(r.pcs)}</td>
+          <td style="text-align:right">${n0(r.ctns)}</td>
+          <td style="text-align:right">${n0(r.kg)}</td>
+          <td style="text-align:right">${n2(r.cbm)}</td>
+          <td><div style="height:7px;background:var(--bg-secondary);border-radius:4px;overflow:hidden"><div style="width:${Math.round(r.pcs/maxPcs*100)}%;height:100%;background:#2E9E54;border-radius:4px"></div></div></td>
+        </tr>`).join("")}
+      </tbody>
+      <tfoot><tr style="border-top:1.5px solid var(--border-md);font-weight:600">
+        <td>Tổng ${_statsRows.length} tháng</td>
+        <td style="text-align:right">${sum.lots}</td>
+        <td style="text-align:right;color:var(--green-text)">${sum.done}</td>
+        <td style="text-align:right">${n0(sum.pcs)}</td>
+        <td style="text-align:right">${n0(sum.ctns)}</td>
+        <td style="text-align:right">${n0(sum.kg)}</td>
+        <td style="text-align:right">${n2(sum.cbm)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-stats')">Đóng</button>
+      <button type="button" class="btn btn-primary" onclick="exportStats()"><i class="ti ti-file-spreadsheet"></i> Xuất Excel</button>
+    </div>`;
+};
+
+window.exportStats = function() {
+  if (!_statsRows.length) return;
+  const aoa = [
+    ["THỐNG KÊ THEO THÁNG"],
+    [`Từ ${document.getElementById("st-from").value} đến ${document.getElementById("st-to").value}`],
+    [],
+    ["Tháng","Số lô","Hoàn tất","PCS","CTNs","Kgs","CBM"],
+    ..._statsRows.map(r => [r.month, r.lots, r.done, Math.round(r.pcs), Math.round(r.ctns), Math.round(r.kg), Math.round(r.cbm*100)/100]),
+  ];
+  const sum = _statsRows.reduce((a,r) => ({
+    lots:a.lots+r.lots, done:a.done+r.done, pcs:a.pcs+r.pcs, ctns:a.ctns+r.ctns, kg:a.kg+r.kg, cbm:a.cbm+r.cbm
+  }), {lots:0,done:0,pcs:0,ctns:0,kg:0,cbm:0});
+  aoa.push(["TỔNG", sum.lots, sum.done, Math.round(sum.pcs), Math.round(sum.ctns), Math.round(sum.kg), Math.round(sum.cbm*100)/100]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{wch:12},{wch:8},{wch:10},{wch:12},{wch:10},{wch:12},{wch:10}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Thống kê");
+  XLSX.writeFile(wb, `Thong ke ${document.getElementById("st-from").value} - ${document.getElementById("st-to").value}.xlsx`);
+};
+
 // ====== BÁO CÁO ======
 document.getElementById("btn-reports").addEventListener("click", () => {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không dùng chức năng này."); return; }
   const now = new Date();
   document.getElementById("rp-month").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   document.getElementById("rp-asof").value = now.toISOString().slice(0,10);
@@ -1305,6 +1491,7 @@ function shipmentsOfMonth(month) {
 
 function totalGW(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.kgTotal)||0),0); }
 function totalCBM(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.cbm)||0),0); }
+function totalCtnsShip(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.ctns)||0),0); }
 
 // --- BÁO CÁO BỐC XẾP ---
 window.reportBocXep = function() {
@@ -1334,12 +1521,14 @@ window.reportBocXep = function() {
       <td style="text-align:center">${i+1}</td>
       <td>${fmtDateVN(s.stuffingDate)}</td>
       <td>${custs} — ${fullPort(s.port)}</td>
+      <td style="text-align:right">${Math.round(totalCtnsShip(s)).toLocaleString()}</td>
       <td style="text-align:right">${Math.round(totalGW(s)).toLocaleString()}</td>
       <td style="text-align:right">${(Math.round(totalCBM(s)*100)/100).toLocaleString()}</td>
       <td>${hinhthuc}</td>
     </tr>`;
   }).join("");
 
+  const sumCtns = Math.round(list.reduce((a,s)=>a+totalCtnsShip(s),0));
   const sumGW = Math.round(list.reduce((a,s)=>a+totalGW(s),0));
   const sumCBM = Math.round(list.reduce((a,s)=>a+totalCBM(s),0)*100)/100;
 
@@ -1361,13 +1550,15 @@ window.reportBocXep = function() {
 <div class="sub">Tháng ${mo}/${y}</div>
 <table>
   <thead><tr>
-    <th style="width:40px">STT</th><th style="width:110px">Ngày đóng hàng</th>
-    <th>Khách hàng — Cảng</th><th style="width:110px">G.W (KGS)</th>
-    <th style="width:90px">CBM</th><th style="width:200px">Hình thức xuất</th>
+    <th style="width:30px">STT</th><th style="width:65px">Ngày đóng hàng</th>
+    <th style="width:130px">Khách hàng — Cảng</th><th style="width:55px">Số Carton</th>
+    <th style="width:70px">G.W (KGS)</th>
+    <th style="width:55px">CBM</th><th>Hình thức xuất</th>
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <td colspan="3" style="text-align:right">TỔNG CỘNG</td>
+    <td style="text-align:right">${sumCtns.toLocaleString()}</td>
     <td style="text-align:right">${sumGW.toLocaleString()}</td>
     <td style="text-align:right">${sumCBM.toLocaleString()}</td>
     <td></td>
@@ -1386,8 +1577,22 @@ window.reportBocXep = function() {
   const w = window.open("","_blank"); w.document.write(html); w.document.close();
 };
 
-// --- BÁO CÁO NGUỒN THU (xuất Excel) ---
-window.reportNguonThu = function() {
+// --- BÁO CÁO NGUỒN THU (xuất Excel, ExcelJS — kẻ khung + công thức) ---
+let _excelJSPromise = null;
+function loadExcelJS() {
+  if (window.ExcelJS) return Promise.resolve();
+  if (_excelJSPromise) return _excelJSPromise;
+  _excelJSPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+    sc.onload = resolve;
+    sc.onerror = () => { _excelJSPromise = null; reject(new Error("Không tải được thư viện ExcelJS")); };
+    document.head.appendChild(sc);
+  });
+  return _excelJSPromise;
+}
+
+window.reportNguonThu = async function() {
   const month = document.getElementById("rp-month").value;
   const asOf  = document.getElementById("rp-asof").value;
   if (!month) { showToast("Chọn tháng!"); return; }
@@ -1395,83 +1600,223 @@ window.reportNguonThu = function() {
   if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
   const [y,mo] = month.split("-");
 
-  const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
+  try { await loadExcelJS(); }
+  catch(e) { showToast("Lỗi mạng: không tải được thư viện Excel. Thử lại!"); return; }
 
-  // Nhóm theo khách hàng
+  const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
+  const lastDay = new Date(+y, +mo, 0).getDate();
+
+  // Cảnh báo nếu còn lô chưa có số INV
+  const noInv = list.filter(s => !s.invoiceNo);
+  if (noInv.length) {
+    if (!confirm(`Vẫn còn ${noInv.length} lô hàng chưa có số INV. Bạn có muốn tiếp tục?`)) return;
+  }
+
+  // Ngày xuất báo cáo (dùng cho nhãn "Đã xuất" / "Dự kiến")
+  const today = new Date();
+  const todayVN = `${String(today.getDate()).padStart(2,"0")}/${String(today.getMonth()+1).padStart(2,"0")}/${today.getFullYear()}`;
+  const reportDateVN = asOf ? fmtDateVN(asOf) : todayVN;
+
+  // Khách hàng dùng LC (cùng danh sách với chức năng gán LC)
+  const LC_CUSTOMERS = ["MITSUWA", "SANMARINO", "HEMD (OGITA)", "ACROS"];
+
+  // Nhóm theo khách hàng — các khách có tiền tố dưới đây gộp thành 1 nhóm.
+  // Sau này thêm khách "MNIF XYZ" mới sẽ TỰ ĐỘNG gộp vào nhóm MNIF, không cần sửa code.
+  const GROUP_PREFIXES = ["MNIF", "FLEX"];
+  const groupKeyOf = name => {
+    const up = (name||"").toUpperCase().trim();
+    return GROUP_PREFIXES.find(p => up.startsWith(p)) || name;
+  };
   const byCustomer = {};
   list.forEach(s => {
-    const cust = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))][0] || "KHÁC";
+    const rawCust = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))][0] || "KHÁC";
+    const cust = groupKeyOf(rawCust);
     if (!byCustomer[cust]) byCustomer[cust] = [];
     byCustomer[cust].push(s);
   });
+  // Trong mỗi nhóm: sắp theo ngày đóng hàng tăng dần
+  Object.values(byCustomer).forEach(arr =>
+    arr.sort((a,b) => (a.stuffingDate||"9999") < (b.stuffingDate||"9999") ? -1 : 1));
 
-  // Xây mảng AOA (array of arrays) cho Excel
-  const aoa = [];
-  aoa.push(["CTY TNHH TOMIYA SUMMIT GARMENT EXPORT"]);
-  aoa.push(["Phòng Xuất Nhập Khẩu"]);
-  aoa.push([`BÁO CÁO NGUỒN THU - Tháng ${mo}/${y}${asOf?` (tính đến ${fmtDateVN(asOf)})`:""}`]);
-  aoa.push([]);
-  aoa.push(["Stt","P.thức giao","P.thức TT","Số & ngày hóa đơn","Hợp đồng","Mã hàng","ĐVT","Số lượng","Đơn giá (USD)","Thành tiền (USD)","Ngày xuất","Ngày tàu chạy"]);
+  const wb = new ExcelJS.Workbook();
+  const sheetName = reportDateVN.replaceAll("/","-");   // VD "17-07-2026"
+  const ws = wb.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
+  ws.columns = [
+    { width: 3.5 },  // A Stt
+    { width: 6.5 },  // B P.thức giao
+    { width: 6.5 },  // C P.thức TT
+    { width: 16 },   // D Số & ngày hóa đơn
+    { width: 11 },   // E Hợp đồng
+    { width: 24 },   // F Mã hàng
+    { width: 4.5 },  // G ĐVT
+    { width: 8 },    // H Số lượng
+    { width: 7.5 },  // I Đơn giá
+    { width: 11 },   // J Thành tiền
+    { width: 10.5 }, // K Ngày xuất
+    { width: 10.5 }, // L Ngày tàu chạy
+    { width: 8.5 },  // M Ngày thu tiền
+    { width: 8 }     // N Ghi chú
+  ];
+  // Khổ in: lề hẹp, co vừa chiều ngang 1 trang
+  ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+    margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } };
 
-  let stt = 0, grandQty = 0, grandAmount = 0;
+  const FONT   = { name: "Arial", size: 10 };
+  const FONT_B = { name: "Arial", size: 10, bold: true };
+  const FONT_H = { name: "Arial", size: 8 };
+  const THIN   = { style: "thin" };
+  const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
+  const setCell = (r, c, val, opt={}) => {
+    const cell = ws.getCell(r, c);
+    if (val !== undefined && val !== null && val !== "") cell.value = val;
+    cell.font = opt.header ? FONT_H : (opt.bold ? FONT_B : FONT);
+    if (opt.numFmt) cell.numFmt = opt.numFmt;
+    if (opt.align)  cell.alignment = opt.align;
+    if (opt.border !== false) cell.border = BOX;
+    return cell;
+  };
+  const boxRow = r => { for (let c=1;c<=14;c++){ const cell=ws.getCell(r,c); cell.border=BOX; if(!cell.font) cell.font=FONT; } };
+
+  // ===== Tiêu đề =====
+  ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
+  ws.getCell("A1").font = FONT;
+  ws.getCell("A2").value = "Phòng Xuất Nhập Khẩu";
+  ws.getCell("A2").font = FONT;
+  ws.mergeCells("A3:N3");
+  ws.getCell("A3").value = "BÁO CÁO NGUỒN THU";
+  ws.getCell("A3").font = { name: "Arial", size: 13, bold: true };
+  ws.getCell("A3").alignment = { horizontal: "center" };
+  ws.mergeCells("A4:N4");
+  ws.getCell("A4").value = asOf
+    ? `(Từ 01/${mo}/${y} đến 31/${mo}/${y} — tính đến ${fmtDateVN(asOf)})`
+    : `(Từ 01/${mo}/${y} đến ${lastDay}/${mo}/${y})`;
+  ws.getCell("A4").font = FONT;
+  ws.getCell("A4").alignment = { horizontal: "center" };
+
+  // ===== Header bảng 3 tầng (dòng 6-8) =====
+  const HC = { horizontal: "center", vertical: "center", wrapText: true };
+  ws.mergeCells("A6:A8"); setCell(6,1,"Stt",{header:true,align:HC});
+  ws.mergeCells("B6:F6"); setCell(6,2,"TÊN KHÁCH HÀNG",{header:true,align:HC});
+  ws.mergeCells("B7:B8"); setCell(7,2,"P.thức\ngiao hàng",{header:true,align:HC});
+  ws.mergeCells("C7:C8"); setCell(7,3,"P.thức\nthanh toán",{header:true,align:HC});
+  ws.mergeCells("D7:D8"); setCell(7,4,"Số & ngày\nhóa đơn",{header:true,align:HC});
+  ws.mergeCells("E7:E8"); setCell(7,5,"Hợp đồng",{header:true,align:HC});
+  ws.mergeCells("F7:F8"); setCell(7,6,"Mã hàng",{header:true,align:HC});
+  ws.mergeCells("G6:G8"); setCell(6,7,"ĐVT",{header:true,align:HC});
+  ws.mergeCells("H6:H8"); setCell(6,8,"SỐ\nLƯỢNG",{header:true,align:HC});
+  ws.mergeCells("I6:I8"); setCell(6,9,"ĐƠN\nGIÁ\n(USD)",{header:true,align:HC});
+  ws.mergeCells("J6:J8"); setCell(6,10,"THÀNH\nTIỀN\n(USD)",{header:true,align:HC});
+  ws.mergeCells("K6:K8"); setCell(6,11,"NGÀY XUẤT\nHÀNG TẠI\nCTY",{header:true,align:HC});
+  ws.mergeCells("L6:L8"); setCell(6,12,"NGÀY TÀU\nCHẠY\n(NGÀY BAY)",{header:true,align:HC});
+  ws.mergeCells("M6:M8"); setCell(6,13,"NGÀY\nTHU\nTIỀN",{header:true,align:HC});
+  ws.mergeCells("N6:N8"); setCell(6,14,"GHI\nCHÚ",{header:true,align:HC});
+  for (let r=6;r<=8;r++) boxRow(r);
+
+  // ===== Dữ liệu =====
+  let row = 9;
+  let stt = 0;
+  const custTotalRows = [];   // dòng CỘNG của từng khách (để TỔNG CỘNG cộng lại)
 
   Object.keys(byCustomer).sort().forEach(cust => {
     stt++;
     const shipments = byCustomer[cust];
-    aoa.push([stt, `${cust}`]);
+
+    // Dòng tên khách
+    setCell(row,1,stt,{bold:true,align:{horizontal:"center"}});
+    ws.mergeCells(row,2,row,14);
+    setCell(row,2,cust,{bold:true});
+    boxRow(row); row++;
 
     const exported = shipments.filter(isExported);
     const planned  = shipments.filter(s=>!isExported(s));
-    let custQty = 0, custAmount = 0;
-    const multiShip = shipments.length > 1;
+    const invTotalRows = [];  // dòng tổng từng hóa đơn của khách này
 
     const renderGroup = (groupShipments, label) => {
       if (!groupShipments.length) return;
-      aoa.push(["", label]);
+      ws.mergeCells(row,2,row,14);
+      setCell(row,2,label,{align:{horizontal:"left"}});
+      ws.getCell(row,2).font = { name:"Arial", size:10, italic:true };
+      boxRow(row); row++;
+
       groupShipments.forEach(s => {
         const orders = s.orders||[];
-        let shipQty = 0, shipAmount = 0;
+        if (!orders.length) return;
+        const contUp = (s.container||"").toUpperCase();
+        const pGiao = contUp.includes("AIR") ? "FCA" : "FOB";
+        const pTT   = LC_CUSTOMERS.includes(cust) ? "L/C" : "T/T";
+        const firstItemRow = row;
         orders.forEach((o,idx) => {
           const qty = parseFloat(o.qty)||0;
           const price = parseFloat(o.unitPrice)||0;
-          const amount = Math.round(qty*price*100)/100;  // ROUND(x,2)
-          shipQty += qty; shipAmount = Math.round((shipAmount+amount)*100)/100;
-          custQty += qty; custAmount = Math.round((custAmount+amount)*100)/100;
-          aoa.push([
-            "", idx===0?"FOB":"", idx===0?"T/T":"",
-            idx===0?`${s.invoiceNo||s.booking||""}${s.stuffingDate?` (${fmtDateVN(s.stuffingDate)})`:""}`:"",
-            o.contract||"", `${o.items||""}${o.index?`(${o.index})`:""}`, "Cái",
-            qty, price||"", amount||"",
-            idx===0?fmtDateVN(s.stuffingDate):'"', idx===0?fmtDateVN(s.etd):'"'
-          ]);
+          setCell(row,1,"");
+          setCell(row,2, idx===0?pGiao:"", {align:{horizontal:"center"}});
+          setCell(row,3, idx===0?pTT:"",   {align:{horizontal:"center"}});
+          setCell(row,4, idx===0?(s.invoiceNo||""):(idx===1&&s.stuffingDate?`(Ngày: ${fmtDateVN(s.stuffingDate)})`:""));
+          setCell(row,5, o.contract||"");
+          setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
+          setCell(row,7, "Cái", {align:{horizontal:"center"}});
+          setCell(row,8, qty, {numFmt:"#,##0"});
+          setCell(row,9, price||"", {numFmt:"0.00"});
+          setCell(row,10, { formula:`ROUND(H${row}*I${row},2)` }, {numFmt:"#,##0.00"});
+          setCell(row,11, idx===0?fmtDateVN(s.stuffingDate):'"', {align:{horizontal:"center"}});
+          setCell(row,12, idx===0?fmtDateVN(s.etd):'"', {align:{horizontal:"center"}});
+          setCell(row,13,""); setCell(row,14,"");
+          row++;
         });
-        // dòng tổng từng lô (nếu khách có nhiều lô)
-        if (multiShip) {
-          aoa.push(["","","","","","Tổng lô","",shipQty,"",shipAmount,"",""]);
-        }
+        // Dòng tổng hóa đơn (không chữ, in đậm) — theo file mẫu
+        setCell(row,8, { formula:`SUM(H${firstItemRow}:H${row-1})` }, {bold:true,numFmt:"#,##0"});
+        setCell(row,10,{ formula:`SUM(J${firstItemRow}:J${row-1})` }, {bold:true,numFmt:"#,##0.00"});
+        boxRow(row);
+        invTotalRows.push(row);
+        row++;
       });
     };
-    renderGroup(exported, "Đã xuất");
-    renderGroup(planned, `Dự kiến xuất trong tháng ${mo}/${y}`);
+    renderGroup(exported, `Đã xuất từ 01/${mo}/${y} đến ${reportDateVN}`);
+    renderGroup(planned, `Dự kiến xuất từ ${reportDateVN} đến ${String(lastDay).padStart(2,"0")}/${mo}/${y}`);
 
-    aoa.push(["","","","","","CỘNG "+cust,"",custQty,"",custAmount,"",""]);
-    grandQty += custQty; grandAmount = Math.round((grandAmount+custAmount)*100)/100;
+    // Dòng CỘNG khách hàng
+    setCell(row,4,"CỘNG:",{bold:true,align:{horizontal:"right"}});
+    const sumH = invTotalRows.map(r=>`H${r}`).join("+") || "0";
+    const sumJ = invTotalRows.map(r=>`J${r}`).join("+") || "0";
+    setCell(row,8, { formula: sumH }, {bold:true,numFmt:"#,##0"});
+    setCell(row,10,{ formula: sumJ }, {bold:true,numFmt:"#,##0.00"});
+    boxRow(row);
+    custTotalRows.push(row);
+    row++;
   });
 
-  aoa.push(["","","","","","TỔNG CỘNG","",grandQty,"",grandAmount,"",""]);
-  aoa.push([]);
-  aoa.push(["","","","","","","","","","Lập bởi: Phòng XNK","",""]);
-  aoa.push(["","","","","","","","","","NGUYEN QUOC THI","",""]);
+  // ===== TỔNG CỘNG =====
+  setCell(row,4,"TỔNG CỘNG:",{bold:true,align:{horizontal:"right"}});
+  const gH = custTotalRows.map(r=>`H${r}`).join("+") || "0";
+  const gJ = custTotalRows.map(r=>`J${r}`).join("+") || "0";
+  setCell(row,8, { formula: gH }, {bold:true,numFmt:"#,##0"});
+  setCell(row,10,{ formula: gJ }, {bold:true,numFmt:"#,##0.00"});
+  boxRow(row);
+  row += 2;
 
-  // Tạo workbook
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:5},{wch:11},{wch:9},{wch:22},{wch:12},{wch:26},{wch:6},{wch:10},{wch:11},{wch:13},{wch:12},{wch:12}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Nguồn thu");
-  XLSX.writeFile(wb, `BaoCao_NguonThu_${mo}-${y}.xlsx`);
+  // ===== Chân ký =====
+  ws.getCell(row,10).value = `Ngày ${String(today.getDate()).padStart(2,"0")} tháng ${String(today.getMonth()+1).padStart(2,"0")} năm ${today.getFullYear()}`;
+  ws.getCell(row,10).font = FONT;
+  row++;
+  ws.getCell(row,2).value = "Duyệt bởi:";  ws.getCell(row,2).font = FONT;
+  ws.getCell(row,10).value = "Lập bởi:";   ws.getCell(row,10).font = FONT;
+  row++;
+  ws.getCell(row,10).value = "Phòng XNK";  ws.getCell(row,10).font = FONT;
+  row += 4;
+  ws.getCell(row,10).value = "NGUYỄN QUỐC THI";   ws.getCell(row,10).font = FONT_B;
+
+  // ===== Tải file =====
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  const [rd, rm, ry] = reportDateVN.split("/");
+  a.download = `Báo cáo nguồn thu ${rd} ${rm} ${ry.slice(2)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 
   closeModal("modal-reports");
-  showToast("Đã xuất file Excel! Mở file để sửa & in.");
+  showToast("Đã xuất file Excel (có khung + công thức)!");
 };
 
 function fmtDateVN(str) {
@@ -1487,16 +1832,87 @@ let calMonth = new Date().getFullYear() + "-" + String(new Date().getMonth()+1).
 function showCalendar() {
   document.getElementById("calendar-view").style.display = "block";
   document.getElementById("list-view").style.display = "none";
+  renderCutoffWarnings();
   renderCalendar();
 }
-function showListView() {
+function showListView(month) {
   document.getElementById("calendar-view").style.display = "none";
   document.getElementById("list-view").style.display = "block";
+  if (month !== undefined) document.getElementById("filter-month").value = month;
   renderList();
 }
 
+// ====== CẢNH BÁO CẮT MÁNG ======
+function renderCutoffWarnings() {
+  const box = document.getElementById("cutoff-warning");
+  if (!box) return;
+  if (!isLoggedIn()) { box.innerHTML = ""; return; }
+  const now = new Date();
+  const items = [];
+  allShipments.forEach(s => {
+    if (!s.cyCut) return;                                   // không có ngày cắt máng (AIR/LCL) → bỏ
+    const ck = s.checklist || {};
+    if (ck[8] === "done" || ck[8] === "skip") return;       // đã làm tờ khai → bỏ
+    const dt = new Date(s.cyCut + "T" + (s.cyCutTime || "23:59"));
+    if (isNaN(dt)) return;
+    const diffH = (dt - now) / 3600000;
+    if (diffH > 48) return;                                 // còn xa hơn 48h → chưa cảnh báo
+    if (diffH < -168) return;                               // quá hạn > 7 ngày → coi như tồn cũ, bỏ
+    items.push({ s, dt, diffH });
+  });
+  if (!items.length) { box.innerHTML = ""; return; }
+  items.sort((a,b) => a.dt - b.dt);
+
+  const rows = items.map(({s, dt, diffH}) => {
+    const cust = (s.orders||[])[0]?.customer || "—";
+    const port = s.port || "";
+    const overdue = diffH < 0;
+    const hrs = Math.round(Math.abs(diffH));
+    const pill = overdue
+      ? `color:var(--red-text);background:var(--red-bg)`
+      : `color:var(--amber-text);background:var(--bg-card);border:0.5px solid var(--amber-border)`;
+    const icon = overdue ? "ti-clock-exclamation" : "ti-clock";
+    const iconColor = overdue ? "var(--red-text)" : "var(--amber-text)";
+    const dd = String(dt.getDate()).padStart(2,"0") + "/" + String(dt.getMonth()+1).padStart(2,"0");
+    const tt = s.cyCutTime ? " " + s.cyCutTime : "";
+    return `<div onclick="gotoShipment('${s.id}')" style="display:flex;align-items:center;gap:12px;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);padding:10px 12px;cursor:pointer">
+      <i class="ti ${icon}" style="font-size:18px;color:${iconColor}"></i>
+      <div style="min-width:0">
+        <div style="font-size:14px;font-weight:500;color:var(--text)">${cust} — ${port}</div>
+        <div style="font-size:12px;color:var(--text-muted)">Cắt máng ${dd}${tt} · INV ${s.invoiceNo||"—"}</div>
+      </div>
+      <span style="margin-left:auto;flex-shrink:0;font-size:12px;font-weight:500;padding:3px 10px;border-radius:20px;${pill}">${overdue?`Quá hạn ${hrs} giờ`:`Còn ${hrs} giờ`}</span>
+    </div>`;
+  }).join("");
+
+  box.innerHTML = `<div style="background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+      <i class="ti ti-alert-triangle" style="font-size:20px;color:var(--amber-text)"></i>
+      <span style="font-size:15px;font-weight:500;color:var(--amber-text)">Sắp cắt máng — chưa làm tờ khai</span>
+      <span style="margin-left:auto;font-size:12px;font-weight:500;color:var(--amber-text);background:var(--bg-card);border:0.5px solid var(--amber-border);padding:2px 10px;border-radius:20px">${items.length} lô</span>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px">${rows}</div>
+  </div>`;
+}
+
+window.gotoShipment = function(id) {
+  const s = allShipments.find(x=>x.id===id);
+  ["filter-status","filter-customer","filter-invoice"].forEach(fid => {
+    const el = document.getElementById(fid); if (el) el.value = "";
+  });
+  openShipmentPopup(id, s?.period ?? "");
+};
+
 document.getElementById("btn-home").addEventListener("click", showCalendar);
-document.getElementById("btn-nav-list").addEventListener("click", showListView);
+
+// Bấm 1 ngày trên wheel -> mở lịch đúng tháng đó
+window.__onWheelDayClick = function(iso) {
+  const month = String(iso).slice(0, 7);
+  if (month && month !== calMonth) calMonth = month;
+  showCalendar();
+  document.getElementById("calendar-view").scrollIntoView({ behavior: "smooth", block: "start" });
+};
+document.getElementById("btn-nav-list").addEventListener("click", () => showListView(calMonth));
 document.getElementById("btn-back-calendar").addEventListener("click", showCalendar);
 
 function renderCalendar() {
@@ -1526,7 +1942,7 @@ function renderCalendar() {
       const custs = [...new Set((e.s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ") || "—";
       const inv = e.s.invoiceNo || e.s.booking || "";
       const icon = e.type==="pack" ? "package" : "ship";
-      return `<div class="cal-tag ${e.type}" onclick="openShipmentPopup('${e.s.id}')">
+      return `<div class="cal-tag ${e.type}" onclick="openShipmentPopup('${e.s.id}','${e.s.period||''}')">
         <i class="ti ti-${icon}"></i> ${custs}${inv?`<br><span style="opacity:0.85">${inv}</span>`:""}
       </div>`;
     }).join("");
@@ -1593,8 +2009,8 @@ function shiftMonth(ym, delta) {
 }
 
 // Popup chi tiết lô từ lịch — chuyển sang danh sách và mở card
-window.openShipmentPopup = function(shipId) {
-  showListView();
+window.openShipmentPopup = function(shipId, month) {
+  showListView(month !== undefined ? month : calMonth);
   setTimeout(() => {
     const card = document.getElementById("card-"+shipId);
     if (card) {
@@ -1605,11 +2021,119 @@ window.openShipmentPopup = function(shipId) {
       card.style.transition = "box-shadow .3s";
       card.style.boxShadow = "0 0 0 3px #185FA5";
       setTimeout(()=>{ card.style.boxShadow = ""; }, 1600);
+    } else {
+      // Lô không nằm trong tháng đang lọc → bỏ lọc tháng rồi thử lại
+      document.getElementById("filter-month").value = "";
+      renderList();
+      setTimeout(() => {
+        const card2 = document.getElementById("card-"+shipId);
+        if (card2) {
+          card2.scrollIntoView({behavior:"smooth", block:"center"});
+          card2.style.transition = "box-shadow .3s";
+          card2.style.boxShadow = "0 0 0 3px #185FA5";
+          setTimeout(()=>{ card2.style.boxShadow = ""; }, 1600);
+        }
+      }, 100);
     }
   }, 100);
 };
 
 // ====== FIRESTORE REALTIME (chỉ chạy khi đã đăng nhập) ======
+// ====== ĐỒNG BỘ WIDGET TOPBAR/SIDEBAR/FAB ======
+function tbCustLabel(s) {
+  const names = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
+  return names.length ? names.join(" / ") : "—";
+}
+function tbLocalISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+function syncTopbarWidgets() {
+  // 1. Wheel ngày: sự kiện đóng hàng / tàu chạy
+  const evMap = {};
+  const ensure = (k) => (evMap[k] = evMap[k] || { pack: [], ship: [] });
+  allShipments.forEach(s => {
+    const label = `${tbCustLabel(s)}${s.invoiceNo ? " · " + s.invoiceNo : ""}`;
+    if (s.stuffingDate) ensure(s.stuffingDate).pack.push(label);
+    if (s.etd) ensure(s.etd).ship.push(label);
+  });
+  updateWheelEvents(evMap);
+
+  // 2. Tổng quan tháng hiện tại
+  const now = new Date();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const inMonth = allShipments.filter(s =>
+    s.period ? s.period === curMonth : (s.stuffingDate||"").slice(0,7) === curMonth
+  );
+  const stepDone = (s, id) => {
+    const v = (s.checklist||{})[id];
+    return v === "done" || v === "skip";
+  };
+  const PIPELINE_STEPS = [
+    { id: 3,  label: "Request Booking" },
+    { id: 4,  label: "Đã có Booking" },
+    { id: 5,  label: "Đã có HS + CO Form" },
+    { id: 8,  label: "Tờ khai hải quan" },
+    { id: 9,  label: "Gửi chứng từ nháp" },
+    { id: 11, label: "Hoàn tất lô hàng", last: true },
+  ];
+  updateSidebarStats({
+    monthLabel: `${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`,
+    total: inMonth.length,
+    rows: PIPELINE_STEPS.map(p => ({
+      label: p.label,
+      count: inMonth.filter(s => stepDone(s, p.id)).length,
+      last: !!p.last,
+    })),
+  });
+
+  // 3. FAB cảnh báo: (a) cắt máng hôm nay/mai chưa tờ khai, (b) tàu chạy >5 ngày chưa hoàn tất
+  const today = tbLocalISO(now);
+  const tmrD = new Date(now); tmrD.setDate(tmrD.getDate()+1);
+  const tmr = tbLocalISO(tmrD);
+  const d5 = new Date(now); d5.setDate(d5.getDate()-5);
+  const iso5 = tbLocalISO(d5);
+  const warns = [];
+  allShipments.forEach(s => {
+    // (a) chưa tờ khai mà sắp cắt máng
+    const ck8 = (s.checklist||{})[8];
+    if (s.cyCut && ck8 !== "done" && ck8 !== "skip" && (s.cyCut === today || s.cyCut === tmr)) {
+      warns.push({
+        id: s.id,
+        title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
+        sub: `INV ${s.invoiceNo||"—"} · Cắt máng ${formatDate(s.cyCut)}${s.cyCutTime ? " " + s.cyCutTime : ""} · chưa tờ khai`,
+        when: s.cyCut === today ? "today" : "tomorrow",
+      });
+      return;
+    }
+    // (b) tàu đã chạy quá 5 ngày mà lô chưa hoàn tất (hay quên gửi chứng từ gốc)
+    if (s.etd && s.etd <= iso5 && getProgress(s.checklist).pct < 100) {
+      const days = Math.round((now - new Date(s.etd)) / 86400000);
+      warns.push({
+        id: s.id,
+        title: `${tbCustLabel(s)} — ${fullPort(s.port)}`,
+        sub: `INV ${s.invoiceNo||"—"} · Tàu chạy ${days} ngày trước · lô chưa hoàn tất`,
+        when: "late",
+      });
+    }
+  });
+  const _rank = { today: 0, tomorrow: 1, late: 2 };
+  warns.sort((a,b) => _rank[a.when] - _rank[b.when]);
+  updateFabWarnings(warns, (shipId) => {
+    const s = allShipments.find(x => x.id === shipId);
+    if (!s) return;
+    const m = s.period || (s.stuffingDate||"").slice(0,7) || calMonth;
+    showListView(m);
+    setTimeout(() => {
+      const card = document.getElementById("card-" + shipId);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.style.outline = "2px solid #E24B4A";
+        setTimeout(() => { card.style.outline = ""; }, 2500);
+      }
+    }, 350);
+  });
+}
+
 let _unsubShipments = null;
 function startData() {
   if (_unsubShipments) return;
@@ -1617,6 +2141,8 @@ function startData() {
   _unsubShipments = onSnapshot(q, snap => {
     allShipments = snap.docs.map(d => ({id:d.id, ...d.data()}));
     renderList();
+    renderCutoffWarnings();
+    syncTopbarWidgets();
     if (document.getElementById("calendar-view").style.display !== "none") renderCalendar();
   }, err => { console.warn("Firestore:", err.message); });
 }
@@ -1625,10 +2151,223 @@ function stopData() {
   allShipments = [];
 }
 
+// ====== BACKUP DỮ LIỆU ======
+async function downloadBackup() {
+  try {
+    showToast("Đang tạo backup...");
+    const { collection:col, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const names = ["shipments","customers","lc","forwarders"];
+    const data = { _exportedAt: new Date().toISOString() };
+    for (const n of names) {
+      const snap = await getDocs(col(db, n));
+      data[n] = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0,10);
+    a.href = url; a.download = `backup-xuatkhau-${today}.json`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    try { localStorage.setItem("lastBackup", today); } catch(e){}
+    showToast("Đã tải file backup!");
+  } catch (e) {
+    showToast("Lỗi backup: " + (e.message||e));
+  }
+}
+const _btnBackup = document.getElementById("btn-backup");
+if (_btnBackup) _btnBackup.addEventListener("click", downloadBackup);
+const _btnRestore = document.getElementById("btn-restore");
+if (_btnRestore) _btnRestore.addEventListener("click", () => openRestore());
+const _btnStats = document.getElementById("btn-stats");
+if (_btnStats) _btnStats.addEventListener("click", () => openStats());
+
+// ====== KHÔI PHỤC TỪ FILE BACKUP (chỉ admin) ======
+const RESTORE_COLS = ["shipments", "customers", "lc", "forwarders"];
+const RESTORE_LABEL = { shipments:"Lô hàng", customers:"Khách hàng", lc:"LC", forwarders:"Forwarder" };
+let _restoreData = null;
+
+window.openRestore = function() {
+  if (!isAdmin()) { showToast("Chỉ Admin mới được khôi phục dữ liệu."); return; }
+  let m = document.getElementById("modal-restore");
+  if (!m) {
+    m = document.createElement("div");
+    m.className = "modal-backdrop";
+    m.id = "modal-restore";
+    m.innerHTML = `<div class="modal" style="max-width:560px">
+      <div class="modal-title">
+        <span><i class="ti ti-database-import"></i> Khôi phục từ file backup</span>
+        <span class="modal-close" onclick="closeModalById('modal-restore')"><i class="ti ti-x"></i></span>
+      </div>
+      <div id="restore-body"></div>
+    </div>`;
+    document.body.appendChild(m);
+  }
+  document.getElementById("restore-body").innerHTML = `
+    <div style="background:var(--amber-bg);border:0.5px solid var(--amber-border);color:var(--amber-text);border-radius:8px;padding:10px 14px;font-size:12.5px;margin-bottom:14px">
+      <b>Đọc kỹ trước khi dùng:</b> chức năng này ghi dữ liệu từ file backup vào hệ thống đang chạy.
+      Nên <b>bấm Backup dữ liệu ngay bây giờ</b> để có bản lùi, phòng khi chọn nhầm file.
+    </div>
+    <div class="form-group">
+      <label class="form-label">Chọn file backup (.json)</label>
+      <input type="file" class="form-input" id="restore-file" accept=".json,application/json">
+    </div>
+    <div id="restore-preview"></div>`;
+  document.getElementById("restore-file").addEventListener("change", handleRestoreFile);
+  openModal("modal-restore");
+};
+
+async function handleRestoreFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const box = document.getElementById("restore-preview");
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    const bad = RESTORE_COLS.every(c => !Array.isArray(data[c]));
+    if (bad) throw new Error("Không thấy dữ liệu quen thuộc trong file này.");
+    _restoreData = data;
+
+    // Đếm hiện trạng để so sánh
+    const cur = {};
+    for (const c of RESTORE_COLS) {
+      const snap = await getDocs(collection(db, c));
+      cur[c] = new Set(snap.docs.map(d => d.id));
+    }
+
+    const rows = RESTORE_COLS.map(c => {
+      const arr = Array.isArray(data[c]) ? data[c] : [];
+      const add = arr.filter(x => x.id && !cur[c].has(x.id)).length;
+      const over = arr.filter(x => x.id && cur[c].has(x.id)).length;
+      return `<tr>
+        <td>${RESTORE_LABEL[c]}</td>
+        <td style="text-align:right">${cur[c].size}</td>
+        <td style="text-align:right">${arr.length}</td>
+        <td style="text-align:right;color:var(--green-text)"><b>+${add}</b></td>
+        <td style="text-align:right;color:var(--amber-text)">${over}</td>
+      </tr>`;
+    }).join("");
+
+    box.innerHTML = `
+      <div style="font-size:12.5px;color:var(--text-muted);margin-bottom:6px">
+        File tạo lúc: <b>${data._exportedAt ? new Date(data._exportedAt).toLocaleString("vi-VN") : "không rõ"}</b>
+      </div>
+      <table class="data-table" style="font-size:12.5px;margin-bottom:14px">
+        <thead><tr>
+          <th>Nhóm</th><th style="text-align:right">Đang có</th><th style="text-align:right">Trong file</th>
+          <th style="text-align:right">Sẽ thêm</th><th style="text-align:right">Trùng ID</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="form-group">
+        <label class="form-label">Cách khôi phục</label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;margin-bottom:8px">
+          <input type="radio" name="rst-mode" value="add" checked style="margin-top:3px">
+          <span><b>Chỉ thêm mục còn thiếu</b> <span style="color:var(--green-text)">(an toàn)</span><br>
+          <span style="color:var(--text-muted);font-size:12px">Mục đang có giữ nguyên, không bị đụng tới. Dùng khi lỡ xóa nhầm.</span></span>
+        </label>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
+          <input type="radio" name="rst-mode" value="overwrite" style="margin-top:3px">
+          <span><b>Ghi đè bằng dữ liệu trong file</b> <span style="color:var(--red-text)">(nguy hiểm)</span><br>
+          <span style="color:var(--text-muted);font-size:12px">Mục trùng ID sẽ bị thay bằng bản trong file — sửa đổi sau ngày backup sẽ mất.</span></span>
+        </label>
+      </div>
+      <div class="form-footer">
+        <button type="button" class="btn" onclick="closeModalById('modal-restore')">Hủy</button>
+        <button type="button" class="btn btn-primary" onclick="doRestore()"><i class="ti ti-database-import"></i> Khôi phục</button>
+      </div>`;
+  } catch (err) {
+    _restoreData = null;
+    box.innerHTML = `<div style="background:var(--red-bg);border:0.5px solid var(--red-border);color:var(--red-text);border-radius:8px;padding:10px 14px;font-size:12.5px">
+      Không đọc được file: ${err.message||err}<br>Hãy chọn đúng file <b>backup-xuatkhau-....json</b> tải từ nút Backup.
+    </div>`;
+  }
+}
+
+window.doRestore = async function() {
+  if (!_restoreData) return;
+  if (!isAdmin()) { showToast("Chỉ Admin mới được khôi phục dữ liệu."); return; }
+  const mode = document.querySelector('input[name="rst-mode"]:checked')?.value || "add";
+
+  // Xác nhận 2 lớp
+  if (!confirm(mode === "overwrite"
+    ? "GHI ĐÈ dữ liệu hiện tại bằng file backup?\n\nCác sửa đổi sau ngày backup sẽ MẤT. Tiếp tục?"
+    : "Thêm các mục còn thiếu từ file backup vào hệ thống?")) return;
+  if (mode === "overwrite") {
+    const t = prompt('Xác nhận lần cuối: gõ chữ GHI DE (không dấu) rồi bấm OK:');
+    if ((t||"").trim().toUpperCase() !== "GHI DE") { showToast("Đã hủy khôi phục."); return; }
+  }
+
+  try {
+    showToast("Đang khôi phục, đừng đóng trình duyệt...");
+    let added = 0, over = 0;
+    for (const c of RESTORE_COLS) {
+      const arr = Array.isArray(_restoreData[c]) ? _restoreData[c] : [];
+      if (!arr.length) continue;
+      const snap = await getDocs(collection(db, c));
+      const existing = new Set(snap.docs.map(d => d.id));
+
+      let batch = writeBatch(db);
+      let n = 0;
+      for (const item of arr) {
+        if (!item.id) continue;
+        const exists = existing.has(item.id);
+        if (exists && mode === "add") continue;   // giữ nguyên bản đang có
+        const { id, ...body } = item;
+        batch.set(doc(db, c, id), body);
+        exists ? over++ : added++;
+        if (++n >= 400) { await batch.commit(); batch = writeBatch(db); n = 0; }
+      }
+      if (n) await batch.commit();
+    }
+    closeModal("modal-restore");
+    showToast(`Khôi phục xong: thêm ${added} mục${over ? `, ghi đè ${over} mục` : ""}.`);
+  } catch (e) {
+    showToast("Lỗi khôi phục: " + (e.message||e));
+  }
+};
+
+// Nhắc backup mỗi thứ 6 (chỉ admin, mỗi ngày 1 lần)
+function maybeFridayBackup() {
+  if (!isAdmin()) return;
+  const now = new Date();
+  if (now.getDay() !== 5) return;   // 5 = thứ 6
+  const today = now.toISOString().slice(0,10);
+  try {
+    if (localStorage.getItem("backupReminded") === today) return;
+    localStorage.setItem("backupReminded", today);
+  } catch(e){}
+  setTimeout(() => {
+    if (confirm("Hôm nay thứ 6 — bạn có muốn tải file backup dữ liệu về máy không?\n\n(Nên lưu thêm 1 bản lên Google Drive cho chắc.)")) downloadBackup();
+  }, 1200);
+}
+
 onAuthChange(user => {
   updateAdminUI();
   if (user) {
     startData();
+    maybeFridayBackup();
+    // Vào từ trang khác qua nút Lô hàng / Báo cáo / Backup
+    if (location.hash.startsWith("#cal-")) {
+      const iso = location.hash.slice(5);
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => window.__onWheelDayClick(iso), 400);
+    } else if (location.hash === "#list") {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => showListView(calMonth), 300);
+    } else if (location.hash === "#reports" && !isGuest()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => document.getElementById("btn-reports")?.click(), 600);
+    } else if (location.hash === "#backup" && isAdmin()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => downloadBackup(), 600);
+    } else if (location.hash === "#restore" && isAdmin()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => openRestore(), 600);
+    } else if (location.hash === "#stats" && !isGuest()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => openStats(), 600);
+    }
   } else {
     stopData();
     showCalendar();   // về lịch trống

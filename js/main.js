@@ -1577,8 +1577,22 @@ window.reportBocXep = function() {
   const w = window.open("","_blank"); w.document.write(html); w.document.close();
 };
 
-// --- BÁO CÁO NGUỒN THU (xuất Excel) ---
-window.reportNguonThu = function() {
+// --- BÁO CÁO NGUỒN THU (xuất Excel, ExcelJS — kẻ khung + công thức) ---
+let _excelJSPromise = null;
+function loadExcelJS() {
+  if (window.ExcelJS) return Promise.resolve();
+  if (_excelJSPromise) return _excelJSPromise;
+  _excelJSPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement("script");
+    sc.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+    sc.onload = resolve;
+    sc.onerror = () => { _excelJSPromise = null; reject(new Error("Không tải được thư viện ExcelJS")); };
+    document.head.appendChild(sc);
+  });
+  return _excelJSPromise;
+}
+
+window.reportNguonThu = async function() {
   const month = document.getElementById("rp-month").value;
   const asOf  = document.getElementById("rp-asof").value;
   if (!month) { showToast("Chọn tháng!"); return; }
@@ -1586,7 +1600,11 @@ window.reportNguonThu = function() {
   if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
   const [y,mo] = month.split("-");
 
+  try { await loadExcelJS(); }
+  catch(e) { showToast("Lỗi mạng: không tải được thư viện Excel. Thử lại!"); return; }
+
   const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
+  const lastDay = new Date(+y, +mo, 0).getDate();
 
   // Nhóm theo khách hàng
   const byCustomer = {};
@@ -1596,73 +1614,181 @@ window.reportNguonThu = function() {
     byCustomer[cust].push(s);
   });
 
-  // Xây mảng AOA (array of arrays) cho Excel
-  const aoa = [];
-  aoa.push(["CTY TNHH TOMIYA SUMMIT GARMENT EXPORT"]);
-  aoa.push(["Phòng Xuất Nhập Khẩu"]);
-  aoa.push([`BÁO CÁO NGUỒN THU - Tháng ${mo}/${y}${asOf?` (tính đến ${fmtDateVN(asOf)})`:""}`]);
-  aoa.push([]);
-  aoa.push(["Stt","P.thức giao","P.thức TT","Số & ngày hóa đơn","Hợp đồng","Mã hàng","ĐVT","Số lượng","Đơn giá (USD)","Thành tiền (USD)","Ngày xuất","Ngày tàu chạy"]);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Nguồn thu", { views: [{ showGridLines: true }] });
+  ws.columns = [
+    { width: 4.5 },  // A Stt
+    { width: 8 },    // B P.thức giao
+    { width: 8 },    // C P.thức TT
+    { width: 21 },   // D Số & ngày hóa đơn
+    { width: 14 },   // E Hợp đồng
+    { width: 32 },   // F Mã hàng
+    { width: 5 },    // G ĐVT
+    { width: 9 },    // H Số lượng
+    { width: 9.5 },  // I Đơn giá
+    { width: 12.5 }, // J Thành tiền
+    { width: 12.5 }, // K Ngày xuất
+    { width: 12.5 }, // L Ngày tàu chạy
+    { width: 10 },   // M Ngày thu tiền
+    { width: 10 }    // N Ghi chú
+  ];
 
-  let stt = 0, grandQty = 0, grandAmount = 0;
+  const FONT   = { name: "Arial", size: 11 };
+  const FONT_B = { name: "Arial", size: 11, bold: true };
+  const THIN   = { style: "thin" };
+  const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
+  const setCell = (r, c, val, opt={}) => {
+    const cell = ws.getCell(r, c);
+    if (val !== undefined && val !== null && val !== "") cell.value = val;
+    cell.font = opt.bold ? FONT_B : FONT;
+    if (opt.numFmt) cell.numFmt = opt.numFmt;
+    if (opt.align)  cell.alignment = opt.align;
+    if (opt.border !== false) cell.border = BOX;
+    return cell;
+  };
+  const boxRow = r => { for (let c=1;c<=14;c++){ const cell=ws.getCell(r,c); cell.border=BOX; if(!cell.font) cell.font=FONT; } };
+
+  // ===== Tiêu đề =====
+  ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
+  ws.getCell("A1").font = { name: "Arial", size: 12 };
+  ws.getCell("A2").value = "Phòng Xuất Nhập Khẩu";
+  ws.getCell("A2").font = FONT;
+  ws.mergeCells("A3:N3");
+  ws.getCell("A3").value = "BÁO CÁO NGUỒN THU";
+  ws.getCell("A3").font = { name: "Arial", size: 16, bold: true };
+  ws.getCell("A3").alignment = { horizontal: "center" };
+  ws.mergeCells("A4:N4");
+  ws.getCell("A4").value = asOf
+    ? `(Từ 01/${mo}/${y} đến 31/${mo}/${y} — tính đến ${fmtDateVN(asOf)})`
+    : `(Từ 01/${mo}/${y} đến ${lastDay}/${mo}/${y})`;
+  ws.getCell("A4").font = FONT;
+  ws.getCell("A4").alignment = { horizontal: "center" };
+
+  // ===== Header bảng 3 tầng (dòng 6-8) =====
+  const HC = { horizontal: "center", vertical: "center", wrapText: true };
+  ws.mergeCells("A6:A8"); setCell(6,1,"Stt",{bold:true,align:HC});
+  ws.mergeCells("B6:F6"); setCell(6,2,"TÊN KHÁCH HÀNG",{bold:true,align:HC});
+  ws.mergeCells("B7:B8"); setCell(7,2,"P.thức\ngiao hàng",{bold:true,align:HC});
+  ws.mergeCells("C7:C8"); setCell(7,3,"P.thức\nthanh toán",{bold:true,align:HC});
+  ws.mergeCells("D7:D8"); setCell(7,4,"Số & ngày\nhóa đơn",{bold:true,align:HC});
+  ws.mergeCells("E7:E8"); setCell(7,5,"Hợp đồng",{bold:true,align:HC});
+  ws.mergeCells("F7:F8"); setCell(7,6,"Mã hàng",{bold:true,align:HC});
+  ws.mergeCells("G6:G8"); setCell(6,7,"ĐVT",{bold:true,align:HC});
+  ws.mergeCells("H6:H8"); setCell(6,8,"SỐ\nLƯỢNG",{bold:true,align:HC});
+  ws.mergeCells("I6:I8"); setCell(6,9,"ĐƠN\nGIÁ\n(USD)",{bold:true,align:HC});
+  ws.mergeCells("J6:J8"); setCell(6,10,"THÀNH\nTIỀN\n(USD)",{bold:true,align:HC});
+  ws.mergeCells("K6:K8"); setCell(6,11,"NGÀY XUẤT\nHÀNG TẠI\nCTY",{bold:true,align:HC});
+  ws.mergeCells("L6:L8"); setCell(6,12,"NGÀY TÀU\nCHẠY\n(NGÀY BAY)",{bold:true,align:HC});
+  ws.mergeCells("M6:M8"); setCell(6,13,"NGÀY\nTHU\nTIỀN",{bold:true,align:HC});
+  ws.mergeCells("N6:N8"); setCell(6,14,"GHI\nCHÚ",{bold:true,align:HC});
+  for (let r=6;r<=8;r++) boxRow(r);
+
+  // ===== Dữ liệu =====
+  let row = 9;
+  let stt = 0;
+  const custTotalRows = [];   // dòng CỘNG của từng khách (để TỔNG CỘNG cộng lại)
 
   Object.keys(byCustomer).sort().forEach(cust => {
     stt++;
     const shipments = byCustomer[cust];
-    aoa.push([stt, `${cust}`]);
+
+    // Dòng tên khách
+    setCell(row,1,stt,{bold:true,align:{horizontal:"center"}});
+    ws.mergeCells(row,2,row,14);
+    setCell(row,2,cust,{bold:true});
+    boxRow(row); row++;
 
     const exported = shipments.filter(isExported);
     const planned  = shipments.filter(s=>!isExported(s));
-    let custQty = 0, custAmount = 0;
-    const multiShip = shipments.length > 1;
+    const invTotalRows = [];  // dòng tổng từng hóa đơn của khách này
 
     const renderGroup = (groupShipments, label) => {
       if (!groupShipments.length) return;
-      aoa.push(["", label]);
+      ws.mergeCells(row,2,row,14);
+      setCell(row,2,label,{align:{horizontal:"left"}});
+      ws.getCell(row,2).font = { name:"Arial", size:11, italic:true };
+      boxRow(row); row++;
+
       groupShipments.forEach(s => {
         const orders = s.orders||[];
-        let shipQty = 0, shipAmount = 0;
+        if (!orders.length) return;
+        const contUp = (s.container||"").toUpperCase();
+        const pGiao = contUp.includes("AIR") ? "FCA" : "FOB";
+        const pTT   = s.lcId ? "L/C" : "T/T";
+        const firstItemRow = row;
         orders.forEach((o,idx) => {
           const qty = parseFloat(o.qty)||0;
           const price = parseFloat(o.unitPrice)||0;
-          const amount = Math.round(qty*price*100)/100;  // ROUND(x,2)
-          shipQty += qty; shipAmount = Math.round((shipAmount+amount)*100)/100;
-          custQty += qty; custAmount = Math.round((custAmount+amount)*100)/100;
-          aoa.push([
-            "", idx===0?"FOB":"", idx===0?"T/T":"",
-            idx===0?`${s.invoiceNo||s.booking||""}${s.stuffingDate?` (${fmtDateVN(s.stuffingDate)})`:""}`:"",
-            o.contract||"", `${o.items||""}${o.index?`(${o.index})`:""}`, "Cái",
-            qty, price||"", amount||"",
-            idx===0?fmtDateVN(s.stuffingDate):'"', idx===0?fmtDateVN(s.etd):'"'
-          ]);
+          setCell(row,1,"");
+          setCell(row,2, idx===0?pGiao:"", {align:{horizontal:"center"}});
+          setCell(row,3, idx===0?pTT:"",   {align:{horizontal:"center"}});
+          setCell(row,4, idx===0?(s.invoiceNo||s.booking||""):(idx===1&&s.stuffingDate?`(Ngày: ${fmtDateVN(s.stuffingDate)})`:""));
+          setCell(row,5, o.contract||"");
+          setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
+          setCell(row,7, "Cái", {align:{horizontal:"center"}});
+          setCell(row,8, qty, {numFmt:"#,##0"});
+          setCell(row,9, price||"", {numFmt:"0.00"});
+          setCell(row,10, { formula:`ROUND(H${row}*I${row},2)` }, {numFmt:"#,##0.00"});
+          setCell(row,11, idx===0?fmtDateVN(s.stuffingDate):'"', {align:{horizontal:"center"}});
+          setCell(row,12, idx===0?fmtDateVN(s.etd):'"', {align:{horizontal:"center"}});
+          setCell(row,13,""); setCell(row,14,"");
+          row++;
         });
-        // dòng tổng từng lô (nếu khách có nhiều lô)
-        if (multiShip) {
-          aoa.push(["","","","","","Tổng lô","",shipQty,"",shipAmount,"",""]);
-        }
+        // Dòng tổng hóa đơn (không chữ, in đậm) — theo file mẫu
+        setCell(row,8, { formula:`SUM(H${firstItemRow}:H${row-1})` }, {bold:true,numFmt:"#,##0"});
+        setCell(row,10,{ formula:`SUM(J${firstItemRow}:J${row-1})` }, {bold:true,numFmt:"#,##0.00"});
+        boxRow(row);
+        invTotalRows.push(row);
+        row++;
       });
     };
     renderGroup(exported, "Đã xuất");
-    renderGroup(planned, `Dự kiến xuất trong tháng ${mo}/${y}`);
+    renderGroup(planned, `Dự kiến xuất từ 01/${mo}/${y} đến ${lastDay}/${mo}/${y}`);
 
-    aoa.push(["","","","","","CỘNG "+cust,"",custQty,"",custAmount,"",""]);
-    grandQty += custQty; grandAmount = Math.round((grandAmount+custAmount)*100)/100;
+    // Dòng CỘNG khách hàng
+    setCell(row,4,"CỘNG:",{bold:true,align:{horizontal:"right"}});
+    const sumH = invTotalRows.map(r=>`H${r}`).join("+") || "0";
+    const sumJ = invTotalRows.map(r=>`J${r}`).join("+") || "0";
+    setCell(row,8, { formula: sumH }, {bold:true,numFmt:"#,##0"});
+    setCell(row,10,{ formula: sumJ }, {bold:true,numFmt:"#,##0.00"});
+    boxRow(row);
+    custTotalRows.push(row);
+    row++;
   });
 
-  aoa.push(["","","","","","TỔNG CỘNG","",grandQty,"",grandAmount,"",""]);
-  aoa.push([]);
-  aoa.push(["","","","","","","","","","Lập bởi: Phòng XNK","",""]);
-  aoa.push(["","","","","","","","","","NGUYEN QUOC THI","",""]);
+  // ===== TỔNG CỘNG =====
+  setCell(row,4,"TỔNG CỘNG:",{bold:true,align:{horizontal:"right"}});
+  const gH = custTotalRows.map(r=>`H${r}`).join("+") || "0";
+  const gJ = custTotalRows.map(r=>`J${r}`).join("+") || "0";
+  setCell(row,8, { formula: gH }, {bold:true,numFmt:"#,##0"});
+  setCell(row,10,{ formula: gJ }, {bold:true,numFmt:"#,##0.00"});
+  boxRow(row);
+  row += 2;
 
-  // Tạo workbook
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [{wch:5},{wch:11},{wch:9},{wch:22},{wch:12},{wch:26},{wch:6},{wch:10},{wch:11},{wch:13},{wch:12},{wch:12}];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Nguồn thu");
-  XLSX.writeFile(wb, `BaoCao_NguonThu_${mo}-${y}.xlsx`);
+  // ===== Chân ký =====
+  const today = new Date();
+  ws.getCell(row,10).value = `Ngày ${String(today.getDate()).padStart(2,"0")} tháng ${String(today.getMonth()+1).padStart(2,"0")} năm ${today.getFullYear()}`;
+  ws.getCell(row,10).font = FONT;
+  row++;
+  ws.getCell(row,2).value = "Duyệt bởi:";  ws.getCell(row,2).font = FONT;
+  ws.getCell(row,10).value = "Lập bởi:";   ws.getCell(row,10).font = FONT;
+  row++;
+  ws.getCell(row,10).value = "Phòng XNK";  ws.getCell(row,10).font = FONT;
+  row += 4;
+  ws.getCell(row,2).value = "MASAYUKI TAKASHIMA"; ws.getCell(row,2).font = FONT_B;
+  ws.getCell(row,10).value = "NGUYỄN QUỐC THI";   ws.getCell(row,10).font = FONT_B;
+
+  // ===== Tải file =====
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `BaoCao_NguonThu_${mo}-${y}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 
   closeModal("modal-reports");
-  showToast("Đã xuất file Excel! Mở file để sửa & in.");
+  showToast("Đã xuất file Excel (có khung + công thức)!");
 };
 
 function fmtDateVN(str) {

@@ -1606,6 +1606,20 @@ window.reportNguonThu = async function() {
   const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
   const lastDay = new Date(+y, +mo, 0).getDate();
 
+  // Cảnh báo nếu còn lô chưa có số INV
+  const noInv = list.filter(s => !s.invoiceNo);
+  if (noInv.length) {
+    if (!confirm(`Vẫn còn ${noInv.length} lô hàng chưa có số INV. Bạn có muốn tiếp tục?`)) return;
+  }
+
+  // Ngày xuất báo cáo (dùng cho nhãn "Đã xuất" / "Dự kiến")
+  const today = new Date();
+  const todayVN = `${String(today.getDate()).padStart(2,"0")}/${String(today.getMonth()+1).padStart(2,"0")}/${today.getFullYear()}`;
+  const reportDateVN = asOf ? fmtDateVN(asOf) : todayVN;
+
+  // Khách hàng dùng LC (cùng danh sách với chức năng gán LC)
+  const LC_CUSTOMERS = ["MITSUWA", "SANMARINO", "HEMD (OGITA)", "ACROS"];
+
   // Nhóm theo khách hàng
   const byCustomer = {};
   list.forEach(s => {
@@ -1633,8 +1647,8 @@ window.reportNguonThu = async function() {
     { width: 10 }    // N Ghi chú
   ];
 
-  const FONT   = { name: "Arial", size: 11 };
-  const FONT_B = { name: "Arial", size: 11, bold: true };
+  const FONT   = { name: "Arial", size: 10 };
+  const FONT_B = { name: "Arial", size: 10, bold: true };
   const THIN   = { style: "thin" };
   const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
   const setCell = (r, c, val, opt={}) => {
@@ -1650,12 +1664,12 @@ window.reportNguonThu = async function() {
 
   // ===== Tiêu đề =====
   ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
-  ws.getCell("A1").font = { name: "Arial", size: 12 };
+  ws.getCell("A1").font = FONT;
   ws.getCell("A2").value = "Phòng Xuất Nhập Khẩu";
   ws.getCell("A2").font = FONT;
   ws.mergeCells("A3:N3");
   ws.getCell("A3").value = "BÁO CÁO NGUỒN THU";
-  ws.getCell("A3").font = { name: "Arial", size: 16, bold: true };
+  ws.getCell("A3").font = { name: "Arial", size: 13, bold: true };
   ws.getCell("A3").alignment = { horizontal: "center" };
   ws.mergeCells("A4:N4");
   ws.getCell("A4").value = asOf
@@ -1706,7 +1720,7 @@ window.reportNguonThu = async function() {
       if (!groupShipments.length) return;
       ws.mergeCells(row,2,row,14);
       setCell(row,2,label,{align:{horizontal:"left"}});
-      ws.getCell(row,2).font = { name:"Arial", size:11, italic:true };
+      ws.getCell(row,2).font = { name:"Arial", size:10, italic:true };
       boxRow(row); row++;
 
       groupShipments.forEach(s => {
@@ -1714,7 +1728,7 @@ window.reportNguonThu = async function() {
         if (!orders.length) return;
         const contUp = (s.container||"").toUpperCase();
         const pGiao = contUp.includes("AIR") ? "FCA" : "FOB";
-        const pTT   = s.lcId ? "L/C" : "T/T";
+        const pTT   = LC_CUSTOMERS.includes(cust) ? "L/C" : "T/T";
         const firstItemRow = row;
         orders.forEach((o,idx) => {
           const qty = parseFloat(o.qty)||0;
@@ -1722,7 +1736,7 @@ window.reportNguonThu = async function() {
           setCell(row,1,"");
           setCell(row,2, idx===0?pGiao:"", {align:{horizontal:"center"}});
           setCell(row,3, idx===0?pTT:"",   {align:{horizontal:"center"}});
-          setCell(row,4, idx===0?(s.invoiceNo||s.booking||""):(idx===1&&s.stuffingDate?`(Ngày: ${fmtDateVN(s.stuffingDate)})`:""));
+          setCell(row,4, idx===0?(s.invoiceNo||""):(idx===1&&s.stuffingDate?`(Ngày: ${fmtDateVN(s.stuffingDate)})`:""));
           setCell(row,5, o.contract||"");
           setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
           setCell(row,7, "Cái", {align:{horizontal:"center"}});
@@ -1742,8 +1756,8 @@ window.reportNguonThu = async function() {
         row++;
       });
     };
-    renderGroup(exported, "Đã xuất");
-    renderGroup(planned, `Dự kiến xuất từ 01/${mo}/${y} đến ${lastDay}/${mo}/${y}`);
+    renderGroup(exported, `Đã xuất từ 01/${mo}/${y} đến ${reportDateVN}`);
+    renderGroup(planned, `Dự kiến xuất từ ${reportDateVN} đến ${String(lastDay).padStart(2,"0")}/${mo}/${y}`);
 
     // Dòng CỘNG khách hàng
     setCell(row,4,"CỘNG:",{bold:true,align:{horizontal:"right"}});
@@ -1766,7 +1780,6 @@ window.reportNguonThu = async function() {
   row += 2;
 
   // ===== Chân ký =====
-  const today = new Date();
   ws.getCell(row,10).value = `Ngày ${String(today.getDate()).padStart(2,"0")} tháng ${String(today.getMonth()+1).padStart(2,"0")} năm ${today.getFullYear()}`;
   ws.getCell(row,10).font = FONT;
   row++;
@@ -1775,7 +1788,6 @@ window.reportNguonThu = async function() {
   row++;
   ws.getCell(row,10).value = "Phòng XNK";  ws.getCell(row,10).font = FONT;
   row += 4;
-  ws.getCell(row,2).value = "MASAYUKI TAKASHIMA"; ws.getCell(row,2).font = FONT_B;
   ws.getCell(row,10).value = "NGUYỄN QUỐC THI";   ws.getCell(row,10).font = FONT_B;
 
   // ===== Tải file =====

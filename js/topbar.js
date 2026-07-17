@@ -36,6 +36,12 @@ export function initTopbar(active) {
     <button class="tb-wheel-arrow" id="tb-wheel-next" aria-label="Tiến ngày"><i class="ti ti-chevron-right"></i></button>
   </div>
 
+  <div class="tb-search" id="tb-search">
+    <i class="ti ti-search tb-search-ico"></i>
+    <input type="text" id="tb-search-input" placeholder="Tìm Invoice / Booking / khách..." autocomplete="off">
+    <div class="tb-search-drop" id="tb-search-drop"></div>
+  </div>
+
   <div class="tb-right">
     <span id="user-greeting" style="display:none;font-size:13px;color:var(--text-muted);margin:0 4px"></span>
     <button class="btn btn-sm" id="btn-to-mobile" style="display:none" title="Chuyển về bản điện thoại"><i class="ti ti-device-mobile"></i> Bản điện thoại</button>
@@ -113,6 +119,109 @@ export function initTopbar(active) {
   tip.className = "tb-wtip";
   tip.id = "tb-wtip";
   document.body.appendChild(tip);
+
+  // ---------- TÌM KIẾM TOÀN CỤC ----------
+  if (!document.getElementById("tb-search-style")) {
+    const st = document.createElement("style");
+    st.id = "tb-search-style";
+    st.textContent = `
+      .tb-search{position:relative;flex:1;min-width:160px;max-width:340px;margin:0 10px;display:flex;align-items:center}
+      .tb-search-ico{position:absolute;left:10px;font-size:14px;color:var(--text-muted);pointer-events:none}
+      .tb-search input{width:100%;padding:6px 10px 6px 30px;font-size:13px;border:0.5px solid var(--border-md);
+        border-radius:8px;background:var(--bg-card);color:var(--text);outline:none}
+      .tb-search input:focus{border-color:#1B5E3A}
+      [data-theme="dark"] .tb-search input:focus{border-color:#97C459}
+      .tb-search-drop{display:none;position:absolute;top:calc(100% + 6px);left:0;width:max(100%,300px);max-height:60vh;overflow:auto;
+        background:var(--bg-card);border:0.5px solid var(--border-md);border-radius:10px;
+        box-shadow:0 8px 24px rgba(0,0,0,.18);z-index:500}
+      .tb-search-drop.open{display:block}
+      .tb-sr-head{padding:5px 12px;font-size:11px;color:var(--text-muted);background:var(--bg-secondary);position:sticky;top:0}
+      .tb-sr-item{padding:9px 12px;cursor:pointer;border-bottom:0.5px solid var(--border)}
+      .tb-sr-item:last-child{border-bottom:none}
+      .tb-sr-item:hover{background:var(--bg-secondary)}
+      .tb-sr-title{font-size:13px;font-weight:600;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+      .tb-sr-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+      .tb-sr-tag{font-size:10px;font-weight:400;border-radius:10px;padding:1px 7px;background:var(--green-bg);color:var(--green-text)}
+      .tb-sr-tag.cust{background:var(--amber-bg);color:var(--amber-text)}
+      .tb-sr-empty{padding:12px;font-size:12px;color:var(--text-muted);text-align:center}
+      @media (max-width:900px){.tb-search{display:none}}
+    `;
+    document.head.appendChild(st);
+  }
+
+  const sInput = document.getElementById("tb-search-input");
+  const sDrop  = document.getElementById("tb-search-drop");
+  const sClose = () => sDrop.classList.remove("open");
+  const esc = t => String(t??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+  function runSearch(q) {
+    q = q.trim().toLowerCase();
+    if (q.length < 2) { sClose(); return; }
+    const getter = window.__getAllShipments;
+    if (typeof getter !== "function") {
+      sDrop.innerHTML = `<div class="tb-sr-empty">Nhấn <b>Enter</b> để tìm "${esc(q)}" ở trang chủ</div>`;
+      sDrop.classList.add("open");
+      return;
+    }
+    const all = getter() || [];
+    const hitShip = [];
+    for (const s of all) {
+      const hay = [s.invoiceNo, s.booking, s.vessel,
+        ...(s.containers||[]).map(c=>c.no),
+        ...(s.orders||[]).map(o=>o.customer)].filter(Boolean).join(" ").toLowerCase();
+      if (hay.includes(q)) hitShip.push(s);
+      if (hitShip.length >= 30) break;
+    }
+    // sắp mới nhất trước
+    hitShip.sort((a,b)=>(b.stuffingDate||"")<(a.stuffingDate||"")?-1:1);
+    const custSet = [...new Set(all.flatMap(s=>(s.orders||[]).map(o=>o.customer)).filter(Boolean))]
+      .filter(c=>c.toLowerCase().includes(q)).slice(0,3);
+
+    let html = `<div class="tb-sr-head">Kết quả cho "${esc(q)}"</div>`;
+    if (!hitShip.length && !custSet.length) {
+      html += `<div class="tb-sr-empty">Không tìm thấy gì</div>`;
+    } else {
+      hitShip.slice(0,6).forEach(s => {
+        const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ");
+        const dateTx = s.stuffingDate ? s.stuffingDate.split("-").reverse().join("/") : "—";
+        html += `<div class="tb-sr-item" data-ship="${esc(s.id)}" data-period="${esc(s.period||"")}">
+          <div class="tb-sr-title">${esc(s.invoiceNo || s.booking || "(chưa có INV)")} <span class="tb-sr-tag">Lô hàng</span></div>
+          <div class="tb-sr-sub">${esc(custs||"—")} · ${esc(s.port||"—")} · đóng hàng ${dateTx}</div>
+        </div>`;
+      });
+      custSet.forEach(c => {
+        html += `<div class="tb-sr-item" data-cust="${esc(c)}">
+          <div class="tb-sr-title">${esc(c)} <span class="tb-sr-tag cust">Khách hàng</span></div>
+          <div class="tb-sr-sub">Xem danh sách lô của khách này</div>
+        </div>`;
+      });
+    }
+    sDrop.innerHTML = html;
+    sDrop.classList.add("open");
+  }
+
+  let sTimer = null;
+  sInput.addEventListener("input", () => { clearTimeout(sTimer); sTimer = setTimeout(()=>runSearch(sInput.value), 150); });
+  sInput.addEventListener("focus", () => { if (sInput.value.trim().length>=2) runSearch(sInput.value); });
+  sInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { sClose(); sInput.blur(); }
+    if (e.key === "Enter" && typeof window.__getAllShipments !== "function") {
+      const q = sInput.value.trim();
+      if (q.length >= 2) location.href = "index.html#search-" + encodeURIComponent(q);
+    }
+  });
+  sDrop.addEventListener("click", (e) => {
+    const item = e.target.closest(".tb-sr-item");
+    if (!item) return;
+    if (item.dataset.ship) {
+      sClose();
+      window.openShipmentPopup?.(item.dataset.ship, item.dataset.period);
+    } else if (item.dataset.cust) {
+      sClose();
+      window.__searchOpenCustomer?.(item.dataset.cust);
+    }
+  });
+  document.addEventListener("click", (e) => { if (!e.target.closest("#tb-search")) sClose(); });
 
   // ---------- SỰ KIỆN ----------
   themeIcon(document.getElementById("theme-icon"));

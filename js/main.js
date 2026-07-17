@@ -1663,7 +1663,7 @@ window.reportNguonThu = async function() {
 
   const FONT   = { name: "Arial", size: 10 };
   const FONT_B = { name: "Arial", size: 10, bold: true };
-  const FONT_H = { name: "Arial", size: 8 };
+  const FONT_H = { name: "Arial", size: 8, bold: true };
   const THIN   = { style: "thin" };
   const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
   const setCell = (r, c, val, opt={}) => {
@@ -1679,9 +1679,9 @@ window.reportNguonThu = async function() {
 
   // ===== Tiêu đề =====
   ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
-  ws.getCell("A1").font = FONT;
+  ws.getCell("A1").font = { name: "Arial", size: 12, bold: true };
   ws.getCell("A2").value = "Phòng Xuất Nhập Khẩu";
-  ws.getCell("A2").font = FONT;
+  ws.getCell("A2").font = { name: "Arial", size: 12, bold: true };
   ws.mergeCells("A3:N3");
   ws.getCell("A3").value = "BÁO CÁO NGUỒN THU";
   ws.getCell("A3").font = { name: "Arial", size: 13, bold: true };
@@ -1735,7 +1735,7 @@ window.reportNguonThu = async function() {
       if (!groupShipments.length) return;
       ws.mergeCells(row,2,row,14);
       setCell(row,2,label,{align:{horizontal:"left"}});
-      ws.getCell(row,2).font = { name:"Arial", size:10, italic:true };
+      ws.getCell(row,2).font = { name:"Arial", size:10, italic:true, underline:true };
       boxRow(row); row++;
 
       groupShipments.forEach(s => {
@@ -1835,6 +1835,15 @@ function showCalendar() {
   renderCutoffWarnings();
   renderCalendar();
 }
+window.__searchOpenCustomer = function(name) {
+  showListView("");                                  // "" = tất cả tháng
+  setTimeout(() => {
+    const sel = document.getElementById("filter-customer");
+    if (sel) { sel.value = name; renderList(); }
+    document.getElementById("list-view")?.scrollIntoView({behavior:"smooth"});
+  }, 50);
+};
+
 function showListView(month) {
   document.getElementById("calendar-view").style.display = "none";
   document.getElementById("list-view").style.display = "block";
@@ -2367,6 +2376,13 @@ onAuthChange(user => {
     } else if (location.hash === "#stats" && !isGuest()) {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => openStats(), 600);
+    } else if (location.hash.startsWith("#search-")) {
+      const q = decodeURIComponent(location.hash.slice(8));
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => {
+        const inp = document.getElementById("tb-search-input");
+        if (inp) { inp.value = q; inp.focus(); inp.dispatchEvent(new Event("input")); }
+      }, 700);
     }
   } else {
     stopData();

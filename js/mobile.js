@@ -90,6 +90,73 @@ function localISO(d) {
 }
 
 // ====== RENDER ======
+// ====== PIPELINE TIẾN ĐỘ (theo tháng đang xem) ======
+let _pipeOpen = sessionStorage.getItem("mPipeOpen") === "1";
+
+function ensurePipelineHost() {
+  let host = document.getElementById("m-pipeline");
+  if (host) return host;
+  // CSS
+  const st = document.createElement("style");
+  st.textContent = `
+    .m-pipe{background:var(--green-bg);border:1px solid var(--green-border);border-radius:12px;
+      padding:9px 12px;margin:8px 0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .m-pipe-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .m-pipe-title{font-size:12.5px;font-weight:600;color:var(--green-text);display:flex;align-items:center;gap:6px}
+    .m-pipe-count{font-size:12px;color:var(--green-text);white-space:nowrap}
+    .m-pipe-body{display:none;margin-top:8px}
+    .m-pipe.open .m-pipe-body{display:block}
+    .m-pipe-row{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text)}
+    .m-pipe-row b{font-variant-numeric:tabular-nums}
+    .m-pipe-track{height:5px;background:var(--bg-secondary);border-radius:3px;margin:3px 0 7px;overflow:hidden}
+    .m-pipe-fill{height:100%;background:var(--green-text);border-radius:3px;transition:width .25s}
+  `;
+  document.head.appendChild(st);
+  host = document.createElement("div");
+  host.id = "m-pipeline";
+  const warnsEl = document.getElementById("m-warnings");
+  warnsEl.parentNode.insertBefore(host, warnsEl.nextSibling);
+  return host;
+}
+
+function renderPipeline() {
+  const host = ensurePipelineHost();
+  const [y, mo] = curMonth.split("-");
+  const inMonth = shipmentsOfMonth(curMonth);
+  const stepDone = (s, id) => {
+    const v = (s.checklist||{})[id];
+    return v === "done" || v === "skip";
+  };
+  const STEPS = [
+    { id: 3,  label: "Request Booking" },
+    { id: 4,  label: "Đã có Booking" },
+    { id: 5,  label: "Đã có HS + CO Form" },
+    { id: 8,  label: "Tờ khai hải quan" },
+    { id: 9,  label: "Gửi chứng từ nháp" },
+    { id: 11, label: "Hoàn tất lô hàng", last: true },
+  ];
+  const total = inMonth.length;
+  const rows = STEPS.map(p => {
+    const n = inMonth.filter(s => stepDone(s, p.id)).length;
+    const pct = total ? Math.round(n/total*100) : 0;
+    return `<div class="m-pipe-row"><span${p.last?' style="font-weight:600"':''}>${p.label}</span><b>${n}/${total}</b></div>
+      <div class="m-pipe-track"><div class="m-pipe-fill" style="width:${pct}%"></div></div>`;
+  }).join("");
+  host.innerHTML = `
+    <div class="m-pipe ${_pipeOpen?"open":""}" id="m-pipe-card">
+      <div class="m-pipe-head">
+        <span class="m-pipe-title"><i class="ti ti-chart-bar"></i> Tiến độ tháng ${mo}/${y}</span>
+        <span class="m-pipe-count"><b>${total} lô</b> <i class="ti ti-chevron-${_pipeOpen?"up":"down"}" style="font-size:11px"></i></span>
+      </div>
+      <div class="m-pipe-body">${rows}</div>
+    </div>`;
+  document.getElementById("m-pipe-card").addEventListener("click", () => {
+    _pipeOpen = !_pipeOpen;
+    sessionStorage.setItem("mPipeOpen", _pipeOpen ? "1" : "0");
+    renderPipeline();
+  });
+}
+
 function render() {
   if (curShipId) renderDetail(curShipId);
   else renderHome();
@@ -116,6 +183,9 @@ function renderHome() {
       <i class="ti ti-${w.icon}" style="font-size:14px"></i>
       <span><b>${w.pre}:</b> ${custLabel(w.s)} — ${fullPort(w.s.port)}${w.s.invoiceNo?` · ${w.s.invoiceNo}`:""} · chưa tờ khai</span>
     </div>`).join("");
+
+  // Pipeline tiến độ theo tháng đang xem
+  renderPipeline();
 
   // Nhãn tháng
   const [y, mo] = curMonth.split("-");

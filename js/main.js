@@ -1620,41 +1620,56 @@ window.reportNguonThu = async function() {
   // Khách hàng dùng LC (cùng danh sách với chức năng gán LC)
   const LC_CUSTOMERS = ["MITSUWA", "SANMARINO", "HEMD (OGITA)", "ACROS"];
 
-  // Nhóm theo khách hàng
+  // Nhóm theo khách hàng — các khách có tiền tố dưới đây gộp thành 1 nhóm.
+  // Sau này thêm khách "MNIF XYZ" mới sẽ TỰ ĐỘNG gộp vào nhóm MNIF, không cần sửa code.
+  const GROUP_PREFIXES = ["MNIF", "FLEX"];
+  const groupKeyOf = name => {
+    const up = (name||"").toUpperCase().trim();
+    return GROUP_PREFIXES.find(p => up.startsWith(p)) || name;
+  };
   const byCustomer = {};
   list.forEach(s => {
-    const cust = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))][0] || "KHÁC";
+    const rawCust = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))][0] || "KHÁC";
+    const cust = groupKeyOf(rawCust);
     if (!byCustomer[cust]) byCustomer[cust] = [];
     byCustomer[cust].push(s);
   });
+  // Trong mỗi nhóm: sắp theo ngày đóng hàng tăng dần
+  Object.values(byCustomer).forEach(arr =>
+    arr.sort((a,b) => (a.stuffingDate||"9999") < (b.stuffingDate||"9999") ? -1 : 1));
 
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Nguồn thu", { views: [{ showGridLines: true }] });
+  const sheetName = reportDateVN.replaceAll("/","-");   // VD "17-07-2026"
+  const ws = wb.addWorksheet(sheetName, { views: [{ showGridLines: true }] });
   ws.columns = [
-    { width: 4.5 },  // A Stt
-    { width: 8 },    // B P.thức giao
-    { width: 8 },    // C P.thức TT
-    { width: 21 },   // D Số & ngày hóa đơn
-    { width: 14 },   // E Hợp đồng
-    { width: 32 },   // F Mã hàng
-    { width: 5 },    // G ĐVT
-    { width: 9 },    // H Số lượng
-    { width: 9.5 },  // I Đơn giá
-    { width: 12.5 }, // J Thành tiền
-    { width: 12.5 }, // K Ngày xuất
-    { width: 12.5 }, // L Ngày tàu chạy
-    { width: 10 },   // M Ngày thu tiền
-    { width: 10 }    // N Ghi chú
+    { width: 3.5 },  // A Stt
+    { width: 6.5 },  // B P.thức giao
+    { width: 6.5 },  // C P.thức TT
+    { width: 16 },   // D Số & ngày hóa đơn
+    { width: 11 },   // E Hợp đồng
+    { width: 24 },   // F Mã hàng
+    { width: 4.5 },  // G ĐVT
+    { width: 8 },    // H Số lượng
+    { width: 7.5 },  // I Đơn giá
+    { width: 11 },   // J Thành tiền
+    { width: 10.5 }, // K Ngày xuất
+    { width: 10.5 }, // L Ngày tàu chạy
+    { width: 8.5 },  // M Ngày thu tiền
+    { width: 8 }     // N Ghi chú
   ];
+  // Khổ in: lề hẹp, co vừa chiều ngang 1 trang
+  ws.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+    margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 } };
 
   const FONT   = { name: "Arial", size: 10 };
   const FONT_B = { name: "Arial", size: 10, bold: true };
+  const FONT_H = { name: "Arial", size: 8 };
   const THIN   = { style: "thin" };
   const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
   const setCell = (r, c, val, opt={}) => {
     const cell = ws.getCell(r, c);
     if (val !== undefined && val !== null && val !== "") cell.value = val;
-    cell.font = opt.bold ? FONT_B : FONT;
+    cell.font = opt.header ? FONT_H : (opt.bold ? FONT_B : FONT);
     if (opt.numFmt) cell.numFmt = opt.numFmt;
     if (opt.align)  cell.alignment = opt.align;
     if (opt.border !== false) cell.border = BOX;
@@ -1680,21 +1695,21 @@ window.reportNguonThu = async function() {
 
   // ===== Header bảng 3 tầng (dòng 6-8) =====
   const HC = { horizontal: "center", vertical: "center", wrapText: true };
-  ws.mergeCells("A6:A8"); setCell(6,1,"Stt",{bold:true,align:HC});
-  ws.mergeCells("B6:F6"); setCell(6,2,"TÊN KHÁCH HÀNG",{bold:true,align:HC});
-  ws.mergeCells("B7:B8"); setCell(7,2,"P.thức\ngiao hàng",{bold:true,align:HC});
-  ws.mergeCells("C7:C8"); setCell(7,3,"P.thức\nthanh toán",{bold:true,align:HC});
-  ws.mergeCells("D7:D8"); setCell(7,4,"Số & ngày\nhóa đơn",{bold:true,align:HC});
-  ws.mergeCells("E7:E8"); setCell(7,5,"Hợp đồng",{bold:true,align:HC});
-  ws.mergeCells("F7:F8"); setCell(7,6,"Mã hàng",{bold:true,align:HC});
-  ws.mergeCells("G6:G8"); setCell(6,7,"ĐVT",{bold:true,align:HC});
-  ws.mergeCells("H6:H8"); setCell(6,8,"SỐ\nLƯỢNG",{bold:true,align:HC});
-  ws.mergeCells("I6:I8"); setCell(6,9,"ĐƠN\nGIÁ\n(USD)",{bold:true,align:HC});
-  ws.mergeCells("J6:J8"); setCell(6,10,"THÀNH\nTIỀN\n(USD)",{bold:true,align:HC});
-  ws.mergeCells("K6:K8"); setCell(6,11,"NGÀY XUẤT\nHÀNG TẠI\nCTY",{bold:true,align:HC});
-  ws.mergeCells("L6:L8"); setCell(6,12,"NGÀY TÀU\nCHẠY\n(NGÀY BAY)",{bold:true,align:HC});
-  ws.mergeCells("M6:M8"); setCell(6,13,"NGÀY\nTHU\nTIỀN",{bold:true,align:HC});
-  ws.mergeCells("N6:N8"); setCell(6,14,"GHI\nCHÚ",{bold:true,align:HC});
+  ws.mergeCells("A6:A8"); setCell(6,1,"Stt",{header:true,align:HC});
+  ws.mergeCells("B6:F6"); setCell(6,2,"TÊN KHÁCH HÀNG",{header:true,align:HC});
+  ws.mergeCells("B7:B8"); setCell(7,2,"P.thức\ngiao hàng",{header:true,align:HC});
+  ws.mergeCells("C7:C8"); setCell(7,3,"P.thức\nthanh toán",{header:true,align:HC});
+  ws.mergeCells("D7:D8"); setCell(7,4,"Số & ngày\nhóa đơn",{header:true,align:HC});
+  ws.mergeCells("E7:E8"); setCell(7,5,"Hợp đồng",{header:true,align:HC});
+  ws.mergeCells("F7:F8"); setCell(7,6,"Mã hàng",{header:true,align:HC});
+  ws.mergeCells("G6:G8"); setCell(6,7,"ĐVT",{header:true,align:HC});
+  ws.mergeCells("H6:H8"); setCell(6,8,"SỐ\nLƯỢNG",{header:true,align:HC});
+  ws.mergeCells("I6:I8"); setCell(6,9,"ĐƠN\nGIÁ\n(USD)",{header:true,align:HC});
+  ws.mergeCells("J6:J8"); setCell(6,10,"THÀNH\nTIỀN\n(USD)",{header:true,align:HC});
+  ws.mergeCells("K6:K8"); setCell(6,11,"NGÀY XUẤT\nHÀNG TẠI\nCTY",{header:true,align:HC});
+  ws.mergeCells("L6:L8"); setCell(6,12,"NGÀY TÀU\nCHẠY\n(NGÀY BAY)",{header:true,align:HC});
+  ws.mergeCells("M6:M8"); setCell(6,13,"NGÀY\nTHU\nTIỀN",{header:true,align:HC});
+  ws.mergeCells("N6:N8"); setCell(6,14,"GHI\nCHÚ",{header:true,align:HC});
   for (let r=6;r<=8;r++) boxRow(r);
 
   // ===== Dữ liệu =====
@@ -1795,7 +1810,8 @@ window.reportNguonThu = async function() {
   const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `BaoCao_NguonThu_${mo}-${y}.xlsx`;
+  const [rd, rm, ry] = reportDateVN.split("/");
+  a.download = `Báo cáo nguồn thu ${rd} ${rm} ${ry.slice(2)}.xlsx`;
   a.click();
   URL.revokeObjectURL(a.href);
 

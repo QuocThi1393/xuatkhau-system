@@ -66,6 +66,21 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
   [data-theme="dark"] .cal-tag.pack { background:#3A2A10; color:#FAC775; border-left-color:#854F0B; }
   [data-theme="dark"] .cal-tag.ship { background:#0C2D4A; color:#7CC4F8; border-left-color:#185FA5; }
   [data-theme="dark"] .cal-tag:hover { filter:brightness(1.2); }
+
+  /* --- Modal Xuất Báo Cáo: mỗi báo cáo 1 thẻ --- */
+  .rp-card { border:0.5px solid var(--border-md); border-radius:var(--radius-md);
+             padding:13px; margin-bottom:11px; background:var(--bg-card); }
+  .rp-card:last-child { margin-bottom:0; }
+  .rp-card-head { display:flex; gap:9px; align-items:flex-start; margin-bottom:11px; }
+  .rp-card-head i { font-size:19px; color:var(--text-muted); flex-shrink:0; margin-top:1px; }
+  .rp-card-title { font-size:13.5px; font-weight:600; }
+  .rp-card-sub { font-size:11px; color:var(--text-muted); margin-top:1px; }
+  .rp-field { display:flex; gap:9px; align-items:center; margin-bottom:8px; }
+  .rp-lbl { width:62px; flex-shrink:0; font-size:12px; color:var(--text-muted); }
+  .rp-field .form-input { flex:1; min-width:0; }
+  .rp-quick { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px 71px; }
+  .rp-go { width:100%; justify-content:center; margin-top:3px; }
+  @media (max-width:520px){ .rp-quick { margin-left:0; } }
 </style>
 </head>
 <body>
@@ -272,28 +287,50 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
       Xuất Báo Cáo
       <span class="modal-close" onclick="closeModalById('modal-reports')"><i class="ti ti-x"></i></span>
     </div>
-    <div class="form-group">
-      <label class="form-label">Chọn tháng báo cáo</label>
-      <input type="month" class="form-input" id="rp-month">
-    </div>
-    <div class="form-group" id="rp-date-wrap" style="display:none">
-      <label class="form-label">Tính đến ngày (cho báo cáo nguồn thu)</label>
-      <input type="date" class="form-input" id="rp-asof">
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:8px">
-      <button class="btn" onclick="reportBocXep()" style="justify-content:flex-start;padding:14px">
-        <i class="ti ti-forklift" style="font-size:18px"></i>
-        <div style="text-align:left">
-          <div style="font-weight:500">Báo cáo bốc xếp</div>
-          <div style="font-size:11px;color:var(--text-muted)">Tổng hợp lô hàng trong tháng theo ngày đóng hàng</div>
+    <div class="rp-card">
+      <div class="rp-card-head">
+        <i class="ti ti-cash"></i>
+        <div>
+          <div class="rp-card-title">Báo cáo nguồn thu</div>
+          <div class="rp-card-sub">Doanh thu theo khách hàng, tách đã xuất / dự kiến</div>
         </div>
+      </div>
+      <div class="rp-field">
+        <span class="rp-lbl">Tháng</span>
+        <input type="month" class="form-input" id="rp-month">
+      </div>
+      <div class="rp-field" id="rp-date-wrap" style="display:none">
+        <span class="rp-lbl">Tính đến</span>
+        <input type="date" class="form-input" id="rp-asof">
+      </div>
+      <button class="btn btn-primary rp-go" onclick="reportNguonThu()">
+        <i class="ti ti-file-spreadsheet"></i> Xuất Excel nguồn thu
       </button>
-      <button class="btn" onclick="reportNguonThu()" style="justify-content:flex-start;padding:14px">
-        <i class="ti ti-cash" style="font-size:18px"></i>
-        <div style="text-align:left">
-          <div style="font-weight:500">Báo cáo nguồn thu</div>
-          <div style="font-size:11px;color:var(--text-muted)">Doanh thu theo khách hàng, tách đã xuất / dự kiến</div>
+    </div>
+
+    <div class="rp-card">
+      <div class="rp-card-head">
+        <i class="ti ti-forklift"></i>
+        <div>
+          <div class="rp-card-title">Báo cáo bốc xếp</div>
+          <div class="rp-card-sub">Tổng hợp lô hàng theo ngày đóng hàng</div>
         </div>
+      </div>
+      <div class="rp-field">
+        <span class="rp-lbl">Từ ngày</span>
+        <input type="date" class="form-input" id="rp-bx-from">
+      </div>
+      <div class="rp-field">
+        <span class="rp-lbl">Đến ngày</span>
+        <input type="date" class="form-input" id="rp-bx-to">
+      </div>
+      <div class="rp-quick">
+        <button type="button" class="btn btn-sm" data-bxq="this">Tháng này</button>
+        <button type="button" class="btn btn-sm" data-bxq="prev">Tháng trước</button>
+        <button type="button" class="btn btn-sm" data-bxq="7d">7 ngày qua</button>
+      </div>
+      <button class="btn btn-primary rp-go" onclick="reportBocXep()">
+        <i class="ti ti-file-spreadsheet"></i> Xuất Excel bốc xếp
       </button>
     </div>
   </div>
@@ -332,7 +369,7 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
   </div>
 </div>
 
-<div style="position:fixed;right:10px;bottom:6px;font-size:11px;color:#9a9a9a;z-index:5;pointer-events:none">© 2026 Nguyen Quoc Thi. All rights reserved. (Version 1.0.0)</div>
+<div style="position:fixed;right:10px;bottom:6px;font-size:11px;color:#9a9a9a;z-index:5;pointer-events:none">© 2026 Nguyen Quoc Thi. All rights reserved. (Version 2.0.0)</div>
 <div id="toast" class="toast"></div>
 
 <script type="module" src="js/main.js"></script>

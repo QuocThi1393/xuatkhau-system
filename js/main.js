@@ -803,9 +803,12 @@ window.openEditShipment = function(id) {
       const seal = row.querySelector(".ec-seal").value.trim();
       const tare = parseFloat(row.querySelector(".ec-tare").value) || 0;
       const gw   = parseFloat(row.querySelector(".ec-gw").value) || 0;
+      const ctns = parseFloat(row.querySelector(".ec-ctns").value) || 0;
+      const nw   = parseFloat(row.querySelector(".ec-nw").value) || 0;
+      const cbm  = parseFloat(row.querySelector(".ec-cbm").value) || 0;
       // Quy tắc số cont: 4 chữ cái + 7 chữ số (vd ABCD1234567)
       if (no && !/^[A-Z]{4}[0-9]{7}$/.test(no)) contError = no;
-      if (no || seal) containers.push({ type, no, seal, tare, gw });
+      if (no || seal) containers.push({ type, no, seal, tare, gw, ctns, nw, cbm });
     });
     if (contError) {
       alert(`Số cont "${contError}" không đúng quy tắc.\n\nĐúng phải là 4 chữ cái + 7 chữ số (ví dụ: ABCD1234567).\n\nVui lòng kiểm tra lại số cont.`);
@@ -862,28 +865,84 @@ window.openEditShipment = function(id) {
     if (contNoteEl) contNoteEl.style.display = fcl ? "none" : "block";
     if (fcl) refreshGwState();
   };
+  // Dải kiểm tra khớp tổng lô (chỉ hiện khi từ 2 cont)
+  window._refreshContSum = function() {
+    const rows = [...contListEl.querySelectorAll(".es-cont-row")];
+    let bar = document.getElementById("es-cont-sum");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "es-cont-sum";
+      bar.style.cssText = "font-size:11.5px;border-radius:var(--radius-md);padding:7px 10px;margin-top:2px";
+      contListEl.parentNode.insertBefore(bar, contListEl.nextSibling);
+    }
+    // Đánh số CONT 1, CONT 2... và bật/tắt tầng chi tiết
+    const multi = rows.length >= 2;
+    rows.forEach((r,i) => {
+      const b = r.querySelector(".ec-badge");
+      if (b) b.textContent = multi ? `CONT ${i+1}` : "CONT";
+      const d = r.querySelector(".ec-detail");
+      if (d) d.style.display = multi ? "flex" : "none";
+    });
+    if (!multi) { bar.style.display = "none"; return; }
+    bar.style.display = "block";
+
+    const num = (r,cls) => parseFloat(r.querySelector(cls)?.value) || 0;
+    const sum = cls => rows.reduce((a,r)=>a+num(r,cls), 0);
+    const tCtns = totalCtnsShip(s), tGw = totalGW(s), tCbm = totalCBM(s);
+    const sCtns = sum(".ec-ctns"), sGw = sum(".ec-gw"), sCbm = sum(".ec-cbm");
+    const r2 = v => Math.round(v*100)/100;
+    const bad = [];
+    if (r2(sCtns) !== r2(tCtns)) bad.push(`carton <b>${r2(sCtns).toLocaleString()}</b>/${r2(tCtns).toLocaleString()}`);
+    if (r2(sGw)   !== r2(tGw))   bad.push(`G.W <b>${r2(sGw).toLocaleString()}</b>/${r2(tGw).toLocaleString()}`);
+    if (r2(sCbm)  !== r2(tCbm))  bad.push(`CBM <b>${r2(sCbm).toLocaleString()}</b>/${r2(tCbm).toLocaleString()}`);
+    if (bad.length) {
+      bar.style.background = "var(--red-bg)";
+      bar.style.color = "var(--red-text)";
+      bar.style.border = "0.5px solid var(--red-border, var(--red-text))";
+      bar.innerHTML = `⚠ Lệch so với tổng lô: ${bad.join(" · ")} — Kiểm tra lại trước khi lưu.`;
+    } else {
+      bar.style.background = "var(--green-bg)";
+      bar.style.color = "var(--green-text)";
+      bar.style.border = "0.5px solid var(--green-border, var(--green-text))";
+      bar.innerHTML = `✓ Đã khớp tổng lô: ${r2(tCtns).toLocaleString()} ctns · ${r2(tGw).toLocaleString()} G.W · ${r2(tCbm).toLocaleString()} CBM`;
+    }
+  };
+
   function addContRow(c = {}) {
     const row = document.createElement("div");
     row.className = "es-cont-row";
-    row.style.cssText = "display:flex;gap:6px;margin-bottom:6px;align-items:center";
+    row.style.cssText = "border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:8px 9px;margin-bottom:7px;background:var(--bg-card)";
     row.innerHTML = `
-      <select class="form-select ec-type" style="width:82px;flex-shrink:0">
-        ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
-      </select>
-      <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1.1;min-width:0">
-      <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1;min-width:0">
-      <input class="form-input ec-tare" type="number" placeholder="Tare" value="${c.tare||""}" style="width:74px;flex-shrink:0" title="Trọng lượng vỏ container (cố định)">
-      <input class="form-input ec-gw" type="number" placeholder="G.W cont" value="${c.gw||""}" style="width:86px;flex-shrink:0" title="G.W riêng cont này (chỉ cần khi lô có từ 2 cont)">
-      <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>`;
-    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); });
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="ec-badge" style="font-size:10.5px;font-weight:700;color:var(--green-text);background:var(--green-bg);border-radius:5px;padding:3px 6px;flex-shrink:0;white-space:nowrap">CONT</span>
+        <select class="form-select ec-type" style="width:78px;flex-shrink:0">
+          ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
+        </select>
+        <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1.1;min-width:0">
+        <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1;min-width:0">
+        <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>
+      </div>
+      <div class="ec-detail" style="display:none;gap:6px;align-items:center;margin-top:7px;padding-left:56px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Chi tiết đóng:</span>
+        <input class="form-input ec-ctns" type="number" step="any" placeholder="Ctns" value="${c.ctns||""}" style="width:74px;flex-shrink:0" title="Số carton đóng trong cont này">
+        <input class="form-input ec-nw" type="number" step="any" placeholder="N.W" value="${c.nw||""}" style="width:82px;flex-shrink:0" title="Net weight cont này">
+        <input class="form-input ec-gw" type="number" step="any" placeholder="G.W" value="${c.gw||""}" style="width:82px;flex-shrink:0" title="Gross weight cont này">
+        <input class="form-input ec-cbm" type="number" step="any" placeholder="CBM" value="${c.cbm||""}" style="width:74px;flex-shrink:0" title="Thể tích cont này">
+        <input class="form-input ec-tare" type="number" step="any" placeholder="Tare" value="${c.tare||""}" style="width:70px;flex-shrink:0" title="Trọng lượng vỏ container">
+      </div>`;
+    row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); window._refreshContSum?.(); });
+    row.querySelectorAll(".ec-ctns,.ec-nw,.ec-gw,.ec-cbm").forEach(el =>
+      el.addEventListener("input", () => window._refreshContSum?.()));
     contListEl.appendChild(row);
     window._refreshFclLock();
+    window._refreshContSum?.();
   }
   // Nạp dữ liệu cũ: ưu tiên mảng containers, fallback contNo/sealNo cũ
   const existing = (s.containers && s.containers.length) ? s.containers
                  : (s.contNo||s.sealNo) ? [{type:"20GP", no:s.contNo||"", seal:s.sealNo||""}] : [];
   if (existing.length) existing.forEach(addContRow); else addContRow();
-  addContBtn.addEventListener("click", () => { if (isFclMethod()) addContRow(); });
+  window._refreshContSum?.();
+  addContBtn.addEventListener("click", () => { if (isFclMethod()) { addContRow(); window._refreshContSum?.(); } });
   window._refreshFclLock();
   openModal("modal-edit-shipment");
 };
@@ -1179,7 +1238,7 @@ document.getElementById("btn-open-mail").addEventListener("click", () => {
 });
 
 document.getElementById("filter-status").addEventListener("change", renderList);
-document.getElementById("filter-month").addEventListener("change", renderList);
+document.getElementById("filter-month").addEventListener("change", () => { renderList(); syncTopbarWidgets(); });
 document.getElementById("filter-customer").addEventListener("change", renderList);
 document.getElementById("filter-invoice").addEventListener("input", renderList);
 
@@ -1477,8 +1536,53 @@ document.getElementById("btn-reports").addEventListener("click", () => {
   document.getElementById("rp-month").value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   document.getElementById("rp-asof").value = now.toISOString().slice(0,10);
   document.getElementById("rp-date-wrap").style.display = "block";
+  ensureBxRange();
   openModal("modal-reports");
 });
+
+// Ô "Từ ngày / Đến ngày" cho báo cáo Bốc xếp — tạo động, không cần sửa index.html
+function ensureBxRange() {
+  const now = new Date();
+  const iso = d => d.toISOString().slice(0,10);
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastOfMonth  = new Date(now.getFullYear(), now.getMonth()+1, 0);
+
+  if (document.getElementById("rp-bx-from")) {
+    document.getElementById("rp-bx-from").value = iso(firstOfMonth);
+    document.getElementById("rp-bx-to").value   = iso(lastOfMonth);
+    return;
+  }
+  const btn = document.querySelector('[onclick*="reportBocXep"]');
+  if (!btn) return;
+  const wrap = document.createElement("div");
+  wrap.id = "rp-bx-wrap";
+  wrap.style.cssText = "margin-bottom:10px";
+  wrap.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
+      <span style="width:62px;font-size:12px;color:var(--text-muted)">Từ ngày</span>
+      <input type="date" id="rp-bx-from" class="form-input" style="flex:1">
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+      <span style="width:62px;font-size:12px;color:var(--text-muted)">Đến ngày</span>
+      <input type="date" id="rp-bx-to" class="form-input" style="flex:1">
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px">
+      <button type="button" class="btn btn-sm" data-bxq="this">Tháng này</button>
+      <button type="button" class="btn btn-sm" data-bxq="prev">Tháng trước</button>
+      <button type="button" class="btn btn-sm" data-bxq="7d">7 ngày qua</button>
+    </div>`;
+  btn.parentNode.insertBefore(wrap, btn);
+  document.getElementById("rp-bx-from").value = iso(firstOfMonth);
+  document.getElementById("rp-bx-to").value   = iso(lastOfMonth);
+  wrap.querySelectorAll("[data-bxq]").forEach(b => b.addEventListener("click", () => {
+    const n = new Date(); let f, t;
+    if (b.dataset.bxq === "this")      { f = new Date(n.getFullYear(), n.getMonth(), 1);   t = new Date(n.getFullYear(), n.getMonth()+1, 0); }
+    else if (b.dataset.bxq === "prev") { f = new Date(n.getFullYear(), n.getMonth()-1, 1); t = new Date(n.getFullYear(), n.getMonth(), 0); }
+    else                               { f = new Date(n.getTime() - 6*86400000);            t = n; }
+    document.getElementById("rp-bx-from").value = iso(f);
+    document.getElementById("rp-bx-to").value   = iso(t);
+  }));
+}
 
 function shipmentsOfMonth(month) {
   // month = "YYYY-MM"; lọc theo period, nếu không có period thì theo stuffingDate
@@ -1495,12 +1599,14 @@ function totalCtnsShip(s){ return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.c
 
 // --- BÁO CÁO BỐC XẾP ---
 window.reportBocXep = async function() {
-  const month = document.getElementById("rp-month").value;
-  if (!month) { showToast("Chọn tháng!"); return; }
-  let list = shipmentsOfMonth(month);
-  if (!list.length) { showToast("Không có lô hàng trong tháng này!"); return; }
+  const from = document.getElementById("rp-bx-from")?.value;
+  const to   = document.getElementById("rp-bx-to")?.value;
+  if (!from || !to) { showToast("Chọn khoảng ngày!"); return; }
+  if (from > to)    { showToast("Từ ngày phải trước Đến ngày!"); return; }
+  let list = allShipments.filter(s => s.stuffingDate && s.stuffingDate >= from && s.stuffingDate <= to);
+  if (!list.length) { showToast("Không có lô hàng trong khoảng ngày này!"); return; }
   list = [...list].sort((a,b)=>(a.stuffingDate||"9999")<(b.stuffingDate||"9999")?-1:1);
-  const [y,mo] = month.split("-");
+  const rangeTx = `Từ ${fmtDateVN(from)} đến ${fmtDateVN(to)}`;
 
   try { await loadExcelJS(); }
   catch(e) { showToast("Lỗi mạng: không tải được thư viện Excel. Thử lại!"); return; }
@@ -1553,7 +1659,7 @@ window.reportBocXep = async function() {
   ws.getCell("A3").font = { name: "Arial", size: 13, bold: true };
   ws.getCell("A3").alignment = { horizontal: "center" };
   ws.mergeCells("A4:L4");
-  ws.getCell("A4").value = `Tháng ${mo}/${y}`;
+  ws.getCell("A4").value = rangeTx;
   ws.getCell("A4").font = FONT;
   ws.getCell("A4").alignment = { horizontal: "center" };
 
@@ -1564,7 +1670,7 @@ window.reportBocXep = async function() {
 
   // ===== Dữ liệu =====
   let row = 7;
-  const firstRows = [];   // dòng đầu mỗi lô (chứa số) — để SUM
+  const sumRows = [];   // các dòng có số liệu — để SUM (không cộng trùng)
   let cFCL = 0, cLCL = 0, cAIR = 0, nCont = 0;
 
   list.forEach((s, i) => {
@@ -1580,20 +1686,28 @@ window.reportBocXep = async function() {
 
     const custs = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))].join(", ");
     const nRows = Math.max(1, conts.length);
-    const first = row;
-    firstRows.push(first);
 
     for (let k = 0; k < nRows; k++) {
       const c = conts[k] || {};
+      // Số liệu: nhiều cont thì ưu tiên số nhập tay của từng cont
+      const hasPerCont = conts.length > 1 && conts.some(x => parseFloat(x.ctns) || parseFloat(x.gw) || parseFloat(x.cbm));
+      if (hasPerCont) {
+        setCell(row,6, Math.round(parseFloat(c.ctns)||0), {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,7, Math.round(parseFloat(c.gw)||0),   {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,8, Math.round((parseFloat(c.cbm)||0)*100)/100, {numFmt:"#,##0.00", align:{horizontal:"right"}});
+        sumRows.push(row);
+      } else if (k === 0) {
+        setCell(row,6, Math.round(totalCtnsShip(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,7, Math.round(totalGW(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
+        setCell(row,8, Math.round(totalCBM(s)*100)/100, {numFmt:"#,##0.00", align:{horizontal:"right"}});
+        sumRows.push(row);
+      }
       if (k === 0) {
         setCell(row,1, i+1, {align:{horizontal:"center"}});
         setCell(row,2, fmtDateVN(s.stuffingDate), {align:{horizontal:"center"}});
         setCell(row,3, s.invoiceNo || "");
         setCell(row,4, custs);
         setCell(row,5, s.port || "", {align:{horizontal:"center"}});
-        setCell(row,6, Math.round(totalCtnsShip(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
-        setCell(row,7, Math.round(totalGW(s)), {numFmt:"#,##0", align:{horizontal:"right"}});
-        setCell(row,8, Math.round(totalCBM(s)*100)/100, {numFmt:"#,##0.00", align:{horizontal:"right"}});
         setCell(row,9, hinhthuc, {align:{horizontal:"center"}});
       }
       setCell(row,10, c.type || "", {align:{horizontal:"center"}});
@@ -1607,7 +1721,7 @@ window.reportBocXep = async function() {
   // ===== TỔNG CỘNG (công thức) =====
   ws.mergeCells(row,1,row,5);
   setCell(row,1,"TỔNG CỘNG:",{bold:true,align:{horizontal:"right"}});
-  const sumF = col => firstRows.map(r=>`${col}${r}`).join("+") || "0";
+  const sumF = col => sumRows.map(r=>`${col}${r}`).join("+") || "0";
   setCell(row,6, { formula: sumF("F") }, {bold:true,numFmt:"#,##0", align:{horizontal:"right"}});
   setCell(row,7, { formula: sumF("G") }, {bold:true,numFmt:"#,##0", align:{horizontal:"right"}});
   setCell(row,8, { formula: sumF("H") }, {bold:true,numFmt:"#,##0.00", align:{horizontal:"right"}});
@@ -1690,6 +1804,8 @@ window.reportNguonThu = async function() {
 
   // Khách hàng dùng LC (cùng danh sách với chức năng gán LC)
   const LC_CUSTOMERS = ["MITSUWA", "SANMARINO", "HEMD (OGITA)", "ACROS"];
+  // Hình thức chuyển phát nhanh / hàng không → FCA
+  const FCA_KEYS = ["AIR", "OCS", "DHL", "FEDEX", "EMS", "UPS", "TNT"];
 
   // Nhóm theo khách hàng — các khách có tiền tố dưới đây gộp thành 1 nhóm.
   // Sau này thêm khách "MNIF XYZ" mới sẽ TỰ ĐỘNG gộp vào nhóm MNIF, không cần sửa code.
@@ -1813,27 +1929,34 @@ window.reportNguonThu = async function() {
         const orders = s.orders||[];
         if (!orders.length) return;
         const contUp = (s.container||"").toUpperCase();
-        const pGiao = contUp.includes("AIR") ? "FCA" : "FOB";
+        const pGiao = FCA_KEYS.some(k => contUp.includes(k)) ? "FCA" : "FOB";
         const pTT   = LC_CUSTOMERS.includes(cust) ? "L/C" : "T/T";
         const firstItemRow = row;
+        const invDateStr = fmtDateVN(s.invoiceDate || s.stuffingDate);
         orders.forEach((o,idx) => {
           const qty = parseFloat(o.qty)||0;
           const price = parseFloat(o.unitPrice)||0;
           setCell(row,1,"");
           setCell(row,2, idx===0?pGiao:"", {align:{horizontal:"center"}});
           setCell(row,3, idx===0?pTT:"",   {align:{horizontal:"center"}});
-          setCell(row,4, idx===0?(s.invoiceNo||""):(idx===1&&s.stuffingDate?`(Ngày: ${fmtDateVN(s.stuffingDate)})`:""));
+          setCell(row,4, idx===0?(s.invoiceNo||""):(idx===1?`(Ngày: ${invDateStr})`:""));
           setCell(row,5, o.contract||"");
           setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
           setCell(row,7, "Cái", {align:{horizontal:"center"}});
           setCell(row,8, qty, {numFmt:"#,##0"});
           setCell(row,9, price||"", {numFmt:"0.00"});
           setCell(row,10, { formula:`ROUND(H${row}*I${row},2)` }, {numFmt:"#,##0.00"});
-          setCell(row,11, idx===0?fmtDateVN(s.stuffingDate):'"', {align:{horizontal:"center"}});
+          setCell(row,11, idx===0?invDateStr:'"', {align:{horizontal:"center"}});
           setCell(row,12, idx===0?fmtDateVN(s.etd):'"', {align:{horizontal:"center"}});
           setCell(row,13,""); setCell(row,14,"");
           row++;
         });
+        // Lô chỉ có 1 dòng hàng → thêm dòng phụ để ghi ngày Invoice
+        if (orders.length === 1) {
+          setCell(row,4, `(Ngày: ${invDateStr})`);
+          boxRow(row);
+          row++;
+        }
         // Dòng tổng hóa đơn (không chữ, in đậm) — theo file mẫu
         setCell(row,8, { formula:`SUM(H${firstItemRow}:H${row-1})` }, {bold:true,numFmt:"#,##0"});
         setCell(row,10,{ formula:`SUM(J${firstItemRow}:J${row-1})` }, {bold:true,numFmt:"#,##0.00"});
@@ -2138,9 +2261,10 @@ function syncTopbarWidgets() {
   });
   updateWheelEvents(evMap);
 
-  // 2. Tổng quan tháng hiện tại
+  // 2. Tổng quan — theo tháng đang chọn ở bộ lọc; "Tất cả tháng" → dùng tháng hiện tại
   const now = new Date();
-  const curMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+  const selMonth = document.getElementById("filter-month")?.value || "";
+  const curMonth = selMonth || `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
   const inMonth = allShipments.filter(s =>
     s.period ? s.period === curMonth : (s.stuffingDate||"").slice(0,7) === curMonth
   );
@@ -2157,7 +2281,7 @@ function syncTopbarWidgets() {
     { id: 11, label: "Hoàn tất lô hàng", last: true },
   ];
   updateSidebarStats({
-    monthLabel: `${String(now.getMonth()+1).padStart(2,"0")}/${now.getFullYear()}`,
+    monthLabel: `${curMonth.slice(5)}/${curMonth.slice(0,4)}`,
     total: inMonth.length,
     rows: PIPELINE_STEPS.map(p => ({
       label: p.label,

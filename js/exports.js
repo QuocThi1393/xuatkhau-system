@@ -185,11 +185,13 @@ function renderSIPrint(s) {
     if (conts.length === 1) {
       ctnsC = totalCtns; gwC = totalGWv; nwC = totalNW; cbmC = totalCBMv;
     } else {
+      // Ưu tiên số NHẬP TAY cho từng cont (ô "Chi tiết đóng" khi sửa lô).
+      // Chưa nhập ô nào thì mới ước lượng theo tỉ lệ G.W.
       gwC = parseFloat(c.gw)||0;
       const ratio = totalGWv ? gwC/totalGWv : 0;
-      ctnsC = Math.round(totalCtns*ratio);
-      nwC = Math.round(totalNW*ratio*100)/100;
-      cbmC = Math.round(totalCBMv*ratio*100)/100;
+      ctnsC = (parseFloat(c.ctns)||0) || Math.round(totalCtns*ratio);
+      nwC   = (parseFloat(c.nw)||0)   || Math.round(totalNW*ratio*100)/100;
+      cbmC  = (parseFloat(c.cbm)||0)  || Math.round(totalCBMv*ratio*100)/100;
     }
     return `<tr>
       <td>1 X ${c.type||s.container||""}: ${c.no||""} / ${c.seal||""}</td>

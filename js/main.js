@@ -1540,47 +1540,25 @@ document.getElementById("btn-reports").addEventListener("click", () => {
   openModal("modal-reports");
 });
 
-// Ô "Từ ngày / Đến ngày" cho báo cáo Bốc xếp — tạo động, không cần sửa index.html
+// Đặt sẵn ngày mặc định cho báo cáo Bốc xếp + 3 nút tắt (ô đã có trong index.html)
+let _bxQuickBound = false;
 function ensureBxRange() {
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const fromEl = document.getElementById("rp-bx-from");
+  const toEl   = document.getElementById("rp-bx-to");
+  if (!fromEl || !toEl) return;
   const now = new Date();
-  const iso = d => d.toISOString().slice(0,10);
-  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const lastOfMonth  = new Date(now.getFullYear(), now.getMonth()+1, 0);
-
-  if (document.getElementById("rp-bx-from")) {
-    document.getElementById("rp-bx-from").value = iso(firstOfMonth);
-    document.getElementById("rp-bx-to").value   = iso(lastOfMonth);
-    return;
-  }
-  const btn = document.querySelector('[onclick*="reportBocXep"]');
-  if (!btn) return;
-  const wrap = document.createElement("div");
-  wrap.id = "rp-bx-wrap";
-  wrap.style.cssText = "margin-bottom:10px";
-  wrap.innerHTML = `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:7px">
-      <span style="width:62px;font-size:12px;color:var(--text-muted)">Từ ngày</span>
-      <input type="date" id="rp-bx-from" class="form-input" style="flex:1">
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-      <span style="width:62px;font-size:12px;color:var(--text-muted)">Đến ngày</span>
-      <input type="date" id="rp-bx-to" class="form-input" style="flex:1">
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px">
-      <button type="button" class="btn btn-sm" data-bxq="this">Tháng này</button>
-      <button type="button" class="btn btn-sm" data-bxq="prev">Tháng trước</button>
-      <button type="button" class="btn btn-sm" data-bxq="7d">7 ngày qua</button>
-    </div>`;
-  btn.parentNode.insertBefore(wrap, btn);
-  document.getElementById("rp-bx-from").value = iso(firstOfMonth);
-  document.getElementById("rp-bx-to").value   = iso(lastOfMonth);
-  wrap.querySelectorAll("[data-bxq]").forEach(b => b.addEventListener("click", () => {
+  fromEl.value = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+  toEl.value   = iso(new Date(now.getFullYear(), now.getMonth()+1, 0));
+  if (_bxQuickBound) return;
+  _bxQuickBound = true;
+  document.querySelectorAll("[data-bxq]").forEach(b => b.addEventListener("click", () => {
     const n = new Date(); let f, t;
     if (b.dataset.bxq === "this")      { f = new Date(n.getFullYear(), n.getMonth(), 1);   t = new Date(n.getFullYear(), n.getMonth()+1, 0); }
     else if (b.dataset.bxq === "prev") { f = new Date(n.getFullYear(), n.getMonth()-1, 1); t = new Date(n.getFullYear(), n.getMonth(), 0); }
     else                               { f = new Date(n.getTime() - 6*86400000);            t = n; }
-    document.getElementById("rp-bx-from").value = iso(f);
-    document.getElementById("rp-bx-to").value   = iso(t);
+    fromEl.value = iso(f);
+    toEl.value   = iso(t);
   }));
 }
 

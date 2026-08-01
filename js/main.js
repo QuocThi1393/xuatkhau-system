@@ -605,7 +605,8 @@ function buildCard(s, admin) {
             <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
             ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
             <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
-            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>` : ""}
+            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>
+            <button class="btn btn-sm btn-export" onclick="openDebitNote('${s.id}')"><i class="ti ti-receipt"></i> Xuất Debit Note</button>` : ""}
           </div>
         </div>
       </div>

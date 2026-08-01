@@ -1,7 +1,7 @@
 // ====== XUẤT CHỨNG TỪ (SI + CO) — tách từ main.js ======
 import { db } from "./firebase-config.js";
 import { isGuest } from "./auth.js";
-import { showToast, fullPort, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName } from "./utils.js";
+import { showToast, fullPort, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, saveGuard } from "./utils.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 // Truy cập danh sách lô hàng do main.js quản lý
@@ -1161,5 +1161,506 @@ ${printBtn}
   w.document.title = pdfFileName("VGM", s.invoiceNo);
 };
 
+
+// ====================================================================
+// XUẤT DEBIT NOTE (Commercial Invoice + Debit Note, 1 file PDF 2 trang)
+// ====================================================================
+const DN_BANK_TEXT = "MUFG Bank, Ltd., Ho Chi Minh City Branch\n\nAccount No: 237191 (USD)\nSwift: BOTKVNVX\nAccount Name: TOMIYA SUMMIT GARMENT EXPORT CO., LTD";
+const DN_FCA_KEYS = ["AIR","OCS","DHL","FEDEX","EMS","UPS","TNT"];
+const DN_SIGNER_FALLBACK = { signerName: "NGUYEN THI OANH", signerTitle: "IMP-EXP DEPT LEADER" };
+const DN_STAMP_IMG = "debit-stamp.png"; // đặt file ảnh con dấu + chữ ký ở thư mục gốc, cùng cấp index.html
+
+function dnEsc(str) {
+  return (str==null ? "" : String(str)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+function dnNl2br(str) { return dnEsc(str).replace(/\n/g,"<br>"); }
+function dnMoney(n) { return Number(n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function dnInt(n) { return Math.round(n||0).toLocaleString("en-US"); }
+function dnDate(input) {
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d)) return "";
+  return `${d.toLocaleString("en-US",{month:"short"}).toUpperCase()} ${String(d.getDate()).padStart(2,"0")}, ${d.getFullYear()}`;
+}
+function dnTotalCartons(s) {
+  return (s.orders||[]).reduce((a,o)=>a+(parseFloat(o.ctns)||0),0);
+}
+function dnDefaultPriceTerm(s) {
+  const c = (s.container||"").toUpperCase();
+  return DN_FCA_KEYS.some(k=>c.includes(k)) ? "(FCA)" : "(FOB)";
+}
+
+// Đổi số tiền USD ra chữ tiếng Anh, kiểu "THIRTY SEVEN THOUSAND EIGHT HUNDRED FORTY FOUR DOLLARS AND SEVENTY SIX CENTS"
+function dnWordsUSD(amount) {
+  const ones = ["","ONE","TWO","THREE","FOUR","FIVE","SIX","SEVEN","EIGHT","NINE","TEN",
+    "ELEVEN","TWELVE","THIRTEEN","FOURTEEN","FIFTEEN","SIXTEEN","SEVENTEEN","EIGHTEEN","NINETEEN"];
+  const tens = ["","","TWENTY","THIRTY","FORTY","FIFTY","SIXTY","SEVENTY","EIGHTY","NINETY"];
+  function threeDigits(n) {
+    let s = "";
+    if (n >= 100) { s += ones[Math.floor(n/100)] + " HUNDRED "; n %= 100; }
+    if (n >= 20) { s += tens[Math.floor(n/10)] + " "; n %= 10; if (n) s += ones[n] + " "; }
+    else if (n > 0) { s += ones[n] + " "; }
+    return s;
+  }
+  function intToWords(n) {
+    if (n === 0) return "ZERO";
+    let s = "";
+    const billions = Math.floor(n / 1e9); n %= 1e9;
+    const millions = Math.floor(n / 1e6); n %= 1e6;
+    const thousands = Math.floor(n / 1e3); n %= 1e3;
+    if (billions) s += threeDigits(billions) + "BILLION ";
+    if (millions) s += threeDigits(millions) + "MILLION ";
+    if (thousands) s += threeDigits(thousands) + "THOUSAND ";
+    if (n) s += threeDigits(n);
+    return s.trim();
+  }
+  const rounded = Math.round((parseFloat(amount)||0) * 100) / 100;
+  const dollars = Math.floor(rounded);
+  const cents = Math.round((rounded - dollars) * 100);
+  let out = intToWords(dollars) + (dollars === 1 ? " DOLLAR" : " DOLLARS");
+  if (cents > 0) out += " AND " + intToWords(cents) + (cents === 1 ? " CENT" : " CENTS");
+  return out;
+}
+
+// Đo độ rộng chữ thật (dùng SVG ẩn) để tự giãn khung Shipping Mark theo đúng độ dài chữ
+function dnMeasureTextWidth(text, fontSize) {
+  try {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS,"svg");
+    svg.style.position = "absolute"; svg.style.visibility = "hidden"; svg.style.pointerEvents = "none";
+    svg.style.width = "0"; svg.style.height = "0";
+    const t = document.createElementNS(svgNS,"text");
+    t.setAttribute("font-family","Arial");
+    t.setAttribute("font-size", fontSize);
+    t.setAttribute("font-weight","bold");
+    t.textContent = text;
+    svg.appendChild(t);
+    document.body.appendChild(svg);
+    const w = t.getComputedTextLength() || (String(text).length * fontSize * 0.62);
+    document.body.removeChild(svg);
+    return w;
+  } catch(e) {
+    return String(text||"").length * fontSize * 0.62;
+  }
+}
+
+// Dựng SVG khung Shipping Mark (hình thoi / tam giác / oval / không viền), tự giãn theo độ dài chữ
+function dnBuildMarkSvg(shape, insideText) {
+  const lines = (insideText||"").split("\n").map(l=>l.trim()).filter(Boolean).slice(0,4);
+  const useLines = lines.length ? lines : [""];
+  const fontSize = 13, lineHeight = 17;
+  let maxW = 14;
+  useLines.forEach(l => { const w = dnMeasureTextWidth(l, fontSize); if (w > maxW) maxW = w; });
+  const n = useLines.length;
+  let padX, padTop, padBottom;
+  if (shape === "none") { padX=8; padTop=8; padBottom=8; }
+  else if (shape === "triangle") { padX=26; padTop=36; padBottom=10; }
+  else if (shape === "oval") { padX=34; padTop=18; padBottom=18; }
+  else { padX=40; padTop=22; padBottom=22; } // diamond (mặc định)
+  const textBlockH = n * lineHeight;
+  let W = maxW + padX*2, H = textBlockH + padTop + padBottom;
+  if (W < 60) W = 60;
+  if (H < 50) H = 50;
+  const cx = W/2;
+  let cy, shapeEl = "";
+  if (shape === "oval") {
+    cy = H/2;
+    shapeEl = `<ellipse cx="${cx}" cy="${H/2}" rx="${W/2-2}" ry="${H/2-2}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+  } else if (shape === "triangle") {
+    cy = H - padBottom - textBlockH/2;
+    shapeEl = `<polygon points="${cx},4 ${W-3},${H-3} 3,${H-3}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+  } else if (shape === "diamond") {
+    cy = H/2;
+    shapeEl = `<polygon points="${cx},2 ${W-2},${H/2} ${cx},${H-2} 2,${H/2}" fill="none" stroke="#000" stroke-width="1.4"/>`;
+  } else {
+    cy = H/2; shapeEl = "";
+  }
+  const startY = cy - (n-1)*lineHeight/2 + fontSize*0.35;
+  const textEls = useLines.map((l,i) =>
+    `<text x="${cx}" y="${startY+i*lineHeight}" text-anchor="middle" font-family="Arial" font-size="${fontSize}" font-weight="bold" fill="#000">${dnEsc(l)}</text>`
+  ).join("");
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
+}
+
+// Dựng nội dung 4 cột Description/Quantity/Unit Price/Amount dùng chung 1 ô (không kẻ ngang từng dòng hàng)
+function dnGoodsCells(s, priceLabel, goodsDescription) {
+  const orders = s.orders || [];
+  const descLines  = [`<div style="text-align:center">SHIPMENT OF (GOODS)</div>`, `<div>&nbsp;</div>`, `<div style="font-weight:bold">${dnEsc(goodsDescription||"SHIRTS")}</div>`, `<div>&nbsp;</div>`];
+  const qtyLines   = [`<div style="text-align:center">(PIECE)</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
+  const priceLines = [`<div style="text-align:center">${dnEsc(priceLabel)}</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
+  const amtLines   = [`<div style="text-align:center">(USD)</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
+  let totalQty = 0, totalAmt = 0;
+  orders.forEach(o => {
+    const qty = parseFloat(o.qty) || 0;
+    const price = parseFloat(o.unitPrice) || 0;
+    const amt = qty * price;
+    totalQty += qty; totalAmt += amt;
+    const idxTxt = [dnEsc(o.index||""), dnEsc(o.items||"")].filter(Boolean).join("&nbsp;&nbsp;");
+    descLines.push(`<div>${idxTxt}</div>`);
+    qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
+    priceLines.push(`<div style="text-align:right">US$${price.toFixed(3)}</div>`);
+    amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
+  });
+  if (!orders.length) {
+    descLines.push(`<div style="color:#999">(chưa có đơn hàng)</div>`);
+  }
+  return {
+    descHTML: descLines.join(""),
+    qtyHTML: qtyLines.join(""),
+    priceHTML: priceLines.join(""),
+    amtHTML: amtLines.join(""),
+    totalQty, totalAmt
+  };
+}
+
+// Tính URL đầy đủ cho file ảnh đặt cùng thư mục gốc (index.html), để load đúng trong cửa sổ in popup
+// dù trang đang chạy ở domain con hay dưới 1 thư mục con (kiểu GitHub Pages /ten-repo/...)
+function dnAssetUrl(filename) {
+  const path = window.location.pathname;
+  const dir = path.substring(0, path.lastIndexOf("/") + 1);
+  return window.location.origin + dir + filename;
+}
+
+// Tìm document khách hàng theo tên, có kèm ID (để ghi mẫu mặc định trở lại đúng khách)
+async function dnFindCustomerDoc(custNameToFind) {
+  if (!custNameToFind) return null;
+  try {
+    const { collection, getDocs } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDocs(collection(db, "customers"));
+    const target = normName(custNameToFind);
+    const found = snap.docs.find(d => normName(d.data().name) === target);
+    return found ? { id: found.id, data: found.data() } : null;
+  } catch(e) { return null; }
+}
+
+function dnMarksNosCell(dn, totalCtns) {
+  return `
+    <div style="text-decoration:underline;margin-bottom:6px">SHIPPING MARKS:</div>
+    ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
+    <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
+    <div style="margin-top:40px;font-weight:bold">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
+}
+
+function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
+  const g = dnGoodsCells(s, priceLabel, dn.goodsDescription);
+  return `
+  <table class="dn-g-table">
+    <tr>
+      <th style="width:20%">MARKS &amp; NOS.</th>
+      <th style="width:33%">DESCRIPTION</th>
+      <th style="width:13%">Quantity</th>
+      <th style="width:16%">Unit&nbsp;Price</th>
+      <th style="width:18%">AMOUNT</th>
+    </tr>
+    <tr>
+      <td rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td>${g.descHTML}</td>
+      <td>${g.qtyHTML}</td>
+      <td>${g.priceHTML}</td>
+      <td>${g.amtHTML}</td>
+    </tr>
+    <tr>
+      <td style="text-align:right;font-weight:bold">TOTAL</td>
+      <td style="text-align:right;font-weight:bold">${dnInt(g.totalQty)}</td>
+      <td></td>
+      <td style="text-align:right;font-weight:bold">US$${dnMoney(g.totalAmt)}</td>
+    </tr>
+  </table>`;
+}
+
+function dnSignatureHTML(dn) {
+  if (dn.includeStamp) {
+    return `<div style="text-align:right">
+      <img src="${dnAssetUrl(DN_STAMP_IMG)}" style="width:150px;max-height:110px" alt="Con dau va chu ky"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <div style="display:none;width:150px;height:96px;margin-left:auto;border:1px dashed #c00;color:#c00;font-size:10px;text-align:center;line-height:1.3;padding-top:30px;box-sizing:border-box">Thiếu file ${DN_STAMP_IMG}<br>ở thư mục gốc</div>
+    </div>`;
+  }
+  return `<div style="font-weight:bold;margin-bottom:44px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+    <div style="font-weight:bold;font-size:11px">${dnEsc(dn.signerName||DN_SIGNER_FALLBACK.signerName)}</div>
+    <div style="font-size:11px">${dnEsc(dn.signerTitle||DN_SIGNER_FALLBACK.signerTitle)}</div>`;
+}
+
+const DN_PRINT_STYLE = `
+  @page { size: A4; margin: 14mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color:#000; font-size:11px; line-height:1.45; margin:0; }
+  .dn-h-table { width:100%; border-collapse:collapse; font-size:11px; margin-bottom:14px; }
+  .dn-h-table td { border:1px solid #000; padding:5px 7px; vertical-align:top; }
+  .dn-g-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .dn-g-table td, .dn-g-table th { border:1px solid #000; padding:5px 6px; vertical-align:top; }
+  .dn-g-table th { font-size:11px; text-align:center; }
+  .lbl { display:inline-block; width:78px; vertical-align:top; }
+  .pagebreak { page-break-after: always; }
+  .noprint { text-align:center; padding:10px; }
+  @media print { .noprint { display:none; } }
+`;
+
+function dnLetterheadHTML() {
+  return `<div style="text-align:center;margin-bottom:12px">
+    <div style="font-weight:bold;font-size:15px;font-style:italic">TOMIYA SUMMIT GARMENT EXPORT CO. , LTD</div>
+    <div style="font-size:11px;margin-top:2px">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+    <div style="font-size:11px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
+  </div>`;
+}
+
+function dnMessrsBlockHTML(dn) {
+  const messrsLines = (dn.messrsText||"").split("\n").filter(Boolean);
+  const firstLine = messrsLines[0] || "";
+  const restLines = messrsLines.slice(1);
+  let out = `<span class="lbl">MESSRS.</span><b>${dnEsc(firstLine)}</b>`;
+  restLines.forEach(l => { out += `<br><span class="lbl">&nbsp;</span>${dnEsc(l)}`; });
+  if ((dn.consigneeText||"").trim()) {
+    const cLines = dn.consigneeText.split("\n").filter(Boolean);
+    out += `<br><br><span class="lbl">CONSIGNEE:</span><b>${dnEsc(cLines[0]||"")}</b>`;
+    cLines.slice(1).forEach(l => { out += `<br><span class="lbl">&nbsp;</span>${dnEsc(l)}`; });
+  }
+  return out;
+}
+
+// ---- TRANG 1: COMMERCIAL INVOICE ----
+function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
+  return `<div class="pagebreak">
+    ${dnLetterheadHTML()}
+    <table class="dn-h-table">
+      <tr>
+        <td colspan="2">
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-style:italic;font-weight:bold">COMMERCIAL INVOICE</span>
+            <span>DATE&nbsp;&nbsp;<b>${dnDate(s.invoiceDate)}</b></span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td style="width:64%">${dnMessrsBlockHTML(dn)}</td>
+        <td>INVOICE NO.<br><b>${dnEsc(s.invoiceNo)}</b><br><br>CONFIRMATION</td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="lbl">SHIPMENT</span>from<br><span class="lbl">Sailing</span><b>HOCHIMINH CITY, VIETNAM</b></td>
+      </tr>
+      <tr>
+        <td colspan="2"><span class="lbl">PAYMENT BY</span><b>T/T REMITTANCE</b><br><span class="lbl">Date of issue</span><br><span class="lbl">Issuing bank</span></td>
+      </tr>
+    </table>
+    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
+    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn)}</div>
+  </div>`;
+}
+
+// ---- TRANG 2: DEBIT NOTE ----
+function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
+  return `<div>
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+      <div style="font-weight:bold;font-style:italic;font-size:19px">TOSGAMEX</div>
+      <div style="text-align:center;flex:1">
+        <div style="font-weight:bold;font-size:13px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+        <div style="font-size:11px;margin-top:2px">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+        <div style="font-size:11px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
+      </div>
+      <div style="width:66px"></div>
+    </div>
+    <div style="border-top:1px solid #000;margin:8px 0 12px"></div>
+    <div>${dnMessrsBlockHTML(dn)}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:6px">
+      <div style="text-align:right">DEBIT NOTE NO.: <b>${dnEsc(s.invoiceNo)}</b><br>DATE: <b>${dnDate(new Date())}</b></div>
+    </div>
+    <div style="text-align:center;font-weight:bold;font-size:18px;margin:12px 0 8px">DEBIT NOTE</div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid #000;border-bottom:1px solid #000;padding:4px 2px;margin-bottom:10px">
+      <div>INVOICE NO.: <b>${dnEsc(s.invoiceNo)}</b></div>
+      <div>DATE OF INVOICE: <b>${dnDate(s.invoiceDate)}</b></div>
+    </div>
+    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
+    <div style="margin-top:10px"><b>AMOUNT IN WORD:</b> ${dnWordsUSD(dnGoodsCells(s, priceLabel, dn.goodsDescription).totalAmt)}</div>
+    <div style="margin-top:12px">Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
+    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn)}</div>
+  </div>`;
+}
+
+function renderDebitNotePrint(s) {
+  const dn = s.debitNote || {};
+  const priceLabel = dn.priceTerm || "FOB";
+  const totalCtns = dnTotalCartons(s);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Debit Note</title>
+    <style>${DN_PRINT_STYLE}</style></head><body>
+    <div class="noprint"><button onclick="window.print()">🖨 In / Lưu PDF</button></div>
+    ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns)}
+    ${dnRenderDebitNotePage(s, dn, priceLabel, totalCtns)}
+    </body></html>`;
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+  w.document.title = pdfFileName("Debit Note", s.invoiceNo);
+}
+
+// ---- MODAL: mở form nhập liệu Debit Note ----
+window.openDebitNote = async function(shipId) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+
+  const s = shipments().find(x=>x.id===shipId);
+  if (!s) return;
+  if (!s.invoiceNo || !s.invoiceDate) {
+    showToast("⚠ Lô hàng chưa có Số hóa đơn / Ngày hóa đơn — vào 'Sửa lô hàng' để nhập trước khi xuất Debit Note.");
+    return;
+  }
+
+  const custName = siCustomerName(s);
+  const existing = s.debitNote || {};
+  const cust = await findCustomerByName(db, custName);
+  const tpl = cust.debitNoteTemplate || {};
+
+  let signerDef = DN_SIGNER_FALLBACK;
+  try {
+    const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDoc(d2(db, "settings", "debitNote"));
+    if (snap.exists()) {
+      const data = snap.data();
+      signerDef = {
+        signerName: data.signerName || DN_SIGNER_FALLBACK.signerName,
+        signerTitle: data.signerTitle || DN_SIGNER_FALLBACK.signerTitle,
+      };
+    }
+  } catch(e) { /* chưa có quyền/collection settings -> dùng mặc định cứng, không chặn */ }
+
+  const def = {
+    messrsText: existing.messrsText || cust.consignee || "",
+    consigneeText: existing.consigneeText || "",
+    goodsDescription: existing.goodsDescription || tpl.goodsDescription || cust.description || "SHIRTS",
+    priceTerm: existing.priceTerm || tpl.priceTerm || dnDefaultPriceTerm(s),
+    markShape: existing.markShape || tpl.markShape || "none",
+    markInside: existing.markInside != null ? existing.markInside : (tpl.markInside || ""),
+    markOutside: existing.markOutside != null ? existing.markOutside : (s.shipMark || ""),
+    signerName: existing.signerName || signerDef.signerName,
+    signerTitle: existing.signerTitle || signerDef.signerTitle,
+    includeStamp: existing.includeStamp != null ? existing.includeStamp : true,
+  };
+
+  const priceOptions = ["(FOB)","(FCA)","CMPT (PROCESSING ON COMMISSION)"];
+  const priceOptionsHTML = priceOptions.map(p =>
+    `<option value="${p.replace(/"/g,"&quot;")}" ${def.priceTerm===p?"selected":""}>${p}</option>`
+  ).join("") + (priceOptions.includes(def.priceTerm) ? "" : `<option value="${(def.priceTerm||"").replace(/"/g,"&quot;")}" selected>${def.priceTerm}</option>`);
+
+  const shapeLabels = { diamond:"Hình thoi", triangle:"Hình tam giác", oval:"Hình oval", none:"Không viền" };
+  const shapeOptionsHTML = Object.keys(shapeLabels).map(k =>
+    `<option value="${k}" ${def.markShape===k?"selected":""}>${shapeLabels[k]}</option>`
+  ).join("");
+
+  document.getElementById("debitnote-form-body").innerHTML = `
+    <div class="form-group">
+      <label class="form-label">MESSRS (bên mua)</label>
+      <textarea class="form-textarea" id="dn-messrs" rows="3">${dnEsc(def.messrsText)}</textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label">CONSIGNEE (để trống nếu giao thẳng cho MESSRS)</label>
+      <textarea class="form-textarea" id="dn-consignee" rows="2" placeholder="Để trống nếu không có">${dnEsc(def.consigneeText)}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Tên hàng (Goods Description)</label>
+        <input class="form-input" id="dn-goods" value="${(def.goodsDescription||"").replace(/"/g,"&quot;")}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Đơn giá ghi là</label>
+        <select class="form-select" id="dn-priceterm">${priceOptionsHTML}</select>
+      </div>
+    </div>
+    <div class="form-group" style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px">Shipping Mark trên Debit Note</div>
+    <div style="display:flex;gap:14px;margin-bottom:6px">
+      <div style="width:40%;display:flex;flex-direction:column;gap:8px">
+        <div>
+          <label class="form-label">Chữ trong hình</label>
+          <textarea class="form-textarea" id="dn-inside" rows="2" placeholder="Cắt (Ctrl+X) từ ô bên phải" oninput="updateDnMarkPreview()" style="font-size:12px">${dnEsc(def.markInside)}</textarea>
+        </div>
+        <div>
+          <label class="form-label">Hình dạng</label>
+          <select class="form-select" id="dn-shape" onchange="updateDnMarkPreview()">${shapeOptionsHTML}</select>
+        </div>
+      </div>
+      <div style="flex:1">
+        <label class="form-label">Chữ ngoài hình <span style="color:var(--text-muted);font-weight:400">(tự copy Shipping Mark của lô)</span></label>
+        <textarea class="form-textarea" id="dn-outside" rows="5" style="font-size:12px">${dnEsc(def.markOutside)}</textarea>
+      </div>
+    </div>
+    <div class="form-label" style="margin-top:6px">Xem trước <span style="font-weight:400">(tự giãn theo độ dài chữ)</span></div>
+    <div style="border:1px solid var(--border);border-radius:8px;min-height:70px;padding:12px;display:flex;align-items:center;justify-content:center;margin-bottom:16px" id="dn-preview-box"></div>
+    <div style="font-size:11px;color:var(--text-muted);background:var(--bg-secondary);border-radius:8px;padding:9px 11px;margin-bottom:16px">
+      Dòng "TOTAL: xx CARTONS" tự động tính theo lô, thêm sau dòng cuối ô ngoài hình khi in — không cần gõ.
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Người ký</label>
+        <input class="form-input" id="dn-signer-name" value="${(def.signerName||"").replace(/"/g,"&quot;")}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Chức vụ</label>
+        <input class="form-input" id="dn-signer-title" value="${(def.signerTitle||"").replace(/"/g,"&quot;")}">
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:16px">
+      <input type="checkbox" id="dn-stamp" ${def.includeStamp?"checked":""}> Chèn con dấu và chữ ký
+    </label>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-debitnote')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveDebitNoteAndExport('${shipId}')"><i class="ti ti-file-export"></i> Lưu &amp; Xuất Debit Note</button>
+    </div>`;
+  openModal("modal-debitnote");
+  updateDnMarkPreview();
+};
+
+// Cập nhật khung xem trước Shipping Mark ngay trong modal (dùng chung công thức với bản in thật)
+window.updateDnMarkPreview = function() {
+  const shapeEl = document.getElementById("dn-shape");
+  const insideEl = document.getElementById("dn-inside");
+  const box = document.getElementById("dn-preview-box");
+  if (!shapeEl || !insideEl || !box) return;
+  box.innerHTML = dnBuildMarkSvg(shapeEl.value, insideEl.value);
+};
+
+window.saveDebitNoteAndExport = async function(shipId) {
+  const s = shipments().find(x=>x.id===shipId);
+  if (!s) return;
+
+  const debitNote = {
+    messrsText: document.getElementById("dn-messrs").value,
+    consigneeText: document.getElementById("dn-consignee").value,
+    goodsDescription: document.getElementById("dn-goods").value.trim() || "SHIRTS",
+    priceTerm: document.getElementById("dn-priceterm").value,
+    markShape: document.getElementById("dn-shape").value,
+    markInside: document.getElementById("dn-inside").value,
+    markOutside: document.getElementById("dn-outside").value,
+    signerName: document.getElementById("dn-signer-name").value.trim() || DN_SIGNER_FALLBACK.signerName,
+    signerTitle: document.getElementById("dn-signer-title").value.trim() || DN_SIGNER_FALLBACK.signerTitle,
+    includeStamp: document.getElementById("dn-stamp").checked,
+  };
+
+  if (!(await saveGuard(updateDoc(doc(db,"shipments",shipId), { debitNote }), "Đã lưu Debit Note!"))) return;
+
+  // Lưu lại làm mẫu mặc định cho khách này (không chặn luồng chính nếu lỗi)
+  try {
+    const custName = siCustomerName(s);
+    const custDoc = await dnFindCustomerDoc(custName);
+    if (custDoc) {
+      const { setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      await setDoc(doc(db,"customers",custDoc.id), {
+        debitNoteTemplate: {
+          goodsDescription: debitNote.goodsDescription,
+          priceTerm: debitNote.priceTerm,
+          markShape: debitNote.markShape,
+          markInside: debitNote.markInside,
+        }
+      }, { merge: true });
+    }
+  } catch(e) { console.warn("Không lưu được mẫu Debit Note theo khách:", e); }
+
+  // Lưu Người ký/Chức vụ làm mặc định chung toàn hệ thống (cần firestore.rules đã mở collection "settings")
+  try {
+    const { setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    await setDoc(doc(db,"settings","debitNote"), {
+      signerName: debitNote.signerName,
+      signerTitle: debitNote.signerTitle,
+    }, { merge: true });
+  } catch(e) { console.warn("Không lưu được mặc định người ký (kiểm tra firestore.rules đã thêm collection settings chưa):", e); }
+
+  closeModal("modal-debitnote");
+  renderDebitNotePrint({ ...s, debitNote });
+};
 
 window.showToast = window.showToast || showToast;

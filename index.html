@@ -358,6 +358,17 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
   </div>
 </div>
 
+<!-- MODAL: Xuất Debit Note (Commercial Invoice + Debit Note) -->
+<div class="modal-backdrop" id="modal-debitnote">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title">
+      Xuất Debit Note
+      <span class="modal-close" onclick="closeModalById('modal-debitnote')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="debitnote-form-body"></div>
+  </div>
+</div>
+
 <!-- MODAL: Xem lại / chỉnh sửa Draft CO -->
 <div class="modal-backdrop" id="modal-co-draft">
   <div class="modal" style="max-width:640px">

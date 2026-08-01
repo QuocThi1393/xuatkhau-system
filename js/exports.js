@@ -525,6 +525,12 @@ window.openCODraft = async function(shipId, type) {
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-items" checked> Items</label>
           </div>
         </div>
+        <div class="form-group">
+          <label class="form-label">7. Marks and numbers on packages</label>
+          <div style="display:flex;gap:16px;padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-rcep-shipmark"> Shipping Mark</label>
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">17.</label>
@@ -576,6 +582,7 @@ window.confirmExportCO = function() {
       showContract: document.getElementById("cod-contract").checked,
       showIndex: document.getElementById("cod-index").checked,
       showItems: document.getElementById("cod-items").checked,
+      showShipMark: document.getElementById("cod-rcep-shipmark").checked,
       backToBack: document.getElementById("cod-backtoback").checked,
       thirdParty: document.getElementById("cod-thirdparty").checked,
       retro: document.getElementById("cod-retro").checked,
@@ -708,7 +715,7 @@ ${(ov.producerText||"").replace(/\n/g,"<br>")}
 </tr>
 <tr style="border-top:1px solid #000;font-size:9px">
 <td style="border-right:1px solid #000"></td>
-<td style="border-right:1px solid #000"></td>
+<td style="border-right:1px solid #000;vertical-align:top;padding:2px 3px;font-size:8px;white-space:pre-line;word-break:break-word">${ov.showShipMark ? (s.shipMark||"").replace(/</g,"&lt;") : ""}</td>
 <td style="border-right:1px solid #000;text-align:center;font-weight:bold">${Math.round(totalCtns).toLocaleString()} CTNS &nbsp;&nbsp; ${goodsDescription}</td>
 <td style="border-right:1px solid #000"></td>
 <td style="border-right:1px solid #000"></td>

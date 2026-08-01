@@ -1831,16 +1831,21 @@ window.reportNguonThu = async function() {
   const FONT_H = { name: "Arial", size: 8, bold: true };
   const THIN   = { style: "thin" };
   const BOX    = { top: THIN, left: THIN, right: THIN, bottom: THIN };
+  const SIDE   = { left: THIN, right: THIN };                           // chỉ kẻ dọc
+  const SIDE_T = { left: THIN, right: THIN, top: THIN };                // kẻ dọc + trên
+  const SIDE_B = { left: THIN, right: THIN, bottom: THIN };             // kẻ dọc + dưới
   const setCell = (r, c, val, opt={}) => {
     const cell = ws.getCell(r, c);
     if (val !== undefined && val !== null && val !== "") cell.value = val;
     cell.font = opt.header ? FONT_H : (opt.bold ? FONT_B : FONT);
     if (opt.numFmt) cell.numFmt = opt.numFmt;
     if (opt.align)  cell.alignment = opt.align;
-    if (opt.border !== false) cell.border = BOX;
+    if (opt.border !== false) cell.border = opt.box || SIDE;
     return cell;
   };
-  const boxRow = r => { for (let c=1;c<=14;c++){ const cell=ws.getCell(r,c); cell.border=BOX; if(!cell.font) cell.font=FONT; } };
+  const fillRow = (r, bd) => { for (let c=1;c<=14;c++){ const cell=ws.getCell(r,c); cell.border=bd; if(!cell.font) cell.font=FONT; } };
+  const sideRow = r => fillRow(r, SIDE);   // chỉ kẻ dọc — dùng cho dòng dữ liệu
+  const boxRow  = r => fillRow(r, BOX);    // kẻ đủ 4 cạnh — header, CỘNG, TỔNG CỘNG
 
   // ===== Tiêu đề =====
   ws.getCell("A1").value = "CTY TNHH TOMIYA SUMMIT GARMENT EXPORT";
@@ -1890,7 +1895,7 @@ window.reportNguonThu = async function() {
     setCell(row,1,stt,{bold:true,align:{horizontal:"center"}});
     ws.mergeCells(row,2,row,14);
     setCell(row,2,cust,{bold:true});
-    boxRow(row); row++;
+    sideRow(row); row++;
 
     const exported = shipments.filter(isExported);
     const planned  = shipments.filter(s=>!isExported(s));
@@ -1901,7 +1906,7 @@ window.reportNguonThu = async function() {
       ws.mergeCells(row,2,row,14);
       setCell(row,2,label,{align:{horizontal:"left"}});
       ws.getCell(row,2).font = { name:"Arial", size:10, italic:true, underline:true };
-      boxRow(row); row++;
+      sideRow(row); row++;
 
       groupShipments.forEach(s => {
         const orders = s.orders||[];
@@ -1932,13 +1937,13 @@ window.reportNguonThu = async function() {
         // Lô chỉ có 1 dòng hàng → thêm dòng phụ để ghi ngày Invoice
         if (orders.length === 1) {
           setCell(row,4, `(Ngày: ${invDateStr})`);
-          boxRow(row);
+          sideRow(row);
           row++;
         }
         // Dòng tổng hóa đơn (không chữ, in đậm) — theo file mẫu
         setCell(row,8, { formula:`SUM(H${firstItemRow}:H${row-1})` }, {bold:true,numFmt:"#,##0"});
         setCell(row,10,{ formula:`SUM(J${firstItemRow}:J${row-1})` }, {bold:true,numFmt:"#,##0.00"});
-        boxRow(row);
+        sideRow(row);
         invTotalRows.push(row);
         row++;
       });
@@ -1952,7 +1957,7 @@ window.reportNguonThu = async function() {
     const sumJ = invTotalRows.map(r=>`J${r}`).join("+") || "0";
     setCell(row,8, { formula: sumH }, {bold:true,numFmt:"#,##0"});
     setCell(row,10,{ formula: sumJ }, {bold:true,numFmt:"#,##0.00"});
-    boxRow(row);
+    boxRow(row);   // dòng CỘNG: kẻ đủ để tách khối khách hàng
     custTotalRows.push(row);
     row++;
   });

@@ -561,6 +561,7 @@ function buildCard(s, admin) {
         <div class="ch-meta">
           ${s.invoiceNo?`<span><i class="ti ti-file-invoice"></i>INV: ${s.invoiceNo}</span>`:""}
           ${s.booking?`<span><i class="ti ti-bookmark"></i>Booking: ${s.booking}</span>`:""}
+          ${s.tkhq?`<span><i class="ti ti-stamp"></i>Số TKHQ: ${s.tkhq}</span>`:""}
           ${s.lcId?`<span><i class="ti ti-credit-card"></i>Đã gán LC</span>`:""}
         </div>
       </div>
@@ -673,6 +674,9 @@ window.ckToggle = async function(shipId, stepId, state, skippable) {
   else if (state==="done") next="pending";
   else next="pending";
   const s = allShipments.find(x=>x.id===shipId);
+  if (stepId === 8 && next === "done" && !(s && s.tkhq)) {
+    if (!confirm("Lô này chưa có Số TKHQ. Có muốn tiếp tục đánh dấu hoàn thành bước này không?")) return;
+  }
   await saveGuard(updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} }));
 };
 
@@ -786,6 +790,10 @@ window.openEditShipment = function(id) {
         <div class="form-group"><label class="form-label">Số hóa đơn (Invoice No.)</label><input class="form-input" id="es-invoice" value="${s.invoiceNo||""}" placeholder="862/26 -NPT"></div>
         <div class="form-group"><label class="form-label">Ngày hóa đơn</label><input type="date" class="form-input" id="es-invdate" value="${s.invoiceDate||""}"></div>
       </div>
+      <div class="form-group">
+        <label class="form-label">Số TKHQ (Tờ khai hải quan)</label>
+        <input class="form-input" id="es-tkhq" value="${s.tkhq||""}" placeholder="VD: 308730154260" maxlength="12" inputmode="numeric">
+      </div>
       <div class="form-footer">
         <button type="button" class="btn" onclick="closeModalById('modal-edit-shipment')">Hủy</button>
         <button type="submit" class="btn btn-primary"><i class="ti ti-check"></i> Lưu</button>
@@ -794,6 +802,10 @@ window.openEditShipment = function(id) {
   document.getElementById("form-edit-ship").addEventListener("submit", async e => {
     e.preventDefault();
     if (!confirm("Lưu thay đổi?")) return;
+    const tkhqVal = document.getElementById("es-tkhq").value.trim();
+    if (tkhqVal && !/^3\d{11}$/.test(tkhqVal)) {
+      if (!confirm(`Số TKHQ "${tkhqVal}" không đúng định dạng (12 chữ số, bắt đầu bằng 3). Vẫn muốn lưu?`)) return;
+    }
     const etdVal = document.getElementById("es-etd").value;
     // Thu thập danh sách container
     const containers = [];
@@ -830,6 +842,7 @@ window.openEditShipment = function(id) {
       period: document.getElementById("es-period").value||null,
       invoiceNo: document.getElementById("es-invoice").value.trim()||null,
       invoiceDate: document.getElementById("es-invdate").value||null,
+      tkhq: document.getElementById("es-tkhq").value.trim()||null,
     });
     closeModal("modal-edit-shipment");
     showToast("Đã cập nhật lô hàng!");
@@ -1600,7 +1613,7 @@ window.reportBocXep = async function() {
     { width: 10.5 }, // B Ngày đóng hàng
     { width: 15 },   // C Số INV
     { width: 22 },   // D Khách hàng
-    { width: 9 },    // E Cảng đến
+    { width: 13 },   // E Số TKHQ
     { width: 8 },    // F Số carton
     { width: 9.5 },  // G G.W
     { width: 7.5 },  // H CBM
@@ -1644,7 +1657,7 @@ window.reportBocXep = async function() {
 
   // ===== Header (dòng 6) =====
   const HC = { horizontal: "center", vertical: "center", wrapText: true };
-  const heads = ["STT","NGÀY ĐÓNG\nHÀNG","SỐ INV","KHÁCH HÀNG","CẢNG\nĐẾN","SỐ\nCARTON","G.W\n(KGS)","CBM","HÌNH THỨC\nXUẤT","LOẠI\nCONT","SỐ CONT","SỐ SEAL"];
+  const heads = ["STT","NGÀY ĐÓNG\nHÀNG","SỐ INV","KHÁCH HÀNG","SỐ\nTKHQ","SỐ\nCARTON","G.W\n(KGS)","CBM","HÌNH THỨC\nXUẤT","LOẠI\nCONT","SỐ CONT","SỐ SEAL"];
   heads.forEach((h,i) => setCell(6, i+1, h, {header:true, align:HC}));
 
   // ===== Dữ liệu =====
@@ -1686,7 +1699,7 @@ window.reportBocXep = async function() {
         setCell(row,2, fmtDateVN(s.stuffingDate), {align:{horizontal:"center"}});
         setCell(row,3, s.invoiceNo || "");
         setCell(row,4, custs);
-        setCell(row,5, s.port || "", {align:{horizontal:"center"}});
+        setCell(row,5, s.tkhq || "", {align:{horizontal:"center"}});
         setCell(row,9, hinhthuc, {align:{horizontal:"center"}});
       }
       setCell(row,10, c.type || "", {align:{horizontal:"center"}});
@@ -1941,7 +1954,8 @@ window.reportNguonThu = async function() {
           sideRow(row);
           row++;
         }
-        // Dòng tổng hóa đơn (không chữ, in đậm) — theo file mẫu
+        // Dòng tổng hóa đơn (in đậm, cột D hiện Số TKHQ nếu có) — theo file mẫu
+        setCell(row,4, s.tkhq ? `Số TKHQ: ${s.tkhq}` : "", {bold:true});
         setCell(row,8, { formula:`SUM(H${firstItemRow}:H${row-1})` }, {bold:true,numFmt:"#,##0"});
         setCell(row,10,{ formula:`SUM(J${firstItemRow}:J${row-1})` }, {bold:true,numFmt:"#,##0.00"});
         sideRow(row);

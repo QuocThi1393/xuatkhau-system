@@ -369,6 +369,17 @@ if (/Android|iPhone/i.test(navigator.userAgent) && !sessionStorage.getItem("forc
   </div>
 </div>
 
+<!-- MODAL: Thông tin chức vụ và con dấu (cài đặt chung, chỉ Admin) -->
+<div class="modal-backdrop" id="modal-debitnote-settings">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">
+      Thông tin chức vụ và con dấu
+      <span class="modal-close" onclick="closeModalById('modal-debitnote-settings')"><i class="ti ti-x"></i></span>
+    </div>
+    <div id="debitnote-settings-body"></div>
+  </div>
+</div>
+
 <!-- MODAL: Xem lại / chỉnh sửa Draft CO -->
 <div class="modal-backdrop" id="modal-co-draft">
   <div class="modal" style="max-width:640px">

@@ -2367,6 +2367,8 @@ const _btnBackup = document.getElementById("btn-backup");
 if (_btnBackup) _btnBackup.addEventListener("click", downloadBackup);
 const _btnRestore = document.getElementById("btn-restore");
 if (_btnRestore) _btnRestore.addEventListener("click", () => openRestore());
+const _btnDnSettings = document.getElementById("btn-debitnote-settings");
+if (_btnDnSettings) _btnDnSettings.addEventListener("click", () => openDebitNoteSettings());
 const _btnStats = document.getElementById("btn-stats");
 if (_btnStats) _btnStats.addEventListener("click", () => openStats());
 
@@ -2552,6 +2554,9 @@ onAuthChange(user => {
     } else if (location.hash === "#restore" && isAdmin()) {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => openRestore(), 600);
+    } else if (location.hash === "#debitnote-settings" && isAdmin()) {
+      history.replaceState(null, "", location.pathname);
+      setTimeout(() => openDebitNoteSettings(), 600);
     } else if (location.hash === "#stats" && !isGuest()) {
       history.replaceState(null, "", location.pathname);
       setTimeout(() => openStats(), 600);

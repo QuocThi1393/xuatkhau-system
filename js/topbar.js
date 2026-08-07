@@ -51,6 +51,7 @@ export function initTopbar(active) {
         <a href="users.html" class="tb-menu-item" id="nav-users"><i class="ti ti-user-cog"></i> Tài khoản</a>
         <button type="button" class="tb-menu-item" id="btn-backup"><i class="ti ti-database-export"></i> Backup dữ liệu ${isFriday ? warnHTML : ""}</button>
         <button type="button" class="tb-menu-item" id="btn-restore"><i class="ti ti-database-import"></i> Khôi phục từ backup</button>
+        <button type="button" class="tb-menu-item" id="btn-debitnote-settings"><i class="ti ti-stamp"></i> Thông tin chức vụ và con dấu</button>
       </div>
     </div>
     <button class="btn btn-sm" id="btn-theme" title="Đổi giao diện sáng/tối"><i class="ti ti-moon" id="theme-icon"></i></button>
@@ -258,6 +259,7 @@ export function initTopbar(active) {
     document.getElementById("btn-reports").addEventListener("click", () => location.href = "index.html#reports");
     document.getElementById("btn-backup").addEventListener("click", () => location.href = "index.html#backup");
     document.getElementById("btn-restore").addEventListener("click", () => location.href = "index.html#restore");
+    document.getElementById("btn-debitnote-settings").addEventListener("click", () => location.href = "index.html#debitnote-settings");
     document.getElementById("btn-stats").addEventListener("click", () => location.href = "index.html#stats");
   }
 

@@ -1,6 +1,6 @@
 // ====== XUẤT CHỨNG TỪ (SI + CO) — tách từ main.js ======
 import { db } from "./firebase-config.js";
-import { isGuest } from "./auth.js";
+import { isGuest, isAdmin } from "./auth.js";
 import { showToast, fullPort, openModal, closeModal, pdfFileName, siCustomerName, normName, findCustomerByName, saveGuard } from "./utils.js";
 import { doc, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
@@ -1168,7 +1168,6 @@ ${printBtn}
 const DN_BANK_TEXT = "MUFG Bank, Ltd., Ho Chi Minh City Branch\n\nAccount No: 237191 (USD)\nSwift: BOTKVNVX\nAccount Name: TOMIYA SUMMIT GARMENT EXPORT CO., LTD";
 const DN_FCA_KEYS = ["AIR","OCS","DHL","FEDEX","EMS","UPS","TNT"];
 const DN_SIGNER_FALLBACK = { signerName: "NGUYEN THI OANH", signerTitle: "IMP-EXP DEPT LEADER" };
-const DN_STAMP_IMG = "debit-stamp.png"; // đặt file ảnh con dấu + chữ ký ở thư mục gốc, cùng cấp index.html
 
 function dnEsc(str) {
   return (str==null ? "" : String(str)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -1294,7 +1293,7 @@ function dnGoodsCells(s, priceLabel, goodsDescription) {
     const price = parseFloat(o.unitPrice) || 0;
     const amt = qty * price;
     totalQty += qty; totalAmt += amt;
-    const idxTxt = [dnEsc(o.index||""), dnEsc(o.items||"")].filter(Boolean).join("&nbsp;&nbsp;");
+    const idxTxt = [dnEsc(o.contract||""), dnEsc(o.index||""), dnEsc(o.items||"")].filter(Boolean).join("&nbsp;&nbsp;");
     descLines.push(`<div>${idxTxt}</div>`);
     qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
     priceLines.push(`<div style="text-align:right">US$${price.toFixed(3)}</div>`);
@@ -1312,14 +1311,6 @@ function dnGoodsCells(s, priceLabel, goodsDescription) {
   };
 }
 
-// Tính URL đầy đủ cho file ảnh đặt cùng thư mục gốc (index.html), để load đúng trong cửa sổ in popup
-// dù trang đang chạy ở domain con hay dưới 1 thư mục con (kiểu GitHub Pages /ten-repo/...)
-function dnAssetUrl(filename) {
-  const path = window.location.pathname;
-  const dir = path.substring(0, path.lastIndexOf("/") + 1);
-  return window.location.origin + dir + filename;
-}
-
 // Tìm document khách hàng theo tên, có kèm ID (để ghi mẫu mặc định trở lại đúng khách)
 async function dnFindCustomerDoc(custNameToFind) {
   if (!custNameToFind) return null;
@@ -1332,48 +1323,50 @@ async function dnFindCustomerDoc(custNameToFind) {
   } catch(e) { return null; }
 }
 
-function dnMarksNosCell(dn, totalCtns) {
+function dnMarksNosCell(dn, totalCtns, orderLineCount) {
+  const outsideLines = (dn.markOutside||"").split("\n").filter(l=>l.trim()).length;
+  const gap = Math.max(20, (orderLineCount - outsideLines) * 14);
   return `
     <div style="text-decoration:underline;margin-bottom:6px">SHIPPING MARKS:</div>
     ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
     <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
-    <div style="margin-top:40px;font-weight:bold">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
+    <div style="margin-top:${gap}px;font-weight:bold;text-align:left">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
 }
 
 function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
   const g = dnGoodsCells(s, priceLabel, dn.goodsDescription);
+  const orderLineCount = (s.orders||[]).length || 1;
   return `
   <table class="dn-g-table">
     <tr>
-      <th style="width:20%">MARKS &amp; NOS.</th>
-      <th style="width:33%">DESCRIPTION</th>
-      <th style="width:13%">Quantity</th>
-      <th style="width:16%">Unit&nbsp;Price</th>
-      <th style="width:18%">AMOUNT</th>
+      <th style="width:24%">MARKS &amp; NOS.</th>
+      <th style="width:40%">DESCRIPTION</th>
+      <th style="width:8%">Quantity</th>
+      <th style="width:15%">Unit&nbsp;Price</th>
+      <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns, orderLineCount)}</td>
       <td>${g.descHTML}</td>
       <td>${g.qtyHTML}</td>
       <td>${g.priceHTML}</td>
       <td>${g.amtHTML}</td>
     </tr>
-    <tr>
-      <td style="text-align:right;font-weight:bold">TOTAL</td>
-      <td style="text-align:right;font-weight:bold">${dnInt(g.totalQty)}</td>
+    <tr class="dn-totrow">
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">TOTAL</td>
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">${dnInt(g.totalQty)}</td>
       <td></td>
-      <td style="text-align:right;font-weight:bold">US$${dnMoney(g.totalAmt)}</td>
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">US$${dnMoney(g.totalAmt)}</td>
     </tr>
   </table>`;
 }
 
-function dnSignatureHTML(dn) {
-  if (dn.includeStamp) {
-    return `<div style="text-align:right">
-      <img src="${dnAssetUrl(DN_STAMP_IMG)}" style="width:150px;max-height:110px" alt="Con dau va chu ky"
-        onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
-      <div style="display:none;width:150px;height:96px;margin-left:auto;border:1px dashed #c00;color:#c00;font-size:10px;text-align:center;line-height:1.3;padding-top:30px;box-sizing:border-box">Thiếu file ${DN_STAMP_IMG}<br>ở thư mục gốc</div>
-    </div>`;
+function dnSignatureHTML(dn, stampImageDataUrl) {
+  if (dn.includeStamp && stampImageDataUrl) {
+    return `<div style="text-align:right"><img src="${stampImageDataUrl}" style="width:190px;max-height:130px;object-fit:contain" alt="Con dau va chu ky"></div>`;
+  }
+  if (dn.includeStamp && !stampImageDataUrl) {
+    return `<div style="text-align:right;font-size:10px;color:#c00">(Chưa có ảnh con dấu — vào Admin ▸ Thông tin chức vụ và con dấu để thêm)</div>`;
   }
   return `<div style="font-weight:bold;margin-bottom:44px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
     <div style="font-weight:bold;font-size:11px">${dnEsc(dn.signerName||DN_SIGNER_FALLBACK.signerName)}</div>
@@ -1386,9 +1379,10 @@ const DN_PRINT_STYLE = `
   body { font-family: Arial, Helvetica, sans-serif; color:#000; font-size:11px; line-height:1.45; margin:0; }
   .dn-h-table { width:100%; border-collapse:collapse; font-size:11px; margin-bottom:14px; }
   .dn-h-table td { border:1px solid #000; padding:5px 7px; vertical-align:top; }
-  .dn-g-table { width:100%; border-collapse:collapse; font-size:11px; }
-  .dn-g-table td, .dn-g-table th { border:1px solid #000; padding:5px 6px; vertical-align:top; }
-  .dn-g-table th { font-size:11px; text-align:center; }
+  .dn-g-table { width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed; }
+  .dn-g-table td { border-left:1px solid #000; border-right:1px solid #000; padding:5px 6px; vertical-align:top; overflow:hidden; }
+  .dn-g-table th { font-size:11px; text-align:center; border:1px solid #000; border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; overflow:hidden; }
+  .dn-g-table tr.dn-totrow td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }
@@ -1442,7 +1436,7 @@ function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
       </tr>
     </table>
     ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
-    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn)}</div>
+    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
   </div>`;
 }
 
@@ -1471,7 +1465,7 @@ function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
     ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
     <div style="margin-top:10px"><b>AMOUNT IN WORD:</b> ${dnWordsUSD(dnGoodsCells(s, priceLabel, dn.goodsDescription).totalAmt)}</div>
     <div style="margin-top:12px">Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
-    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn)}</div>
+    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
   </div>`;
 }
 
@@ -1507,19 +1501,6 @@ window.openDebitNote = async function(shipId) {
   const cust = await findCustomerByName(db, custName);
   const tpl = cust.debitNoteTemplate || {};
 
-  let signerDef = DN_SIGNER_FALLBACK;
-  try {
-    const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const snap = await getDoc(d2(db, "settings", "debitNote"));
-    if (snap.exists()) {
-      const data = snap.data();
-      signerDef = {
-        signerName: data.signerName || DN_SIGNER_FALLBACK.signerName,
-        signerTitle: data.signerTitle || DN_SIGNER_FALLBACK.signerTitle,
-      };
-    }
-  } catch(e) { /* chưa có quyền/collection settings -> dùng mặc định cứng, không chặn */ }
-
   const def = {
     messrsText: existing.messrsText || cust.consignee || "",
     consigneeText: existing.consigneeText || "",
@@ -1528,8 +1509,6 @@ window.openDebitNote = async function(shipId) {
     markShape: existing.markShape || tpl.markShape || "none",
     markInside: existing.markInside != null ? existing.markInside : (tpl.markInside || ""),
     markOutside: existing.markOutside != null ? existing.markOutside : (s.shipMark || ""),
-    signerName: existing.signerName || signerDef.signerName,
-    signerTitle: existing.signerTitle || signerDef.signerTitle,
     includeStamp: existing.includeStamp != null ? existing.includeStamp : true,
   };
 
@@ -1574,28 +1553,16 @@ window.openDebitNote = async function(shipId) {
           <select class="form-select" id="dn-shape" onchange="updateDnMarkPreview()">${shapeOptionsHTML}</select>
         </div>
       </div>
-      <div style="flex:1">
-        <label class="form-label">Chữ ngoài hình <span style="color:var(--text-muted);font-weight:400">(tự copy Shipping Mark của lô)</span></label>
-        <textarea class="form-textarea" id="dn-outside" rows="5" style="font-size:12px">${dnEsc(def.markOutside)}</textarea>
+      <div style="flex:1;display:flex;flex-direction:column">
+        <label class="form-label">Chữ ngoài hình</label>
+        <textarea class="form-textarea" id="dn-outside" rows="10" style="font-size:12px;flex:1">${dnEsc(def.markOutside)}</textarea>
       </div>
     </div>
-    <div class="form-label" style="margin-top:6px">Xem trước <span style="font-weight:400">(tự giãn theo độ dài chữ)</span></div>
+    <div class="form-label" style="margin-top:6px">Xem trước</div>
     <div style="border:1px solid var(--border);border-radius:8px;min-height:70px;padding:12px;display:flex;align-items:center;justify-content:center;margin-bottom:16px" id="dn-preview-box"></div>
-    <div style="font-size:11px;color:var(--text-muted);background:var(--bg-secondary);border-radius:8px;padding:9px 11px;margin-bottom:16px">
-      Dòng "TOTAL: xx CARTONS" tự động tính theo lô, thêm sau dòng cuối ô ngoài hình khi in — không cần gõ.
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label class="form-label">Người ký</label>
-        <input class="form-input" id="dn-signer-name" value="${(def.signerName||"").replace(/"/g,"&quot;")}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Chức vụ</label>
-        <input class="form-input" id="dn-signer-title" value="${(def.signerTitle||"").replace(/"/g,"&quot;")}">
-      </div>
-    </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:16px">
       <input type="checkbox" id="dn-stamp" ${def.includeStamp?"checked":""}> Chèn con dấu và chữ ký
+      <span style="color:var(--text-muted);font-weight:400">(đổi ảnh/tên người ký ở Admin ▸ Thông tin chức vụ và con dấu)</span>
     </label>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-debitnote')">Hủy</button>
@@ -1618,6 +1585,21 @@ window.saveDebitNoteAndExport = async function(shipId) {
   const s = shipments().find(x=>x.id===shipId);
   if (!s) return;
 
+  const existing = s.debitNote || {};
+  let dnSettings = { signerName: DN_SIGNER_FALLBACK.signerName, signerTitle: DN_SIGNER_FALLBACK.signerTitle, stampImageDataUrl: "" };
+  try {
+    const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDoc(d2(db, "settings", "debitNote"));
+    if (snap.exists()) {
+      const data = snap.data();
+      dnSettings = {
+        signerName: data.signerName || DN_SIGNER_FALLBACK.signerName,
+        signerTitle: data.signerTitle || DN_SIGNER_FALLBACK.signerTitle,
+        stampImageDataUrl: data.stampImageDataUrl || "",
+      };
+    }
+  } catch(e) { console.warn("Không đọc được cài đặt Người ký/Con dấu (Admin ▸ Thông tin chức vụ và con dấu):", e); }
+
   const debitNote = {
     messrsText: document.getElementById("dn-messrs").value,
     consigneeText: document.getElementById("dn-consignee").value,
@@ -1626,8 +1608,9 @@ window.saveDebitNoteAndExport = async function(shipId) {
     markShape: document.getElementById("dn-shape").value,
     markInside: document.getElementById("dn-inside").value,
     markOutside: document.getElementById("dn-outside").value,
-    signerName: document.getElementById("dn-signer-name").value.trim() || DN_SIGNER_FALLBACK.signerName,
-    signerTitle: document.getElementById("dn-signer-title").value.trim() || DN_SIGNER_FALLBACK.signerTitle,
+    // Người ký/Chức vụ: giữ nguyên giá trị đã lưu từ lần xuất trước (đúng lịch sử), lô mới thì lấy mặc định hiện hành
+    signerName: existing.signerName || dnSettings.signerName,
+    signerTitle: existing.signerTitle || dnSettings.signerTitle,
     includeStamp: document.getElementById("dn-stamp").checked,
   };
 
@@ -1650,17 +1633,98 @@ window.saveDebitNoteAndExport = async function(shipId) {
     }
   } catch(e) { console.warn("Không lưu được mẫu Debit Note theo khách:", e); }
 
-  // Lưu Người ký/Chức vụ làm mặc định chung toàn hệ thống (cần firestore.rules đã mở collection "settings")
+  closeModal("modal-debitnote");
+  // Ảnh con dấu luôn lấy bản MỚI NHẤT trong Cài đặt lúc in (không lưu cứng theo từng lô)
+  renderDebitNotePrint({ ...s, debitNote, _stampImageDataUrl: dnSettings.stampImageDataUrl });
+};
+
+// ---- CÀI ĐẶT CHUNG: Người ký / Chức vụ / Ảnh con dấu (Admin ▸ Thông tin chức vụ và con dấu) ----
+window.openDebitNoteSettings = async function() {
+  if (!isAdmin()) { showToast("Chỉ Admin mới chỉnh được mục này."); return; }
+
+  let cur = { signerName: DN_SIGNER_FALLBACK.signerName, signerTitle: DN_SIGNER_FALLBACK.signerTitle, stampImageDataUrl: "" };
+  try {
+    const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const snap = await getDoc(d2(db, "settings", "debitNote"));
+    if (snap.exists()) {
+      const data = snap.data();
+      cur = {
+        signerName: data.signerName || cur.signerName,
+        signerTitle: data.signerTitle || cur.signerTitle,
+        stampImageDataUrl: data.stampImageDataUrl || "",
+      };
+    }
+  } catch(e) {
+    showToast("⚠ Chưa đọc được cài đặt — kiểm tra đã deploy firestore.rules (collection settings) chưa.");
+    console.warn(e);
+  }
+
+  window.__dnNewStampDataUrl = null;
+
+  document.getElementById("debitnote-settings-body").innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Người ký</label>
+        <input class="form-input" id="dns-signer-name" value="${dnEsc(cur.signerName).replace(/"/g,"&quot;")}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Chức vụ</label>
+        <input class="form-input" id="dns-signer-title" value="${dnEsc(cur.signerTitle).replace(/"/g,"&quot;")}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Ảnh con dấu + chữ ký</label>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div id="dns-stamp-preview" style="width:110px;height:78px;border:1px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);text-align:center;overflow:hidden;flex-shrink:0">
+          ${cur.stampImageDataUrl ? `<img src="${cur.stampImageDataUrl}" style="max-width:100%;max-height:100%;object-fit:contain">` : "Chưa có ảnh"}
+        </div>
+        <div style="flex:1">
+          <button type="button" class="btn" onclick="document.getElementById('dns-stamp-file').click()"><i class="ti ti-upload"></i> Đổi ảnh</button>
+          <input type="file" id="dns-stamp-file" accept="image/png,image/jpeg" style="display:none">
+          <div id="dns-stamp-info" style="font-size:11px;color:var(--text-muted);margin-top:6px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="form-footer">
+      <button type="button" class="btn" onclick="closeModalById('modal-debitnote-settings')">Hủy</button>
+      <button type="button" class="btn btn-primary" onclick="saveDebitNoteSettings()"><i class="ti ti-device-floppy"></i> Lưu</button>
+    </div>`;
+
+  document.getElementById("dns-stamp-file").addEventListener("change", function(e){
+    const file = e.target.files[0];
+    if (!file) return;
+    const info = document.getElementById("dns-stamp-info");
+    const sizeKb = Math.round(file.size/1024);
+    const reader = new FileReader();
+    reader.onload = function(ev){
+      window.__dnNewStampDataUrl = ev.target.result;
+      document.getElementById("dns-stamp-preview").innerHTML = `<img src="${ev.target.result}" style="max-width:100%;max-height:100%;object-fit:contain">`;
+      const big = sizeKb > 700;
+      info.textContent = file.name + " — " + sizeKb + " KB" + (big ? " (khá nặng, nên nén nhỏ lại)" : "");
+      info.style.color = big ? "#c0392b" : "";
+    };
+    reader.readAsDataURL(file);
+  });
+
+  openModal("modal-debitnote-settings");
+};
+
+window.saveDebitNoteSettings = async function() {
+  const signerName = document.getElementById("dns-signer-name").value.trim() || DN_SIGNER_FALLBACK.signerName;
+  const signerTitle = document.getElementById("dns-signer-title").value.trim() || DN_SIGNER_FALLBACK.signerTitle;
+  const payload = { signerName, signerTitle };
+  if (window.__dnNewStampDataUrl) payload.stampImageDataUrl = window.__dnNewStampDataUrl;
+
   try {
     const { setDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    await setDoc(doc(db,"settings","debitNote"), {
-      signerName: debitNote.signerName,
-      signerTitle: debitNote.signerTitle,
-    }, { merge: true });
-  } catch(e) { console.warn("Không lưu được mặc định người ký (kiểm tra firestore.rules đã thêm collection settings chưa):", e); }
-
-  closeModal("modal-debitnote");
-  renderDebitNotePrint({ ...s, debitNote });
+    await setDoc(doc(db,"settings","debitNote"), payload, { merge: true });
+    showToast("Đã lưu Thông tin chức vụ và con dấu!");
+    window.__dnNewStampDataUrl = null;
+    closeModal("modal-debitnote-settings");
+  } catch(e) {
+    showToast("⚠ Lưu thất bại — kiểm tra đã deploy firestore.rules (collection settings) chưa.");
+    console.warn(e);
+  }
 };
 
 window.showToast = window.showToast || showToast;

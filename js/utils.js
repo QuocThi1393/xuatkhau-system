@@ -111,9 +111,9 @@ export function renderChecklist(container, checklist = {}, onChange) {
 }
 
 // ====== HÀM DÙNG CHUNG CHO XUẤT CHỨNG TỪ ======
-// Tên file PDF: bỏ "/", đổi "-" thành cách, bỏ ký tự cấm. VD "485/26-TOYOTA" -> "Packing list 48526 TOYOTA"
+// Tên file PDF: đổi "/" và "-" thành khoảng trắng, bỏ ký tự cấm. VD "485/26-TOYOTA" -> "Packing list 485 26 TOYOTA"
 export function pdfFileName(prefix, inv) {
-  const clean = (inv||"").replace(/\//g,"").replace(/-/g," ").replace(/[\\:*?"<>|]/g,"").replace(/\s+/g," ").trim();
+  const clean = (inv||"").replace(/\//g," ").replace(/-/g," ").replace(/[\\:*?"<>|]/g,"").replace(/\s+/g," ").trim();
   return clean ? `${prefix} ${clean}` : prefix;
 }
 

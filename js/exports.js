@@ -1242,30 +1242,30 @@ function dnMeasureTextWidth(text, fontSize) {
   }
 }
 
-// Dựng SVG khung Shipping Mark (hình thoi / tam giác / oval / không viền), tự giãn theo độ dài chữ.
-// Tính bề rộng cần thiết THEO ĐÚNG vị trí dọc của từng dòng (không dùng 1 mức đệm chung), vì
-// oval/thoi thu hẹp dần ra xa tâm — dòng không nằm giữa cần đệm ngang RỘNG HƠN dòng nằm giữa,
-// nếu không sẽ bị mất chữ ở 2 đầu (đã xảy ra thực tế với "FLEX JAPAN CO.,LTD").
-function dnBuildMarkSvg(shape, insideText) {
-  const lines = (insideText||"").split("\n").map(l=>l.trim()).filter(Boolean).slice(0,4);
-  const useLines = lines.length ? lines : [""];
-  const fontSize = 13, lineHeight = 17;
+// Dựng SVG khung Shipping Mark (hình thoi / tam giác / oval / không viền), tự giãn theo độ dài chữ,
+// nhưng KHÔNG vượt quá bề rộng cột MARKS & NOS — nếu chữ dài quá thì tự giảm cỡ chữ cho vừa,
+// thay vì để hình phình to hơn cột (đã xảy ra thực tế với "FLEX JAPAN CO.,LTD").
+const DN_MARK_MAX_W = 145; // px — vừa cột 24% trang A4 (182mm khổ in), trừ đệm ô
+const DN_MARK_MIN_FONT = 8;
+
+function dnMarkGeometryAt(shape, useLines, fontSize) {
   const n = useLines.length;
-  const widths = useLines.map(l => Math.max(14, dnMeasureTextWidth(l, fontSize)));
+  const lineHeight = fontSize + 4;
+  const widths = useLines.map(l => Math.max(12, dnMeasureTextWidth(l, fontSize)));
   const textBlockH = n * lineHeight;
 
   let padTop, padBottom, minPad;
-  if (shape === "none") { padTop=8; padBottom=8; minPad=6; }
-  else if (shape === "triangle") { padTop=36; padBottom=10; minPad=14; }
-  else if (shape === "oval") { padTop=18; padBottom=18; minPad=16; }
-  else { padTop=20; padBottom=20; minPad=18; } // diamond
+  if (shape === "none") { padTop=6; padBottom=6; minPad=5; }
+  else if (shape === "triangle") { padTop=Math.round(fontSize*2.7); padBottom=8; minPad=11; }
+  else if (shape === "oval") { padTop=14; padBottom=14; minPad=13; }
+  else { padTop=16; padBottom=16; minPad=14; } // diamond
 
-  const H = Math.max(50, textBlockH + padTop + padBottom);
+  const H = Math.max(46, textBlockH + padTop + padBottom);
   const cyDefault = H/2;
   const startYDefault = cyDefault - (n-1)*lineHeight/2;
   const dys = useLines.map((_,i) => (startYDefault + i*lineHeight) - cyDefault);
 
-  let halfW = 30;
+  let halfW = 26;
   if (shape === "oval") {
     const B = H/2 - 3;
     for (let i=0;i<n;i++){
@@ -1292,8 +1292,22 @@ function dnBuildMarkSvg(shape, insideText) {
   } else {
     for (let i=0;i<n;i++) halfW = Math.max(halfW, widths[i]/2 + minPad);
   }
+  return { W: Math.round(halfW*2), H: Math.round(H), fontSize, lineHeight, padTop, padBottom, textBlockH };
+}
 
-  const W = Math.round(halfW*2);
+function dnBuildMarkSvg(shape, insideText) {
+  const lines = (insideText||"").split("\n").map(l=>l.trim()).filter(Boolean).slice(0,4);
+  const useLines = lines.length ? lines : [""];
+  const n = useLines.length;
+
+  let fontSize = 13;
+  let g = dnMarkGeometryAt(shape, useLines, fontSize);
+  while (g.W > DN_MARK_MAX_W && fontSize > DN_MARK_MIN_FONT) {
+    fontSize -= 1;
+    g = dnMarkGeometryAt(shape, useLines, fontSize);
+  }
+
+  const { W, H, lineHeight, padBottom, textBlockH } = g;
   const cx = W/2;
   let cy, shapeEl = "";
   if (shape === "oval") {
@@ -1312,7 +1326,7 @@ function dnBuildMarkSvg(shape, insideText) {
   const textEls = useLines.map((l,i) =>
     `<text x="${cx}" y="${startY+i*lineHeight}" text-anchor="middle" font-family="Arial" font-size="${fontSize}" font-weight="bold" fill="#000">${dnEsc(l)}</text>`
   ).join("");
-  return `<svg width="${W}" height="${Math.round(H)}" viewBox="0 0 ${W} ${Math.round(H)}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
 }
 
 // Dựng nội dung 4 cột Description/Quantity/Unit Price/Amount dùng chung 1 ô (không kẻ ngang từng dòng hàng)
@@ -1449,7 +1463,7 @@ function dnMessrsBlockHTML(dn, underline) {
 
 // ---- TRANG 1: COMMERCIAL INVOICE ----
 function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
-  return `<div class="pagebreak">
+  return `<div class="pagebreak dn-page-wrap">
     ${dnLetterheadHTML()}
     <table class="dn-h-table">
       <tr>
@@ -1478,7 +1492,7 @@ function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
 
 // ---- TRANG 2: DEBIT NOTE ----
 function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
-  return `<div>
+  return `<div class="dn-page-wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
       <div style="font-weight:bold;font-style:italic;font-size:19px">TOSGAMEX</div>
       <div style="text-align:center;flex:1">
@@ -1510,6 +1524,21 @@ function renderDebitNotePrint(s) {
   const priceLabel = dn.priceTerm || "FOB";
   const totalCtns = dnTotalCartons(s);
   const adjustScript = `
+    function dnAutoFitPage(){
+      var TARGET_H = 1000; // px ~ chiều cao 1 trang A4 trong khổ in, đã trừ lề an toàn
+      var MIN_FONT = 7;
+      document.querySelectorAll('.dn-page-wrap').forEach(function(pageEl){
+        var table = pageEl.querySelector('.dn-g-table');
+        if (!table) return;
+        var fontSize = 11;
+        var guard = 0;
+        while (pageEl.scrollHeight > TARGET_H && fontSize > MIN_FONT && guard < 40) {
+          fontSize -= 0.5;
+          table.style.fontSize = fontSize + 'px';
+          guard++;
+        }
+      });
+    }
     function dnAdjustTotalPosition(){
       document.querySelectorAll('.dn-g-table').forEach(function(table){
         var marksCell = table.querySelector('.dn-marks-cell');
@@ -1525,8 +1554,9 @@ function renderDebitNotePrint(s) {
         totalPart.style.marginTop = Math.max(16, gap) + 'px';
       });
     }
-    if (document.readyState === 'complete') { dnAdjustTotalPosition(); }
-    else { window.addEventListener('load', dnAdjustTotalPosition); }
+    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAdjustTotalPosition(); }
+    if (document.readyState === 'complete') { dnRunLayoutFixups(); }
+    else { window.addEventListener('load', dnRunLayoutFixups); }
   `;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Debit Note</title>
     <style>${DN_PRINT_STYLE}</style></head><body>

@@ -1242,23 +1242,58 @@ function dnMeasureTextWidth(text, fontSize) {
   }
 }
 
-// Dựng SVG khung Shipping Mark (hình thoi / tam giác / oval / không viền), tự giãn theo độ dài chữ
+// Dựng SVG khung Shipping Mark (hình thoi / tam giác / oval / không viền), tự giãn theo độ dài chữ.
+// Tính bề rộng cần thiết THEO ĐÚNG vị trí dọc của từng dòng (không dùng 1 mức đệm chung), vì
+// oval/thoi thu hẹp dần ra xa tâm — dòng không nằm giữa cần đệm ngang RỘNG HƠN dòng nằm giữa,
+// nếu không sẽ bị mất chữ ở 2 đầu (đã xảy ra thực tế với "FLEX JAPAN CO.,LTD").
 function dnBuildMarkSvg(shape, insideText) {
   const lines = (insideText||"").split("\n").map(l=>l.trim()).filter(Boolean).slice(0,4);
   const useLines = lines.length ? lines : [""];
   const fontSize = 13, lineHeight = 17;
-  let maxW = 14;
-  useLines.forEach(l => { const w = dnMeasureTextWidth(l, fontSize); if (w > maxW) maxW = w; });
   const n = useLines.length;
-  let padX, padTop, padBottom;
-  if (shape === "none") { padX=8; padTop=8; padBottom=8; }
-  else if (shape === "triangle") { padX=26; padTop=36; padBottom=10; }
-  else if (shape === "oval") { padX=34; padTop=18; padBottom=18; }
-  else { padX=40; padTop=22; padBottom=22; } // diamond (mặc định)
+  const widths = useLines.map(l => Math.max(14, dnMeasureTextWidth(l, fontSize)));
   const textBlockH = n * lineHeight;
-  let W = maxW + padX*2, H = textBlockH + padTop + padBottom;
-  if (W < 60) W = 60;
-  if (H < 50) H = 50;
+
+  let padTop, padBottom, minPad;
+  if (shape === "none") { padTop=8; padBottom=8; minPad=6; }
+  else if (shape === "triangle") { padTop=36; padBottom=10; minPad=14; }
+  else if (shape === "oval") { padTop=18; padBottom=18; minPad=16; }
+  else { padTop=20; padBottom=20; minPad=18; } // diamond
+
+  const H = Math.max(50, textBlockH + padTop + padBottom);
+  const cyDefault = H/2;
+  const startYDefault = cyDefault - (n-1)*lineHeight/2;
+  const dys = useLines.map((_,i) => (startYDefault + i*lineHeight) - cyDefault);
+
+  let halfW = 30;
+  if (shape === "oval") {
+    const B = H/2 - 3;
+    for (let i=0;i<n;i++){
+      const dy = Math.abs(dys[i]);
+      const factor = Math.max(0.22, Math.sqrt(Math.max(0.02, 1 - (dy/B)*(dy/B))));
+      halfW = Math.max(halfW, (widths[i]/2 + minPad) / factor);
+    }
+  } else if (shape === "diamond") {
+    const halfH = H/2 - 3;
+    for (let i=0;i<n;i++){
+      const dy = Math.abs(dys[i]);
+      const factor = Math.max(0.22, 1 - dy/halfH);
+      halfW = Math.max(halfW, (widths[i]/2 + minPad) / factor);
+    }
+  } else if (shape === "triangle") {
+    const cy0 = H - padBottom - textBlockH/2;
+    const startY0 = cy0 - (n-1)*lineHeight/2;
+    for (let i=0;i<n;i++){
+      const yFromApex = Math.max(4, (startY0 + i*lineHeight) - 4);
+      const triH = H - 7;
+      const factor = Math.max(0.25, yFromApex/triH);
+      halfW = Math.max(halfW, (widths[i]/2 + minPad) / factor);
+    }
+  } else {
+    for (let i=0;i<n;i++) halfW = Math.max(halfW, widths[i]/2 + minPad);
+  }
+
+  const W = Math.round(halfW*2);
   const cx = W/2;
   let cy, shapeEl = "";
   if (shape === "oval") {
@@ -1277,7 +1312,7 @@ function dnBuildMarkSvg(shape, insideText) {
   const textEls = useLines.map((l,i) =>
     `<text x="${cx}" y="${startY+i*lineHeight}" text-anchor="middle" font-family="Arial" font-size="${fontSize}" font-weight="bold" fill="#000">${dnEsc(l)}</text>`
   ).join("");
-  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
+  return `<svg width="${W}" height="${Math.round(H)}" viewBox="0 0 ${W} ${Math.round(H)}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
 }
 
 // Dựng nội dung 4 cột Description/Quantity/Unit Price/Amount dùng chung 1 ô (không kẻ ngang từng dòng hàng)
@@ -1323,19 +1358,18 @@ async function dnFindCustomerDoc(custNameToFind) {
   } catch(e) { return null; }
 }
 
-function dnMarksNosCell(dn, totalCtns, orderLineCount) {
-  const outsideLines = (dn.markOutside||"").split("\n").filter(l=>l.trim()).length;
-  const gap = Math.max(20, (orderLineCount - outsideLines) * 14);
+function dnMarksNosCell(dn, totalCtns) {
   return `
-    <div style="text-decoration:underline;margin-bottom:6px">SHIPPING MARKS:</div>
-    ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
-    <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
-    <div style="margin-top:${gap}px;font-weight:bold;text-align:left">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
+    <div class="dn-marks-top">
+      <div style="text-decoration:underline;margin-bottom:6px">SHIPPING MARKS:</div>
+      ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
+      <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
+    </div>
+    <div class="dn-marks-total" style="margin-top:20px;font-weight:bold;text-align:left">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
 }
 
 function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
   const g = dnGoodsCells(s, priceLabel, dn.goodsDescription);
-  const orderLineCount = (s.orders||[]).length || 1;
   return `
   <table class="dn-g-table">
     <tr>
@@ -1346,8 +1380,8 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns, orderLineCount)}</td>
-      <td>${g.descHTML}</td>
+      <td class="dn-marks-cell" rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-desc-cell">${g.descHTML}</td>
       <td>${g.qtyHTML}</td>
       <td>${g.priceHTML}</td>
       <td>${g.amtHTML}</td>
@@ -1363,7 +1397,7 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
 
 function dnSignatureHTML(dn, stampImageDataUrl) {
   if (dn.includeStamp && stampImageDataUrl) {
-    return `<div style="text-align:right"><img src="${stampImageDataUrl}" style="width:190px;max-height:130px;object-fit:contain" alt="Con dau va chu ky"></div>`;
+    return `<div style="text-align:right"><img src="${stampImageDataUrl}" style="width:61mm;height:auto" alt="Con dau va chu ky"></div>`;
   }
   if (dn.includeStamp && !stampImageDataUrl) {
     return `<div style="text-align:right;font-size:10px;color:#c00">(Chưa có ảnh con dấu — vào Admin ▸ Thông tin chức vụ và con dấu để thêm)</div>`;
@@ -1383,6 +1417,7 @@ const DN_PRINT_STYLE = `
   .dn-g-table td { border-left:1px solid #000; border-right:1px solid #000; padding:5px 6px; vertical-align:top; overflow:hidden; }
   .dn-g-table th { font-size:11px; text-align:center; border:1px solid #000; border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; overflow:hidden; }
   .dn-g-table tr.dn-totrow td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
+  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }
@@ -1397,15 +1432,16 @@ function dnLetterheadHTML() {
   </div>`;
 }
 
-function dnMessrsBlockHTML(dn) {
+function dnMessrsBlockHTML(dn, underline) {
+  const lblStyle = underline ? " style=\"text-decoration:underline\"" : "";
   const messrsLines = (dn.messrsText||"").split("\n").filter(Boolean);
   const firstLine = messrsLines[0] || "";
   const restLines = messrsLines.slice(1);
-  let out = `<span class="lbl">MESSRS.</span><b>${dnEsc(firstLine)}</b>`;
+  let out = `<span class="lbl"${lblStyle}>MESSRS.</span><b>${dnEsc(firstLine)}</b>`;
   restLines.forEach(l => { out += `<br><span class="lbl">&nbsp;</span>${dnEsc(l)}`; });
   if ((dn.consigneeText||"").trim()) {
     const cLines = dn.consigneeText.split("\n").filter(Boolean);
-    out += `<br><br><span class="lbl">CONSIGNEE:</span><b>${dnEsc(cLines[0]||"")}</b>`;
+    out += `<br><br><span class="lbl"${lblStyle}>CONSIGNEE:</span><b>${dnEsc(cLines[0]||"")}</b>`;
     cLines.slice(1).forEach(l => { out += `<br><span class="lbl">&nbsp;</span>${dnEsc(l)}`; });
   }
   return out;
@@ -1453,7 +1489,7 @@ function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
       <div style="width:66px"></div>
     </div>
     <div style="border-top:1px solid #000;margin:8px 0 12px"></div>
-    <div>${dnMessrsBlockHTML(dn)}</div>
+    <div>${dnMessrsBlockHTML(dn, true)}</div>
     <div style="display:flex;justify-content:flex-end;margin-top:6px">
       <div style="text-align:right">DEBIT NOTE NO.: <b>${dnEsc(s.invoiceNo)}</b><br>DATE: <b>${dnDate(new Date())}</b></div>
     </div>
@@ -1473,11 +1509,31 @@ function renderDebitNotePrint(s) {
   const dn = s.debitNote || {};
   const priceLabel = dn.priceTerm || "FOB";
   const totalCtns = dnTotalCartons(s);
+  const adjustScript = `
+    function dnAdjustTotalPosition(){
+      document.querySelectorAll('.dn-g-table').forEach(function(table){
+        var marksCell = table.querySelector('.dn-marks-cell');
+        var descCell = table.querySelector('.dn-desc-cell');
+        var totalRow = table.querySelector('.dn-totrow');
+        if (!marksCell || !descCell || !totalRow) return;
+        var topPart = marksCell.querySelector('.dn-marks-top');
+        var totalPart = marksCell.querySelector('.dn-marks-total');
+        if (!topPart || !totalPart) return;
+        var targetBottom = descCell.offsetHeight + totalRow.offsetHeight;
+        var used = topPart.offsetHeight + totalPart.offsetHeight;
+        var gap = targetBottom - used;
+        totalPart.style.marginTop = Math.max(16, gap) + 'px';
+      });
+    }
+    if (document.readyState === 'complete') { dnAdjustTotalPosition(); }
+    else { window.addEventListener('load', dnAdjustTotalPosition); }
+  `;
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Debit Note</title>
     <style>${DN_PRINT_STYLE}</style></head><body>
     <div class="noprint"><button onclick="window.print()">🖨 In / Lưu PDF</button></div>
     ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns)}
     ${dnRenderDebitNotePage(s, dn, priceLabel, totalCtns)}
+    <script>${adjustScript}<\/script>
     </body></html>`;
   const w = window.open("", "_blank");
   w.document.write(html);

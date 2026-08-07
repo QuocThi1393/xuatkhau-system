@@ -1497,8 +1497,8 @@ function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
       <div style="font-weight:bold;font-style:italic;font-size:19px">TOSGAMEX</div>
       <div style="text-align:center;flex:1">
         <div style="font-weight:bold;font-size:13px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
-        <div style="font-size:11px;margin-top:2px">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
-        <div style="font-size:11px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
+        <div style="font-size:10px;margin-top:2px;white-space:nowrap">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+        <div style="font-size:10px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
       </div>
       <div style="width:66px"></div>
     </div>
@@ -1514,8 +1514,10 @@ function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
     </div>
     ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
     <div style="margin-top:10px"><b>AMOUNT IN WORD:</b> ${dnWordsUSD(dnGoodsCells(s, priceLabel, dn.goodsDescription).totalAmt)}</div>
-    <div style="margin-top:12px">Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
-    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:14px">
+      <div>Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
+      <div style="flex-shrink:0">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
+    </div>
   </div>`;
 }
 
@@ -1525,7 +1527,7 @@ function renderDebitNotePrint(s) {
   const totalCtns = dnTotalCartons(s);
   const adjustScript = `
     function dnAutoFitPage(){
-      var TARGET_H = 1000; // px ~ chiều cao 1 trang A4 trong khổ in, đã trừ lề an toàn
+      var TARGET_H = 950; // px ~ chiều cao 1 trang A4 trong khổ in, đã trừ lề + biên an toàn
       var MIN_FONT = 7;
       document.querySelectorAll('.dn-page-wrap').forEach(function(pageEl){
         var table = pageEl.querySelector('.dn-g-table');

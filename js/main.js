@@ -895,7 +895,7 @@ window.openEditShipment = function(id) {
       const b = r.querySelector(".ec-badge");
       if (b) b.textContent = multi ? `CONT ${i+1}` : "CONT";
       const d = r.querySelector(".ec-detail");
-      if (d) d.style.display = multi ? "flex" : "none";
+      if (d) d.style.display = multi ? "grid" : "none";
     });
     if (!multi) { bar.style.display = "none"; return; }
     bar.style.display = "block";
@@ -922,30 +922,41 @@ window.openEditShipment = function(id) {
     }
   };
 
+  const CONT_GRID_COLS = "60px 80px 160px 160px 80px 36px";
   function addContRow(c = {}) {
     const row = document.createElement("div");
     row.className = "es-cont-row";
-    row.style.cssText = "border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:8px 9px;margin-bottom:7px;background:var(--bg-card)";
+    row.style.cssText = "border:0.5px solid var(--border-md);border-radius:var(--radius-md);padding:9px 10px;margin-bottom:7px;background:var(--bg-card)";
     row.innerHTML = `
-      <div style="display:flex;gap:6px;align-items:center">
-        <span class="ec-badge" style="font-size:10.5px;font-weight:700;color:var(--green-text);background:var(--green-bg);border-radius:5px;padding:3px 6px;flex-shrink:0;white-space:nowrap">CONT</span>
-        <select class="form-select ec-type" style="width:78px;flex-shrink:0">
-          ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
-        </select>
-        <input class="form-input ec-no" placeholder="Số cont" value="${c.no||""}" style="flex:1.1;min-width:0">
-        <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1;min-width:0">
-        <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>
+      <div style="display:grid;grid-template-columns:${CONT_GRID_COLS};gap:8px;align-items:end;margin-bottom:8px">
+        <span class="ec-badge" style="font-size:10.5px;font-weight:700;color:var(--green-text);background:var(--green-bg);border-radius:5px;display:flex;align-items:center;justify-content:center;height:34px;overflow:hidden;white-space:nowrap">CONT</span>
+        <div>
+          <div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">Loại cont</div>
+          <select class="form-select ec-type" style="width:100%;font-size:11.5px">
+            ${["20GP","40DC","40HC"].map(t=>`<option value="${t}" ${c.type===t?"selected":""}>${t}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">Số Cont</div>
+          <input class="form-input ec-no" value="${c.no||""}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">Số Seal</div>
+          <input class="form-input ec-seal" value="${c.seal||""}" style="width:100%">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">Tare cont</div>
+          <input class="form-input ec-tare" type="number" step="any" value="${c.tare||""}" style="width:100%" title="Trọng lượng vỏ container (kg) — luôn cần nhập để xuất VGM đúng, kể cả lô chỉ có 1 container">
+        </div>
+        <button type="button" class="btn btn-sm btn-danger ec-del" style="height:34px;padding:0;display:flex;align-items:center;justify-content:center" title="Xóa container này"><i class="ti ti-trash"></i></button>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;margin-top:7px;padding-left:56px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Tare cont (kg):</span>
-        <input class="form-input ec-tare" type="number" step="any" placeholder="VD: 2200" value="${c.tare||""}" style="width:90px;flex-shrink:0" title="Trọng lượng vỏ container — luôn cần nhập để xuất VGM đúng, kể cả lô chỉ có 1 container">
-      </div>
-      <div class="ec-detail" style="display:none;gap:6px;align-items:center;margin-top:7px;padding-left:56px;flex-wrap:wrap">
-        <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Chi tiết đóng:</span>
-        <input class="form-input ec-ctns" type="number" step="any" placeholder="Ctns" value="${c.ctns||""}" style="width:74px;flex-shrink:0" title="Số carton đóng trong cont này">
-        <input class="form-input ec-nw" type="number" step="any" placeholder="N.W" value="${c.nw||""}" style="width:82px;flex-shrink:0" title="Net weight cont này">
-        <input class="form-input ec-gw" type="number" step="any" placeholder="G.W" value="${c.gw||""}" style="width:82px;flex-shrink:0" title="Gross weight cont này">
-        <input class="form-input ec-cbm" type="number" step="any" placeholder="CBM" value="${c.cbm||""}" style="width:74px;flex-shrink:0" title="Thể tích cont này">
+      <div class="ec-detail" style="display:none;grid-template-columns:${CONT_GRID_COLS};gap:8px">
+        <span></span>
+        <div><div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">Số Thùng</div><input class="form-input ec-ctns" type="number" step="any" value="${c.ctns||""}" style="width:80px" title="Số carton đóng trong cont này"></div>
+        <div><div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">N.W</div><input class="form-input ec-nw" type="number" step="any" value="${c.nw||""}" style="width:80px" title="Net weight cont này"></div>
+        <div><div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">G.W</div><input class="form-input ec-gw" type="number" step="any" value="${c.gw||""}" style="width:80px" title="Gross weight cont này"></div>
+        <div><div style="font-size:11px;color:var(--blue-text);margin-bottom:3px;white-space:nowrap">CBM</div><input class="form-input ec-cbm" type="number" step="any" value="${c.cbm||""}" style="width:80px" title="Thể tích cont này"></div>
+        <span></span>
       </div>`;
     row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); window._refreshContSum?.(); });
     row.querySelectorAll(".ec-ctns,.ec-nw,.ec-gw,.ec-cbm").forEach(el =>

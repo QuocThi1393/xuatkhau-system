@@ -936,13 +936,16 @@ window.openEditShipment = function(id) {
         <input class="form-input ec-seal" placeholder="Số seal" value="${c.seal||""}" style="flex:1;min-width:0">
         <button type="button" class="btn btn-sm btn-danger ec-del" style="flex-shrink:0;padding:6px 9px"><i class="ti ti-x"></i></button>
       </div>
+      <div style="display:flex;gap:6px;align-items:center;margin-top:7px;padding-left:56px;flex-wrap:wrap">
+        <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Tare cont (kg):</span>
+        <input class="form-input ec-tare" type="number" step="any" placeholder="VD: 2200" value="${c.tare||""}" style="width:90px;flex-shrink:0" title="Trọng lượng vỏ container — luôn cần nhập để xuất VGM đúng, kể cả lô chỉ có 1 container">
+      </div>
       <div class="ec-detail" style="display:none;gap:6px;align-items:center;margin-top:7px;padding-left:56px;flex-wrap:wrap">
         <span style="font-size:11px;color:var(--text-muted);flex-shrink:0">Chi tiết đóng:</span>
         <input class="form-input ec-ctns" type="number" step="any" placeholder="Ctns" value="${c.ctns||""}" style="width:74px;flex-shrink:0" title="Số carton đóng trong cont này">
         <input class="form-input ec-nw" type="number" step="any" placeholder="N.W" value="${c.nw||""}" style="width:82px;flex-shrink:0" title="Net weight cont này">
         <input class="form-input ec-gw" type="number" step="any" placeholder="G.W" value="${c.gw||""}" style="width:82px;flex-shrink:0" title="Gross weight cont này">
         <input class="form-input ec-cbm" type="number" step="any" placeholder="CBM" value="${c.cbm||""}" style="width:74px;flex-shrink:0" title="Thể tích cont này">
-        <input class="form-input ec-tare" type="number" step="any" placeholder="Tare" value="${c.tare||""}" style="width:70px;flex-shrink:0" title="Trọng lượng vỏ container">
       </div>`;
     row.querySelector(".ec-del").addEventListener("click", () => { row.remove(); window._refreshFclLock(); window._refreshContSum?.(); });
     row.querySelectorAll(".ec-ctns,.ec-nw,.ec-gw,.ec-cbm").forEach(el =>

@@ -1329,23 +1329,30 @@ function dnBuildMarkSvg(shape, insideText) {
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin:0 auto">${shapeEl}${textEls}</svg>`;
 }
 
-// Dựng nội dung 4 cột Description/Quantity/Unit Price/Amount dùng chung 1 ô (không kẻ ngang từng dòng hàng)
+// Dựng nội dung 4 cột Description/Quantity/Unit Price/Amount.
+// LƯU Ý: khối nhãn phụ ((PIECE) / CMPT... / (USD)) nằm ở 1 HÀNG RIÊNG của bảng, KHÔNG chèn
+// dòng trống thủ công — vì nhãn dài (CMPT (PROCESSING ON COMMISSION)) tự xuống nhiều dòng trong
+// cột hẹp, chèn cứng số dòng trống sẽ làm dữ liệu cột đó tụt xuống lệch so với 3 cột còn lại.
+function dnPriceLabelHTML(label) {
+  // Ngắt dòng trước dấu "(" nếu phía trước có chữ: "CMPT (PROCESSING..." -> "CMPT" / "(PROCESSING..."
+  return dnEsc(label).replace(/(\S)\s*\(/g, "$1<br>(");
+}
+
 function dnGoodsCells(s, priceLabel, goodsDescription) {
   const orders = s.orders || [];
-  const descLines  = [`<div style="text-align:center">SHIPMENT OF (GOODS)</div>`, `<div>&nbsp;</div>`, `<div style="font-weight:bold">${dnEsc(goodsDescription||"SHIRTS")}</div>`, `<div>&nbsp;</div>`];
-  const qtyLines   = [`<div style="text-align:center">(PIECE)</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
-  const priceLines = [`<div style="text-align:center">${dnEsc(priceLabel)}</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
-  const amtLines   = [`<div style="text-align:center">(USD)</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`, `<div>&nbsp;</div>`];
+  const descLines = [], qtyLines = [], priceLines = [], amtLines = [];
   let totalQty = 0, totalAmt = 0;
   orders.forEach(o => {
     const qty = parseFloat(o.qty) || 0;
-    const price = parseFloat(o.unitPrice) || 0;
+    // Làm tròn đơn giá 2 số lẻ TRƯỚC khi nhân (đúng như hàm ROUND trong file Excel gốc),
+    // để trên chứng từ luôn đúng: đơn giá × số lượng = số tiền (khách tự tính lại không lệch)
+    const price = Math.round((parseFloat(o.unitPrice) || 0) * 100) / 100;
     const amt = qty * price;
     totalQty += qty; totalAmt += amt;
     const idxTxt = [dnEsc(o.contract||""), dnEsc(o.index||""), dnEsc(o.items||"")].filter(Boolean).join("&nbsp;&nbsp;");
     descLines.push(`<div>${idxTxt}</div>`);
     qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
-    priceLines.push(`<div style="text-align:right">US$${price.toFixed(3)}</div>`);
+    priceLines.push(`<div style="text-align:right">US$${price.toFixed(2)}</div>`);
     amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
   });
   if (!orders.length) {
@@ -1394,7 +1401,18 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td class="dn-marks-cell" rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-marks-cell" rowspan="3" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-subhead-cell">
+        <div style="text-align:center">SHIPMENT OF (GOODS)</div>
+        <div>&nbsp;</div>
+        <div style="font-weight:bold">${dnEsc(dn.goodsDescription||"SHIRTS")}</div>
+        <div>&nbsp;</div>
+      </td>
+      <td style="text-align:center">(PIECE)</td>
+      <td style="text-align:center">${dnPriceLabelHTML(priceLabel)}</td>
+      <td style="text-align:center">(USD)</td>
+    </tr>
+    <tr>
       <td class="dn-desc-cell">${g.descHTML}</td>
       <td>${g.qtyHTML}</td>
       <td>${g.priceHTML}</td>
@@ -1544,13 +1562,15 @@ function renderDebitNotePrint(s) {
     function dnAdjustTotalPosition(){
       document.querySelectorAll('.dn-g-table').forEach(function(table){
         var marksCell = table.querySelector('.dn-marks-cell');
+        var subheadCell = table.querySelector('.dn-subhead-cell');
         var descCell = table.querySelector('.dn-desc-cell');
         var totalRow = table.querySelector('.dn-totrow');
         if (!marksCell || !descCell || !totalRow) return;
         var topPart = marksCell.querySelector('.dn-marks-top');
         var totalPart = marksCell.querySelector('.dn-marks-total');
         if (!topPart || !totalPart) return;
-        var targetBottom = descCell.offsetHeight + totalRow.offsetHeight;
+        var subH = subheadCell ? subheadCell.offsetHeight : 0;
+        var targetBottom = subH + descCell.offsetHeight + totalRow.offsetHeight;
         var used = topPart.offsetHeight + totalPart.offsetHeight;
         var gap = targetBottom - used;
         totalPart.style.marginTop = Math.max(16, gap) + 'px';

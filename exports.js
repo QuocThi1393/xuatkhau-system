@@ -1400,11 +1400,14 @@ function dnMarksNosCell(dn, totalCtns) {
       ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
       <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
     </div>
-    <div class="dn-marks-total" style="margin-top:20px;font-weight:bold;text-align:left">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
+    <div class="dn-marks-total">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
 }
 
 function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
   const g = dnGoodsCells(s, priceLabel, dn.goodsDescription);
+  // Khối nhãn của 4 cột bọc trong .dn-sub — script dnAlignSubHeaders() sẽ đo và canh đều chiều cao
+  // 4 khối này sau khi trang tải xong, nên dòng hàng đầu tiên của 4 cột luôn bắt đầu cùng 1 vị trí,
+  // bất kể nhãn "CMPT (PROCESSING ON COMMISSION)" tự xuống mấy dòng.
   return `
   <table class="dn-g-table">
     <tr>
@@ -1415,23 +1418,27 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td class="dn-marks-cell" rowspan="4" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
-      <td class="dn-subhead-cell"><div style="text-align:center">SHIPMENT OF (GOODS)</div></td>
-      <td><div>&nbsp;</div><div style="text-align:center">(PIECE)</div></td>
-      <td>${dnPriceLabelHTML(priceLabel)}</td>
-      <td><div>&nbsp;</div><div style="text-align:center">(USD)</div></td>
-    </tr>
-    <tr>
-      <td class="dn-goods-cell" style="font-weight:bold">${dnEsc(dn.goodsDescription||"SHIRTS")}</td>
-      <td></td>
-      <td></td>
-      <td></td>
-    </tr>
-    <tr>
-      <td class="dn-desc-cell">${g.descHTML}</td>
-      <td>${g.qtyHTML}</td>
-      <td>${g.priceHTML}</td>
-      <td>${g.amtHTML}</td>
+      <td class="dn-marks-cell" rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-desc-cell">
+        <div class="dn-sub">
+          <div style="text-align:center">SHIPMENT OF (GOODS)</div>
+          <div style="font-weight:bold">${dnEsc(dn.goodsDescription||"SHIRTS")}</div>
+          <div>&nbsp;</div>
+        </div>
+        ${g.descHTML}
+      </td>
+      <td>
+        <div class="dn-sub"><div>&nbsp;</div><div style="text-align:center">(PIECE)</div><div>&nbsp;</div></div>
+        ${g.qtyHTML}
+      </td>
+      <td>
+        <div class="dn-sub">${dnPriceLabelHTML(priceLabel)}<div>&nbsp;</div></div>
+        ${g.priceHTML}
+      </td>
+      <td>
+        <div class="dn-sub"><div>&nbsp;</div><div style="text-align:center">(USD)</div><div>&nbsp;</div></div>
+        ${g.amtHTML}
+      </td>
     </tr>
     <tr class="dn-totrow">
       <td style="text-align:right;font-weight:bold;white-space:nowrap">TOTAL</td>
@@ -1464,7 +1471,8 @@ const DN_PRINT_STYLE = `
   .dn-g-table td { border-left:1px solid #000; border-right:1px solid #000; padding:5px 6px; vertical-align:top; overflow:hidden; }
   .dn-g-table th { font-size:11px; text-align:center; border:1px solid #000; border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; overflow:hidden; }
   .dn-g-table tr.dn-totrow td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
-  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; }
+  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; position:relative; padding-bottom:22px; }
+  .dn-marks-total { position:absolute; left:6px; right:6px; bottom:3px; font-weight:bold; text-align:left; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }
@@ -1574,26 +1582,19 @@ function renderDebitNotePrint(s) {
         }
       });
     }
-    function dnAdjustTotalPosition(){
+    // Canh đều chiều cao khối nhãn của 4 cột: đo khối cao nhất rồi set cả 4 bằng đúng số đó,
+    // để dòng hàng đầu tiên của 4 cột luôn bắt đầu cùng vị trí (nhãn CMPT dài mấy dòng cũng không lệch)
+    function dnAlignSubHeaders(){
       document.querySelectorAll('.dn-g-table').forEach(function(table){
-        var marksCell = table.querySelector('.dn-marks-cell');
-        var subheadCell = table.querySelector('.dn-subhead-cell');
-        var goodsCell = table.querySelector('.dn-goods-cell');
-        var descCell = table.querySelector('.dn-desc-cell');
-        var totalRow = table.querySelector('.dn-totrow');
-        if (!marksCell || !descCell || !totalRow) return;
-        var topPart = marksCell.querySelector('.dn-marks-top');
-        var totalPart = marksCell.querySelector('.dn-marks-total');
-        if (!topPart || !totalPart) return;
-        var subH = subheadCell ? subheadCell.offsetHeight : 0;
-        var goodsH = goodsCell ? goodsCell.offsetHeight : 0;
-        var targetBottom = subH + goodsH + descCell.offsetHeight + totalRow.offsetHeight;
-        var used = topPart.offsetHeight + totalPart.offsetHeight;
-        var gap = targetBottom - used;
-        totalPart.style.marginTop = Math.max(16, gap) + 'px';
+        var subs = table.querySelectorAll('.dn-sub');
+        if (!subs.length) return;
+        var i, maxH = 0;
+        for (i = 0; i < subs.length; i++) { subs[i].style.height = ''; }
+        for (i = 0; i < subs.length; i++) { if (subs[i].offsetHeight > maxH) maxH = subs[i].offsetHeight; }
+        for (i = 0; i < subs.length; i++) { subs[i].style.height = maxH + 'px'; }
       });
     }
-    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAdjustTotalPosition(); }
+    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAlignSubHeaders(); }
     if (document.readyState === 'complete') { dnRunLayoutFixups(); }
     else { window.addEventListener('load', dnRunLayoutFixups); }
   `;

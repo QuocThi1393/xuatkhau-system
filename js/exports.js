@@ -1334,8 +1334,22 @@ function dnBuildMarkSvg(shape, insideText) {
 // dòng trống thủ công — vì nhãn dài (CMPT (PROCESSING ON COMMISSION)) tự xuống nhiều dòng trong
 // cột hẹp, chèn cứng số dòng trống sẽ làm dữ liệu cột đó tụt xuống lệch so với 3 cột còn lại.
 function dnPriceLabelHTML(label) {
-  // Ngắt dòng trước dấu "(" nếu phía trước có chữ: "CMPT (PROCESSING..." -> "CMPT" / "(PROCESSING..."
-  return dnEsc(label).replace(/(\S)\s*\(/g, "$1<br>(");
+  const raw = String(label || "");
+  const i = raw.indexOf("(");
+  let head = "", rest = "";
+  if (i > 0) { head = raw.slice(0, i).trim(); rest = raw.slice(i).trim(); }
+  else if (i === 0) { rest = raw.trim(); }
+  else { head = raw.trim(); }
+  // Dòng 1: phần trước ngoặc (VD "CMPT") — cỡ chữ bình thường, ngang với "SHIPMENT OF (GOODS)"
+  const headHTML = head
+    ? `<div style="text-align:center">${dnEsc(head)}</div>`
+    : `<div>&nbsp;</div>`;
+  // Dòng 2: phần trong ngoặc — nhỏ hơn NẾU chỉ là chú thích của phần đầu ("CMPT (PROCESSING...)"),
+  // còn nếu nó chính là nhãn ("(FOB)" / "(FCA)") thì giữ cỡ chữ bình thường
+  const restHTML = rest
+    ? `<div style="text-align:center;${head ? "font-size:0.82em;line-height:1.3" : ""}">${dnEsc(rest)}</div>`
+    : "";
+  return headHTML + restHTML;
 }
 
 function dnGoodsCells(s, priceLabel, goodsDescription) {
@@ -1401,16 +1415,17 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td class="dn-marks-cell" rowspan="3" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
-      <td class="dn-subhead-cell">
-        <div style="text-align:center">SHIPMENT OF (GOODS)</div>
-        <div>&nbsp;</div>
-        <div style="font-weight:bold">${dnEsc(dn.goodsDescription||"SHIRTS")}</div>
-        <div>&nbsp;</div>
-      </td>
-      <td style="text-align:center">(PIECE)</td>
-      <td style="text-align:center">${dnPriceLabelHTML(priceLabel)}</td>
-      <td style="text-align:center">(USD)</td>
+      <td class="dn-marks-cell" rowspan="4" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-subhead-cell"><div style="text-align:center">SHIPMENT OF (GOODS)</div></td>
+      <td><div>&nbsp;</div><div style="text-align:center">(PIECE)</div></td>
+      <td>${dnPriceLabelHTML(priceLabel)}</td>
+      <td><div>&nbsp;</div><div style="text-align:center">(USD)</div></td>
+    </tr>
+    <tr>
+      <td class="dn-goods-cell" style="font-weight:bold">${dnEsc(dn.goodsDescription||"SHIRTS")}</td>
+      <td></td>
+      <td></td>
+      <td></td>
     </tr>
     <tr>
       <td class="dn-desc-cell">${g.descHTML}</td>
@@ -1563,6 +1578,7 @@ function renderDebitNotePrint(s) {
       document.querySelectorAll('.dn-g-table').forEach(function(table){
         var marksCell = table.querySelector('.dn-marks-cell');
         var subheadCell = table.querySelector('.dn-subhead-cell');
+        var goodsCell = table.querySelector('.dn-goods-cell');
         var descCell = table.querySelector('.dn-desc-cell');
         var totalRow = table.querySelector('.dn-totrow');
         if (!marksCell || !descCell || !totalRow) return;
@@ -1570,7 +1586,8 @@ function renderDebitNotePrint(s) {
         var totalPart = marksCell.querySelector('.dn-marks-total');
         if (!topPart || !totalPart) return;
         var subH = subheadCell ? subheadCell.offsetHeight : 0;
-        var targetBottom = subH + descCell.offsetHeight + totalRow.offsetHeight;
+        var goodsH = goodsCell ? goodsCell.offsetHeight : 0;
+        var targetBottom = subH + goodsH + descCell.offsetHeight + totalRow.offsetHeight;
         var used = topPart.offsetHeight + totalPart.offsetHeight;
         var gap = targetBottom - used;
         totalPart.style.marginTop = Math.max(16, gap) + 'px';

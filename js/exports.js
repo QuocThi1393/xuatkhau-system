@@ -1400,7 +1400,7 @@ function dnMarksNosCell(dn, totalCtns) {
       ${dnBuildMarkSvg(dn.markShape||"none", dn.markInside||"")}
       <div style="margin-top:10px;white-space:pre-line;text-align:left">${dnNl2br(dn.markOutside||"")}</div>
     </div>
-    <div class="dn-marks-total" style="margin-top:20px;font-weight:bold;text-align:left">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
+    <div class="dn-marks-total">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
 }
 
 function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
@@ -1471,7 +1471,8 @@ const DN_PRINT_STYLE = `
   .dn-g-table td { border-left:1px solid #000; border-right:1px solid #000; padding:5px 6px; vertical-align:top; overflow:hidden; }
   .dn-g-table th { font-size:11px; text-align:center; border:1px solid #000; border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; overflow:hidden; }
   .dn-g-table tr.dn-totrow td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
-  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; }
+  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; position:relative; padding-bottom:22px; }
+  .dn-marks-total { position:absolute; left:6px; right:6px; bottom:3px; font-weight:bold; text-align:left; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }
@@ -1593,22 +1594,7 @@ function renderDebitNotePrint(s) {
         for (i = 0; i < subs.length; i++) { subs[i].style.height = maxH + 'px'; }
       });
     }
-    function dnAdjustTotalPosition(){
-      document.querySelectorAll('.dn-g-table').forEach(function(table){
-        var marksCell = table.querySelector('.dn-marks-cell');
-        var descCell = table.querySelector('.dn-desc-cell');
-        var totalRow = table.querySelector('.dn-totrow');
-        if (!marksCell || !descCell || !totalRow) return;
-        var topPart = marksCell.querySelector('.dn-marks-top');
-        var totalPart = marksCell.querySelector('.dn-marks-total');
-        if (!topPart || !totalPart) return;
-        var targetBottom = descCell.offsetHeight + totalRow.offsetHeight;
-        var used = topPart.offsetHeight + totalPart.offsetHeight;
-        var gap = targetBottom - used;
-        totalPart.style.marginTop = Math.max(16, gap) + 'px';
-      });
-    }
-    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAlignSubHeaders(); dnAdjustTotalPosition(); }
+    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAlignSubHeaders(); }
     if (document.readyState === 'complete') { dnRunLayoutFixups(); }
     else { window.addEventListener('load', dnRunLayoutFixups); }
   `;

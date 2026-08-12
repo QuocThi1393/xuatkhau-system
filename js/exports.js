@@ -1418,7 +1418,7 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <th style="width:13%">AMOUNT</th>
     </tr>
     <tr>
-      <td class="dn-marks-cell" rowspan="2" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
+      <td class="dn-marks-cell" style="text-align:center">${dnMarksNosCell(dn, totalCtns)}</td>
       <td class="dn-desc-cell">
         <div class="dn-sub">
           <div style="text-align:center">SHIPMENT OF (GOODS)</div>
@@ -1441,6 +1441,7 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       </td>
     </tr>
     <tr class="dn-totrow">
+      <td class="dn-tot-marks"></td>
       <td style="text-align:right;font-weight:bold;white-space:nowrap">TOTAL</td>
       <td style="text-align:right;font-weight:bold;white-space:nowrap">${dnInt(g.totalQty)}</td>
       <td></td>
@@ -1471,8 +1472,13 @@ const DN_PRINT_STYLE = `
   .dn-g-table td { border-left:1px solid #000; border-right:1px solid #000; padding:5px 6px; vertical-align:top; overflow:hidden; }
   .dn-g-table th { font-size:11px; text-align:center; border:1px solid #000; border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; overflow:hidden; }
   .dn-g-table tr.dn-totrow td { border-top:2.5px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
-  .dn-g-table td.dn-marks-cell { border-bottom:2.5px solid #000; position:relative; padding-bottom:22px; }
+  .dn-g-table td.dn-marks-cell { position:relative; padding-bottom:20px; }
   .dn-marks-total { position:absolute; left:6px; right:6px; bottom:3px; font-weight:bold; text-align:left; }
+  /* Ô đệm cột Marks ở dòng TOTAL: KHÔNG kẻ ngang phía trên (đúng mẫu gốc — cột Marks liền mạch),
+     chỉ đóng đáy bảng. Nhờ vậy dòng TOTAL cao đúng 1 dòng, không bị rowspan làm phình ra. */
+  .dn-g-table tr.dn-totrow td.dn-tot-marks { border-top:none; border-bottom:2.5px solid #000; }
+  /* Chiều cao tối thiểu thân bảng: đo từ file mẫu thật (86mm / 99mm với 5 dòng hàng) */
+  .dn-g-table td.dn-desc-cell { height:90mm; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }

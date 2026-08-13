@@ -30,7 +30,7 @@
   </div>
 
   <div style="background:var(--amber-bg);border:0.5px solid var(--amber-border);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--amber-text);margin-bottom:14px">
-    <b>Vai trò:</b> <b>Admin</b> = toàn quyền · <b>Sửa giá</b> = chỉ sửa cột Giá GC · <b>Sửa Dimension</b> = chỉ sửa cột Dimension · <b>Chỉ xem</b> = không sửa được gì.
+    <b>Vai trò:</b> <b>Admin</b> = toàn quyền · <b>Sửa giá</b> = chỉ sửa cột Giá GC · <b>Sửa Dimension</b> = chỉ sửa cột Dimension · <b>Tạo định mức</b> = chỉ vào trang Định mức, nhập Mã khai báo HQ / Giá khai báo / Ghi chú · <b>Chỉ xem</b> = không sửa được gì.
     <br>Tài khoản admin gốc (email của bạn) luôn là Admin, không cần và không thể đổi tại đây.
   </div>
 
@@ -64,7 +64,7 @@ initTopbar("users");
 window.closeModalById = closeModal;
 
 let allUsers = [];
-const ROLES = ["price", "dimension", "viewer", "guest"]; // admin không gán tay (admin gốc theo email)
+const ROLES = ["price", "dimension", "taodinhmuc", "viewer", "guest"]; // admin không gán tay (admin gốc theo email)
 
 function updateTopUI() {
   document.getElementById("admin-indicator").style.display = isAdmin() ? "flex" : "none";

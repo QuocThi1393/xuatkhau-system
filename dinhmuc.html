@@ -22,7 +22,13 @@
 <style>
   .handsontable { font-size: 10.5px; font-family: inherit; }
   .handsontable th { font-weight: 500; background: #f1efea; color: #1a1a1a; font-size: 10px; }
-  .handsontable td, .handsontable th { padding: 1px 3px; line-height: 1.3; }
+  /* Mọi ô 1 dòng, chữ dài thì cắt bằng "..." (hover để xem đủ).
+     BẮT BUỘC: nếu để chữ xuống 2 dòng thì khung cột đóng băng và khung cuộn
+     sẽ cao lệch nhau và lệch tích lũy càng xuống càng nhiều. */
+  .handsontable td, .handsontable th {
+    padding: 1px 3px; line-height: 17px; height: 19px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
 
   /* Ô lấy từ hệ thống: khóa + làm mờ */
   .dm-ro   { background: #faf9f6 !important; color: #7a7a75 !important; }
@@ -170,23 +176,23 @@ function isEligible(s) {
 
 /* ================= CỘT BẢNG ================= */
 const DM_COLS = [
-  { data:"date",      title:"Ngày xuất",      width: 60 },
-  { data:"cust",      title:"Khách hàng",     width:100 },
-  { data:"contract",  title:"Hợp đồng",       width: 80 },
-  { data:"index",     title:"Đơn hàng",       width: 85 },
-  { data:"items",     title:"Mã hàng",        width:175 },
-  { data:"qty",       title:"SL",             width: 50, className:"htRight" },
-  { data:"ctns",      title:"Th",             width: 36, className:"htRight" },
-  { data:"hs",        title:"HS",             width: 54, className:"htRight" },
-  { data:"co",        title:"C/O",            width: 42 },
-  { data:"price",     title:"Giá GC",         width: 46, className:"htRight" },
-  // "Tên hàng trên INV" = 2 cột, tổng bề rộng giữ tỉ lệ 40/60 như anh nói
-  { data:"invName1",  title:"Tên INV (1)",    width: 82 },
-  { data:"invName2",  title:"Tên INV (2)",    width:125 },
-  { data:"declCode",  title:"Mã khai báo HQ", width:190 },
-  { data:"declPrice", title:"Giá KB",         width: 54, className:"htRight" },
-  { data:"deadline",  title:"Hạn ĐM",         width: 56 },
-  { data:"note",      title:"Ghi chú",        width:140 },
+  { data:"date",      title:"Ngày xuất",      width: 54 },
+  { data:"cust",      title:"Khách hàng",     width: 88 },
+  { data:"contract",  title:"Hợp đồng",       width: 74 },
+  { data:"index",     title:"Đơn hàng",       width: 80 },
+  { data:"items",     title:"Mã hàng",        width:150 },
+  { data:"qty",       title:"SL",             width: 44, className:"htRight" },
+  { data:"ctns",      title:"Th",             width: 32, className:"htRight" },
+  { data:"hs",        title:"HS",             width: 46, className:"htRight" },
+  { data:"co",        title:"C/O",            width: 52 },
+  { data:"price",     title:"Giá GC",         width: 40, className:"htRight" },
+  // "Tên hàng trên INV" = 2 cột, giữ tỉ lệ 40/60 như anh nói
+  { data:"invName1",  title:"Tên INV (1)",    width: 72 },
+  { data:"invName2",  title:"Tên INV (2)",    width:118 },
+  { data:"declCode",  title:"Mã khai báo HQ", width:150 },
+  { data:"declPrice", title:"Giá KB",         width: 46, className:"htRight" },
+  { data:"deadline",  title:"Hạn ĐM",         width: 48 },
+  { data:"note",      title:"Ghi chú",        width:130 },
 ];
 const EDITABLE = ["invName1","invName2","declCode","declPrice","note"];
 
@@ -243,7 +249,7 @@ function rebuild() {
       date: ddmm(shipDateOf(s)),
       cust: orders[0]?.customer || "",
       contract: s.container || "",
-      index: s.invoiceNo ? "INV " + s.invoiceNo : "(chưa có INV)",
+      index: s.invoiceNo || "(chưa có INV)",
       items: [s.eta ? "ETA " + ddmm(s.eta) : "", s.vessel || ""].filter(Boolean).join(" · "),
       qty: totQty || "", ctns: totCtns || "",
       hs:"", co:"", price:"", invName1:"", invName2:"", declCode:"", declPrice:"",
@@ -344,7 +350,9 @@ function renderGrid() {
     height: Math.max(320, window.innerHeight - 240),
     width: "100%",
     stretchH: "none",
-    fixedColumnsStart: 5,
+    rowHeights: 21,
+    autoRowSize: false,
+    wordWrap: false,
     manualColumnResize: true,
     fillHandle: { direction: "vertical", autoInsertRow: false },
     outsideClickDeselects: false,
@@ -386,6 +394,10 @@ function renderGrid() {
       return p;
     },
 
+    afterRenderer(td, row, col, prop, value) {
+      if (!td.title && value !== null && value !== undefined && value !== "") td.title = String(value);
+    },
+
     afterChange(changes, source) {
       if (!changes || source === "loadData") return;
       let touched = false;
@@ -411,9 +423,10 @@ function sepStatusRenderer(inst, td, row) {
   const r = rows[row];
   td.className = "dm-sep";
   if (!r) { td.innerHTML = ""; return; }
-  if (!r._elig) { td.innerHTML = "Chưa đủ HS code / C/O / đơn giá"; return; }
+  if (!r._elig) { td.innerHTML = "Thiếu HS / C/O / giá"; td.title = "Lô chưa đủ điều kiện: phải có HS code, C/O form và đơn giá ở mọi dòng hàng"; return; }
   if (shipmentDone(r._sid)) { td.innerHTML = "Đã tạo định mức"; return; }
-  td.innerHTML = "Còn thiếu mã hoặc giá khai báo";
+  td.innerHTML = "Thiếu mã / giá KB";
+  td.title = "Còn dòng chưa có mã khai báo, hoặc có mã nhưng chưa có giá khai báo";
 }
 
 function codeRenderer(inst, td, row, col, prop, value) {

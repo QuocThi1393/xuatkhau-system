@@ -1794,6 +1794,24 @@ window.reportNguonThu = async function() {
   try { await loadExcelJS(); }
   catch(e) { showToast("Lỗi mạng: không tải được thư viện Excel. Thử lại!"); return; }
 
+  // ===== MÃ KHAI BÁO HẢI QUAN (trang Định mức) =====
+  // Mã chỉ được gõ ở dòng ĐẦU của nhóm; các dòng dưới để trống = dùng chung mã đó.
+  // Ở đây mỗi mã được gõ tay sẽ sinh 1 dòng in đậm nằm trên nhóm mã hàng của nó.
+  const declByShip = {};
+  try {
+    const dsnap = await getDocs(collection(db, "declarations"));
+    dsnap.docs.forEach(d => {
+      const m = {};
+      ((d.data()||{}).lines || []).forEach(l => { if (l && l.k) m[l.k] = l; });
+      declByShip[d.id] = m;
+    });
+  } catch (e) { /* không có mã khai báo thì báo cáo in như cũ */ }
+  const declCodeOfLine = (sid, o) => {
+    const m = declByShip[sid]; if (!m) return "";
+    const k = `${String(o.index||"").trim()}|${String(o.items||"").trim()}`;
+    return String((m[k]||{}).declCode || "").trim();
+  };
+
   const isExported = s => (s.checklist||{})[8] === "done" || (s.checklist||{})[8] === "skip";
   const lastDay = new Date(+y, +mo, 0).getDate();
 
@@ -1944,26 +1962,48 @@ window.reportNguonThu = async function() {
         const pTT   = LC_CUSTOMERS.includes(cust) ? "L/C" : "T/T";
         const firstItemRow = row;
         const invDateStr = fmtDateVN(s.invoiceDate || s.stuffingDate);
-        orders.forEach((o,idx) => {
-          const qty = parseFloat(o.qty)||0;
-          const price = parseFloat(o.unitPrice)||0;
+
+        // Lên danh sách DÒNG IN của lô: mỗi mã khai báo gõ tay chèn 1 dòng in đậm trước nhóm
+        const plan = [];
+        orders.forEach(o => {
+          const code = declCodeOfLine(s.id, o);
+          if (code) plan.push({ t:"decl", code });
+          plan.push({ t:"item", o });
+        });
+
+        // P.thức giao / P.thức TT / Số hóa đơn / Ngày xuất / Ngày tàu chạy bám theo
+        // DÒNG IN thứ nhất của lô (có thể là dòng mã khai báo), ngày Invoice ở dòng in thứ hai.
+        plan.forEach((p, pi) => {
           setCell(row,1,"");
-          setCell(row,2, idx===0?pGiao:"", {align:{horizontal:"center"}});
-          setCell(row,3, idx===0?pTT:"",   {align:{horizontal:"center"}});
-          setCell(row,4, idx===0?(s.invoiceNo||""):(idx===1?`(Ngày: ${invDateStr})`:""));
-          setCell(row,5, o.contract||"");
-          setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
-          setCell(row,7, "Cái", {align:{horizontal:"center"}});
-          setCell(row,8, qty, {numFmt:"#,##0"});
-          setCell(row,9, price||"", {numFmt:"0.00"});
-          setCell(row,10, { formula:`ROUND(H${row}*I${row},2)` }, {numFmt:"#,##0.00"});
-          setCell(row,11, idx===0?invDateStr:'"', {align:{horizontal:"center"}});
-          setCell(row,12, idx===0?fmtDateVN(s.etd):'"', {align:{horizontal:"center"}});
+          setCell(row,2, pi===0?pGiao:"", {align:{horizontal:"center"}});
+          setCell(row,3, pi===0?pTT:"",   {align:{horizontal:"center"}});
+          setCell(row,4, pi===0?(s.invoiceNo||""):(pi===1?`(Ngày: ${invDateStr})`:""));
+
+          if (p.t === "decl") {
+            setCell(row,5, p.code, {bold:true});     // chữ tràn sang cột F (F để trống, không merge)
+            setCell(row,6,""); setCell(row,7,"");
+            setCell(row,8,""); setCell(row,9,""); setCell(row,10,"");
+            setCell(row,11, pi===0?invDateStr:"", {align:{horizontal:"center"}});
+            setCell(row,12, pi===0?fmtDateVN(s.etd):"", {align:{horizontal:"center"}});
+          } else {
+            const o = p.o;
+            const qty = parseFloat(o.qty)||0;
+            const price = parseFloat(o.unitPrice)||0;
+            setCell(row,5, o.contract||"");
+            setCell(row,6, `${o.items||""}${o.index?`(${o.index})`:""}`);
+            setCell(row,7, "Cái", {align:{horizontal:"center"}});
+            setCell(row,8, qty, {numFmt:"#,##0"});
+            setCell(row,9, price||"", {numFmt:"0.00"});
+            setCell(row,10, { formula:`ROUND(H${row}*I${row},2)` }, {numFmt:"#,##0.00"});
+            setCell(row,11, pi===0?invDateStr:'"', {align:{horizontal:"center"}});
+            setCell(row,12, pi===0?fmtDateVN(s.etd):'"', {align:{horizontal:"center"}});
+          }
           setCell(row,13,""); setCell(row,14,"");
+          sideRow(row);
           row++;
         });
-        // Lô chỉ có 1 dòng hàng → thêm dòng phụ để ghi ngày Invoice
-        if (orders.length === 1) {
+        // Lô chỉ in đúng 1 dòng → thêm dòng phụ để ghi ngày Invoice
+        if (plan.length === 1) {
           setCell(row,4, `(Ngày: ${invDateStr})`);
           sideRow(row);
           row++;

@@ -10,7 +10,9 @@
   document.documentElement.dataset.theme = t;
 })();
 </script>
-<title>Tạo định mức · Xuất Khẩu System</title>
+<meta name="theme-color" content="#1B5E3A">
+<title>Tạo định mức · Hệ thống Xuất Khẩu</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23155A2C'/%3E%3Cstop offset='100%25' stop-color='%232E9E54'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='31' fill='url(%23g)'/%3E%3Ctext x='32' y='41' font-family='Arial,sans-serif' font-size='20' font-weight='bold' fill='white' text-anchor='middle'%3ETOS%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.44.0/tabler-icons.min.css">
 <!-- Handsontable: Excel trên web -->
@@ -18,8 +20,9 @@
 <script src="https://cdn.jsdelivr.net/npm/handsontable@13.1.0/dist/handsontable.full.min.js"></script>
 
 <style>
-  .handsontable { font-size: 12px; font-family: inherit; }
-  .handsontable th { font-weight: 500; background: #f1efea; color: #1a1a1a; }
+  .handsontable { font-size: 10.5px; font-family: inherit; }
+  .handsontable th { font-weight: 500; background: #f1efea; color: #1a1a1a; font-size: 10px; }
+  .handsontable td, .handsontable th { padding: 1px 3px; line-height: 1.3; }
 
   /* Ô lấy từ hệ thống: khóa + làm mờ */
   .dm-ro   { background: #faf9f6 !important; color: #7a7a75 !important; }
@@ -49,6 +52,8 @@
   .dm-danger { background:var(--red-bg); border:0.5px solid var(--red-border); border-radius:var(--radius-md);
                padding:8px 12px; font-size:12.5px; color:var(--red-text); margin-bottom:10px; }
   #dm-grid { border:0.5px solid var(--border-md); border-radius:var(--radius-md); overflow:hidden; }
+  /* Riêng trang định mức: dùng hết bề rộng màn hình để bảng đỡ phải cuộn ngang */
+  .layout { max-width: none !important; }
 </style>
 </head>
 <body>
@@ -64,7 +69,7 @@
     <span class="dm-pill" id="dm-late-pill" style="background:var(--red-bg);color:var(--red-text);display:none"></span>
     <span style="flex:1"></span>
     <span id="dm-dirty" style="display:none;font-size:12px;color:var(--red-text)"><i class="ti ti-point-filled"></i> Chưa lưu</span>
-    <button class="btn btn-sm" id="dm-fill" style="display:none" title="Điền Tên hàng trên INV theo mẫu: Mã hàng(Đơn hàng)"><i class="ti ti-wand"></i> Điền nhanh tên INV</button>
+    <button class="btn btn-sm" id="dm-fill" style="display:none" title="Điền cột Tên INV (2) theo mẫu: Mã hàng(Đơn hàng)"><i class="ti ti-wand"></i> Điền nhanh tên INV</button>
     <button class="btn btn-sm" id="dm-reload"><i class="ti ti-refresh"></i> Tải lại</button>
     <button class="btn btn-primary btn-sm" id="dm-save"><i class="ti ti-device-floppy"></i> Lưu</button>
   </div>
@@ -114,14 +119,32 @@ function todayISO() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
-// Ngày làm định mức = ngày đóng hàng - 1. Nếu ra Chủ nhật thì lùi thêm 1 ngày (Thứ 7 vẫn làm việc).
-function deadlineISO(stuffing) {
-  if (!stuffing) return null;
-  const d = new Date(stuffing + "T00:00:00");
+function isoOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+// Tháng của lô = tháng ĐƯỢC GÁN (period). Không có period thì mới lấy theo ngày xuất.
+function periodOf(s) { return s.period || (shipDateOf(s) || "").slice(0,7); }
+// Ngày làm việc cuối cùng của tháng (Thứ 7 vẫn làm, Chủ nhật nghỉ)
+function lastWorkDayOfMonth(period) {
+  if (!period || period.length < 7) return null;
+  const d = new Date(+period.slice(0,4), +period.slice(5,7), 0);   // ngày cuối tháng
   if (isNaN(d)) return null;
+  if (d.getDay() === 0) d.setDate(d.getDate() - 1);
+  return d;
+}
+// Hạn tạo định mức = mốc - 1 ngày; nếu ra Chủ nhật thì lùi thêm 1 ngày.
+// Mốc = ngày đóng hàng, NHƯNG không được trễ hơn ngày làm việc cuối của tháng được gán.
+// (Lô gán tháng 8 mà đóng hàng 03-09 thì mốc là ngày làm việc cuối tháng 8.)
+function deadlineISO(s) {
+  const lwd = lastWorkDayOfMonth(periodOf(s));
+  let st = s.stuffingDate ? new Date(s.stuffingDate + "T00:00:00") : null;
+  if (st && isNaN(st)) st = null;
+  const ref = (st && lwd) ? (st < lwd ? st : lwd) : (st || lwd);
+  if (!ref) return null;
+  const d = new Date(ref.getTime());
   d.setDate(d.getDate() - 1);
   if (d.getDay() === 0) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  return isoOf(d);
 }
 function daysBetween(fromISO, toISO) {
   const a = new Date(fromISO + "T00:00:00"), b = new Date(toISO + "T00:00:00");
@@ -147,23 +170,25 @@ function isEligible(s) {
 
 /* ================= CỘT BẢNG ================= */
 const DM_COLS = [
-  { data:"date",      title:"Ngày xuất",         width: 78 },
-  { data:"cust",      title:"Khách hàng",        width:115 },
-  { data:"contract",  title:"Hợp đồng",          width: 95 },
-  { data:"index",     title:"Đơn hàng",          width: 95 },
-  { data:"items",     title:"Mã hàng",           width:135 },
-  { data:"qty",       title:"SL (PCS)",          width: 70, className:"htRight" },
-  { data:"ctns",      title:"Thùng",             width: 55, className:"htRight" },
-  { data:"hs",        title:"HS CODE",           width: 78 },
-  { data:"co",        title:"C/O",               width: 58 },
-  { data:"price",     title:"Đơn giá",           width: 68, className:"htRight" },
-  { data:"invName",   title:"Tên hàng trên INV", width:195 },
-  { data:"declCode",  title:"Mã khai báo HQ",    width:205 },
-  { data:"declPrice", title:"Giá khai báo",      width: 82, className:"htRight" },
-  { data:"deadline",  title:"Hạn ĐM",            width: 72 },
-  { data:"note",      title:"Ghi chú",           width:150 },
+  { data:"date",      title:"Ngày xuất",      width: 60 },
+  { data:"cust",      title:"Khách hàng",     width:100 },
+  { data:"contract",  title:"Hợp đồng",       width: 80 },
+  { data:"index",     title:"Đơn hàng",       width: 85 },
+  { data:"items",     title:"Mã hàng",        width:175 },
+  { data:"qty",       title:"SL",             width: 50, className:"htRight" },
+  { data:"ctns",      title:"Th",             width: 36, className:"htRight" },
+  { data:"hs",        title:"HS",             width: 54, className:"htRight" },
+  { data:"co",        title:"C/O",            width: 42 },
+  { data:"price",     title:"Giá GC",         width: 46, className:"htRight" },
+  // "Tên hàng trên INV" = 2 cột, tổng bề rộng giữ tỉ lệ 40/60 như anh nói
+  { data:"invName1",  title:"Tên INV (1)",    width: 82 },
+  { data:"invName2",  title:"Tên INV (2)",    width:125 },
+  { data:"declCode",  title:"Mã khai báo HQ", width:190 },
+  { data:"declPrice", title:"Giá KB",         width: 54, className:"htRight" },
+  { data:"deadline",  title:"Hạn ĐM",         width: 56 },
+  { data:"note",      title:"Ghi chú",        width:140 },
 ];
-const EDITABLE = ["invName","declCode","declPrice","note"];
+const EDITABLE = ["invName1","invName2","declCode","declPrice","note"];
 
 /* ================= TẢI DỮ LIỆU ================= */
 async function loadAll() {
@@ -182,7 +207,7 @@ async function loadAll() {
 function buildMonthList() {
   const sel = document.getElementById("dm-month");
   const set = new Set();
-  allShipments.forEach(s => { const d = shipDateOf(s); if (d && d.length >= 7) set.add(d.slice(0,7)); });
+  allShipments.forEach(s => { const p = periodOf(s); if (p && p.length >= 7) set.add(p); });
   const cur = todayISO().slice(0,7);
   set.add(cur);
   const months = [...set].sort().reverse();
@@ -197,7 +222,7 @@ function buildMonthList() {
 function rebuild() {
   const month = document.getElementById("dm-month").value;
   const list = allShipments
-    .filter(s => (shipDateOf(s) || "").slice(0,7) === month)
+    .filter(s => periodOf(s) === month)
     .sort((a,b) => (shipDateOf(a) || "9999").localeCompare(shipDateOf(b) || "9999"));
 
   rows = [];
@@ -205,7 +230,7 @@ function rebuild() {
     const orders = s.orders || [];
     if (!orders.length) return;
     const elig = isEligible(s);
-    const dl = deadlineISO(s.stuffingDate || shipDateOf(s));
+    const dl = deadlineISO(s);
     const saved = declMap[s.id] || {};
     const savedLines = {};
     (saved.lines || []).forEach(l => { if (l && l.k) savedLines[l.k] = l; });
@@ -221,7 +246,7 @@ function rebuild() {
       index: s.invoiceNo ? "INV " + s.invoiceNo : "(chưa có INV)",
       items: [s.eta ? "ETA " + ddmm(s.eta) : "", s.vessel || ""].filter(Boolean).join(" · "),
       qty: totQty || "", ctns: totCtns || "",
-      hs:"", co:"", price:"", invName:"", declCode:"", declPrice:"",
+      hs:"", co:"", price:"", invName1:"", invName2:"", declCode:"", declPrice:"",
       deadline: dl ? ddmm(dl) : "", note:"",
     });
 
@@ -240,7 +265,8 @@ function rebuild() {
         hs: o.hsCode || "",
         co: o.coForm || "",
         price: num(o.unitPrice) ?? "",
-        invName: sv.invName || "",
+        invName1: sv.invName1 || "",
+        invName2: sv.invName2 || sv.invName || "",
         declCode: sv.declCode || "",
         declPrice: (sv.declPrice === 0 || sv.declPrice) ? sv.declPrice : "",
         deadline: dl ? ddmm(dl) : "",
@@ -338,7 +364,7 @@ function renderGrid() {
       }
 
       let editable = false;
-      if (key === "invName") editable = admin;
+      if (key === "invName1" || key === "invName2") editable = admin;
       else if (key === "declCode" || key === "declPrice") editable = canNorm && r._elig;
       else if (key === "note") editable = canNorm;
 
@@ -484,10 +510,11 @@ async function save() {
           k: r._key,
           declCode: String(r.declCode || "").trim(),
           declPrice: p === null ? "" : Math.round(p * 100) / 100,
-          invName: String(r.invName || "").trim(),
+          invName1: String(r.invName1 || "").trim(),
+          invName2: String(r.invName2 || "").trim(),
           note: String(r.note || "").trim(),
         };
-      }).filter(l => l.declCode || l.declPrice !== "" || l.invName || l.note);
+      }).filter(l => l.declCode || l.declPrice !== "" || l.invName1 || l.invName2 || l.note);
       const payload = {
         shipmentId: sid,
         invoiceNo: s?.invoiceNo || null,
@@ -521,20 +548,20 @@ function quickFill() {
     sel = [Math.min(r1, r2), Math.max(r1, r2)];
   }
   const target = rows.map((r, i) => ({ r, i }))
-    .filter(({ r, i }) => r._t === "line" && !String(r.invName || "").trim()
+    .filter(({ r, i }) => r._t === "line" && !String(r.invName2 || "").trim()
                           && String(r.items || "").trim()
                           && (!sel || (i >= sel[0] && i <= sel[1])));
   if (!target.length) {
-    alert(sel ? "Trong vùng đang chọn không có ô Tên hàng trên INV nào đang trống."
-              : "Không còn ô Tên hàng trên INV nào đang trống.");
+    alert(sel ? "Trong vùng đang chọn không có ô Tên INV (2) nào đang trống."
+              : "Không còn ô Tên INV (2) nào đang trống.");
     return;
   }
   const scope = sel ? "trong vùng đang chọn" : "của cả tháng";
-  if (!confirm(`Điền ${target.length} ô "Tên hàng trên INV" ${scope} theo mẫu Mã hàng(Đơn hàng)?\n\nVí dụ: ${String(target[0].r.items).trim()}(${String(target[0].r.index||"").trim()})\n\nCác ô đã có nội dung sẽ KHÔNG bị ghi đè.`)) return;
+  if (!confirm(`Điền ${target.length} ô "Tên INV (2)" ${scope} theo mẫu Mã hàng(Đơn hàng)?\n\nVí dụ: ${String(target[0].r.items).trim()}(${String(target[0].r.index||"").trim()})\n\nCác ô đã có nội dung sẽ KHÔNG bị ghi đè. Cột Tên INV (1) không bị ảnh hưởng.`)) return;
   target.forEach(({ r }) => {
     const it = String(r.items || "").trim();
     const ix = String(r.index || "").trim();
-    r.invName = ix ? `${it}(${ix})` : it;
+    r.invName2 = ix ? `${it}(${ix})` : it;
     dirty.add(r._sid);
   });
   hot.render();
@@ -581,7 +608,7 @@ onAuthChange(async user => {
   const info = document.getElementById("dm-info-box");
   if (!isAdmin()) {
     info.style.display = "";
-    info.innerHTML = `Anh/chị nhập <b style="font-weight:500">Mã khai báo HQ</b>, <b style="font-weight:500">Giá khai báo</b> và <b style="font-weight:500">Ghi chú</b>. Mã chỉ cần gõ ở dòng đầu của nhóm, các dòng dưới để trống là dùng chung mã đó. Các cột màu xám lấy từ hệ thống, muốn sửa thì nhờ bộ phận XNK sửa trong lô hàng.`;
+    info.innerHTML = `Anh/chị nhập <b style="font-weight:500">Mã khai báo HQ</b>, <b style="font-weight:500">Giá KB</b> và <b style="font-weight:500">Ghi chú</b>. Mã chỉ cần gõ ở dòng đầu của nhóm, các dòng dưới để trống là dùng chung mã đó. Các cột màu xám lấy từ hệ thống, muốn sửa thì nhờ bộ phận XNK sửa trong lô hàng.`;
   }
   if (!loaded) {
     document.getElementById("dm-grid").innerHTML =

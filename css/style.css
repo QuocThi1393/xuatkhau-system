@@ -442,10 +442,19 @@ a { text-decoration: none; color: inherit; }
 .doc-mi { display: flex; align-items: center; gap: 9px; padding: 7px 13px; cursor: pointer; color: var(--text); }
 .doc-mi:hover { background: var(--bg-secondary); }
 .doc-mi i { font-size: 15px; color: var(--text-muted); }
-.doc-sep { font-size: 10.5px; font-weight: 500; color: var(--text-hint); padding: 7px 13px 3px;
-  margin-top: 3px; border-top: 0.5px solid var(--border); }
 .doc-mi-soon, .doc-mi-soon i { color: var(--text-hint); }
 .doc-soon { margin-left: auto; font-size: 10px; color: var(--text-hint); }
+/* Nhánh con: rê chuột là xổ ra, dính vào cạnh phải menu cha */
+.doc-mi { position: relative; }
+.doc-arrow { margin-left: auto; font-size: 13px; }
+.doc-sub {
+  display: none; position: absolute; left: 100%; top: -5px; min-width: 178px;
+  background: var(--bg-card); border: 0.5px solid var(--border); border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25); padding: 4px 0; z-index: 1;
+}
+.doc-has-sub:hover > .doc-sub { display: block; }
+.doc-has-sub:hover { background: var(--bg-secondary); }
+.doc-flip .doc-sub { left: auto; right: 100%; }
 .chevron.open  { transform: rotate(180deg); }
 
 /* Màn hình hẹp: xếp dọc, đổi viền trái thành viền trên */

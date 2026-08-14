@@ -355,6 +355,51 @@ function coChunk(arr, size) {
   return out.length ? out : [[]];
 }
 
+// ====== MENU "CHỨNG TỪ" (gom 6 nút xuất file vào 1 nút xổ trên thẻ lô) ======
+window.closeDocMenu = function() {
+  document.getElementById("doc-floating-menu")?.remove();
+  document.getElementById("co-floating-menu")?.remove();
+};
+
+window.toggleDocMenu = function(ev, shipId) {
+  ev.stopPropagation();
+  const existing = document.getElementById("doc-floating-menu");
+  const wasForThisShip = existing && existing.dataset.ship === shipId;
+  document.getElementById("co-floating-menu")?.remove();
+  if (existing) existing.remove();
+  if (wasForThisShip) return;
+
+  const s = (window.__getAllShipments ? window.__getAllShipments() : []).find(x => x.id === shipId);
+  const C = ((s && s.container) || "").toUpperCase();
+  const noVGM = C.includes("AIR") || C.includes("CPN") || C.includes("KNQ");
+
+  const btn = ev.currentTarget;
+  const rect = btn.getBoundingClientRect();
+  const menu = document.createElement("div");
+  menu.id = "doc-floating-menu";
+  menu.dataset.ship = shipId;
+  menu.style.cssText = "position:fixed;z-index:9999;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.25);min-width:200px;overflow:hidden;font-size:13px;padding:4px 0";
+  const mi = (icon, label, act) =>
+    `<div class="doc-mi" onclick="closeDocMenu();${act}"><i class="ti ti-${icon}"></i><span>${label}</span></div>`;
+  menu.innerHTML =
+    mi("mail", "Generate email", `openEmailModal('${shipId}')`) +
+    mi("file-text", "In Packing List", `openPackingList('${shipId}')`) +
+    (noVGM ? "" : mi("scale", "Xuất VGM", `openVGM('${shipId}')`)) +
+    mi("file-description", "Xuất SI (Draft B/L)", `openSI('${shipId}')`) +
+    `<div class="doc-mi" onclick="toggleCoMenu(event,'${shipId}');document.getElementById('doc-floating-menu')?.remove()"><i class="ti ti-certificate"></i><span>Xuất Draft CO</span><i class="ti ti-chevron-right" style="margin-left:auto;font-size:13px"></i></div>` +
+    mi("receipt", "Xuất Debit Note", `openDebitNote('${shipId}')`);
+  document.body.appendChild(menu);
+
+  const h = menu.offsetHeight || 210;
+  if (window.innerHeight - rect.bottom < h + 12) menu.style.bottom = (window.innerHeight - rect.top + 4) + "px";
+  else menu.style.top = (rect.bottom + 4) + "px";
+  menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 216)) + "px";
+};
+document.addEventListener("click", (e) => {
+  const m = document.getElementById("doc-floating-menu");
+  if (m && !m.contains(e.target)) m.remove();
+});
+
 window.toggleCoMenu = function(ev, shipId) {
   ev.stopPropagation();
   const existing = document.getElementById("co-floating-menu");

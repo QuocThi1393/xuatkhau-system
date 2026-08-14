@@ -518,19 +518,24 @@ function buildCard(s, admin) {
   if (!bigMode && conts.length) {
     const rows = conts.map(c => {
       const tcls = (c.type||"").includes("40") ? "ch-cont-type t40" : "ch-cont-type";
-      return `<div class="ch-cont-row"><span class="${tcls}">${c.type||"CONT"}</span><div class="ch-cont-ns"><span class="ch-cont-no">${c.no||"—"}</span><span class="ch-cont-seal">Seal: ${c.seal||"—"}</span></div></div>`;
+      return `<div class="ch-cont-line"><span class="${tcls}">${c.type||"CONT"}</span><span class="ch-cont-no">${c.no||"—"}</span><span class="ch-cont-seal">Seal: ${c.seal||"—"}</span></div>`;
     }).join("");
-    const tri = conts.length > 2 ? `<span class="ch-cont-tri" title="Lô có ${conts.length} container"></span>` : "";
-    contHTML = `<div class="ch-cont-box">${rows}${tri}</div>`;
+    const more = conts.length > 3 ? `<div class="ch-cont-more">${conts.length} container — cuộn để xem hết</div>` : "";
+    contHTML = `<div class="ch-cont-list">${rows}</div>${more}`;
   } else {
     const big = bigMode || { txt:(s.container||"—"), color:"gray" };
-    contHTML = `<div class="ch-cont-box ch-cont-big"><span class="ch-big ${big.color}">${big.txt}</span></div>`;
+    contHTML = `<div><span class="ch-mode-chip ${big.color}">${big.txt}</span></div>`;
   }
 
   // === Thanh tiến trình các bước (bấm để đổi trạng thái nếu là admin) ===
+  const nextStep = CHECKLIST_STEPS.find(st => {
+    const v = (s.checklist||{})[st.id];
+    return v !== "done" && v !== "skip";
+  });
   const stepbarHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
-    const cls = state==="done"?"done":state==="skip"?"skip":"pending";
+    let cls = state==="done"?"done":state==="skip"?"skip":"pending";
+    if (nextStep && step.id === nextStep.id) cls += " next";
     return `<div class="ch-step ${cls}" title="${step.label}" ${admin?`style="cursor:pointer" onclick="ckToggle('${s.id}',${step.id},'${state}',${step.skippable})"`:""}><span class="ch-step-num">${step.short}</span><span class="ch-step-bar"></span></div>`;
   }).join("");
 
@@ -539,9 +544,10 @@ function buildCard(s, admin) {
   const listHTML = CHECKLIST_STEPS.map(step => {
     const state = (s.checklist||{})[step.id] || "pending";
     let cls = "ck-list-item" + (state==="done"?" ck-done":state==="skip"?" ck-skipped":"");
-    const dot = state==="done"?"✓":state==="skip"?"—":step.short;
-    return `<div class="${cls}" ${admin?"style='cursor:pointer'":""} onclick="${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:''}">
-      <span class="ck-dot2">${dot}</span><span class="ck-name2">${step.label}</span></div>`;
+    if (nextStep && step.id === nextStep.id) cls += " ck-next";
+    const ic = state==="done"?"check":state==="skip"?"minus":"circle-dashed";
+    return `<div class="${cls}" title="${step.label}" ${admin?"style='cursor:pointer'":""} onclick="${admin?`ckToggle('${s.id}',${step.id},'${state}',${step.skippable})`:''}">
+      <i class="ti ti-${ic} ck-ic"></i><span class="ck-name2">${step.label}</span></div>`;
   }).join("");
 
   const customers = [...new Set((s.orders||[]).map(o=>o.customer).filter(Boolean))];
@@ -575,13 +581,16 @@ function buildCard(s, admin) {
       </div>
       <div class="ch-status">
         <div class="ch-status-top">
-          <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:4px 10px">Chi tiết <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i></button>
+          <button class="btn btn-sm" onclick="toggleCard('${s.id}')" style="padding:3px 9px">Chi tiết <i class="ti ti-chevron-down chevron" id="cv-${s.id}"></i></button>
+          ${!isGuest() ? `<button class="btn btn-sm btn-export" onclick="toggleDocMenu(event,'${s.id}')" style="padding:3px 9px"><i class="ti ti-file-export"></i> Chứng từ <i class="ti ti-chevron-down"></i></button>` : ""}
         </div>
         <div class="ch-prog">
           <div class="ch-prog-head"><span>${done} / ${total} bước</span><span class="ch-pct">${pct}%</span></div>
           <div class="ch-stepbar">${stepbarHTML}</div>
         </div>
-        <div class="ch-period"><span class="period-label" ${admin?`onclick="editPeriod('${s.id}')" style="cursor:pointer;font-size:12px;font-weight:500;color:var(--blue-text);border:0.5px dashed var(--blue-border);padding:3px 8px;border-radius:var(--radius-md)" title="Bấm để sửa tháng"`:`style="font-size:12px;font-weight:500;color:var(--blue-text)"`}>${periodLabel || (admin?"+ Gán tháng":"")}</span></div>
+        <div class="ch-period">
+          ${nextStep ? `<span class="ch-wait" title="Bước chưa xong: ${nextStep.label}">Chờ: ${nextStep.label}</span>` : `<span class="ch-wait"></span>`}
+          <span class="period-label" ${admin?`onclick="editPeriod('${s.id}')" style="cursor:pointer;font-size:12px;font-weight:500;color:var(--blue-text);border:0.5px dashed var(--blue-border);padding:3px 8px;border-radius:var(--radius-md)" title="Bấm để sửa tháng"`:`style="font-size:12px;font-weight:500;color:var(--blue-text)"`}>${periodLabel || (admin?"+ Gán tháng":"")}</span></div>
       </div>
     </div>
     <div class="card-detail" id="detail-${s.id}">
@@ -598,17 +607,9 @@ function buildCard(s, admin) {
             </div>
           </div>
         </div>
-        <div style="width:210px;flex-shrink:0;border-left:0.5px solid var(--border);padding:12px;background:var(--bg-secondary);display:flex;flex-direction:column">
-          <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Tiến trình</div>
+        <div style="width:178px;flex-shrink:0;border-left:0.5px solid var(--border);padding:10px;background:var(--bg-secondary)">
+          <div style="font-size:11px;font-weight:500;color:var(--text-muted);margin-bottom:7px">Tiến trình</div>
           <div class="ck-list">${listHTML}</div>
-          <div style="margin-top:14px;padding-top:12px;border-top:0.5px solid var(--border);display:flex;flex-direction:column;gap:6px">
-            ${!isGuest() ? `<button class="btn btn-sm btn-export" onclick="openEmailModal('${s.id}')"><i class="ti ti-mail"></i> Generate email</button>
-            <button class="btn btn-sm btn-export" onclick="openPackingList('${s.id}')"><i class="ti ti-file-text"></i> In Packing List</button>
-            ${!(C.includes("AIR")||C.includes("CPN")||C.includes("KNQ")) ? `<button class="btn btn-sm btn-export" onclick="openVGM('${s.id}')"><i class="ti ti-scale"></i> Xuất VGM</button>` : ""}
-            <button class="btn btn-sm btn-export" onclick="openSI('${s.id}')"><i class="ti ti-file-description"></i> Xuất SI (Draft B/L)</button>
-            <button class="btn btn-sm" style="background:var(--green-text);color:#fff;border-color:var(--green-text)" onclick="toggleCoMenu(event,'${s.id}')"><i class="ti ti-certificate"></i> Xuất Draft CO <i class="ti ti-chevron-down"></i></button>
-            <button class="btn btn-sm btn-export" onclick="openDebitNote('${s.id}')"><i class="ti ti-receipt"></i> Xuất Debit Note</button>` : ""}
-          </div>
         </div>
       </div>
     </div>`;

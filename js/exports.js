@@ -381,16 +381,23 @@ window.toggleDocMenu = function(ev, shipId) {
   menu.style.cssText = "position:fixed;z-index:9999;background:var(--bg-card);border:0.5px solid var(--border);border-radius:var(--radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.25);min-width:200px;overflow:hidden;font-size:13px;padding:4px 0";
   const mi = (icon, label, act) =>
     `<div class="doc-mi" onclick="closeDocMenu();${act}"><i class="ti ti-${icon}"></i><span>${label}</span></div>`;
+  const soon = label =>
+    `<div class="doc-mi doc-mi-soon" onclick="closeDocMenu();showToast('${label}: đang chờ mẫu, sẽ cập nhật sau!')"><i class="ti ti-certificate"></i><span>${label}</span><span class="doc-soon">sắp có</span></div>`;
+  // C/O trải phẳng ngay trong menu này — KHÔNG dùng menu con.
+  // Menu con định vị theo dòng của menu cha rồi menu cha biến mất → nổi lơ lửng + phải bấm 2 lần.
   menu.innerHTML =
     mi("mail", "Generate email", `openEmailModal('${shipId}')`) +
     mi("file-text", "In Packing List", `openPackingList('${shipId}')`) +
     (noVGM ? "" : mi("scale", "Xuất VGM", `openVGM('${shipId}')`)) +
     mi("file-description", "Xuất SI (Draft B/L)", `openSI('${shipId}')`) +
-    `<div class="doc-mi" onclick="toggleCoMenu(event,'${shipId}');document.getElementById('doc-floating-menu')?.remove()"><i class="ti ti-certificate"></i><span>Xuất Draft CO</span><i class="ti ti-chevron-right" style="margin-left:auto;font-size:13px"></i></div>` +
-    mi("receipt", "Xuất Debit Note", `openDebitNote('${shipId}')`);
+    mi("receipt", "Xuất Debit Note", `openDebitNote('${shipId}')`) +
+    `<div class="doc-sep">Draft C/O</div>` +
+    mi("certificate", "CO RCEP", `openCODraft('${shipId}','RCEP')`) +
+    mi("certificate", "CO AJ", `openCODraft('${shipId}','AJ')`) +
+    soon("CO Form D") + soon("CO Form E");
   document.body.appendChild(menu);
 
-  const h = menu.offsetHeight || 210;
+  const h = menu.offsetHeight || 320;
   if (window.innerHeight - rect.bottom < h + 12) menu.style.bottom = (window.innerHeight - rect.top + 4) + "px";
   else menu.style.top = (rect.bottom + 4) + "px";
   menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 216)) + "px";

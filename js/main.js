@@ -675,10 +675,22 @@ window.ckToggle = async function(shipId, stepId, state, skippable) {
   else if (state==="done") next="pending";
   else next="pending";
   const s = allShipments.find(x=>x.id===shipId);
+  const ck = (s && s.checklist) || {};
+
+  // Bước 8 (Tờ khai hải quan) chỉ tick được khi bước 6 (Tạo định mức) đã xong
+  if (stepId === 8 && next === "done" && ck[6] !== "done") {
+    showToast("Chưa xong bước 6 (Tạo định mức) — không thể đánh dấu Tờ khai hải quan.");
+    return;
+  }
+  // Đã khai tờ khai rồi thì không được gỡ bước 6 nữa
+  if (stepId === 6 && next !== "done" && ck[8] === "done") {
+    showToast("Lô đã khai tờ khai — không gỡ được bước Tạo định mức.");
+    return;
+  }
   if (stepId === 8 && next === "done" && !(s && s.tkhq)) {
     if (!confirm("Lô này chưa có Số TKHQ. Có muốn tiếp tục đánh dấu hoàn thành bước này không?")) return;
   }
-  await saveGuard(updateDoc(doc(db,"shipments",shipId), { checklist: {...(s.checklist||{}), [stepId]: next} }));
+  await saveGuard(updateDoc(doc(db,"shipments",shipId), { [`checklist.${stepId}`]: next }));
 };
 
 // ====== SỬA ĐƠN HÀNG BẰNG HANDSONTABLE ======

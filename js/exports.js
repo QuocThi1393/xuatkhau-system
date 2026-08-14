@@ -1408,10 +1408,16 @@ function dnBuildMarkSvg(shape, insideText) {
 // dòng trống thủ công — vì nhãn dài (CMPT (PROCESSING ON COMMISSION)) tự xuống nhiều dòng trong
 // cột hẹp, chèn cứng số dòng trống sẽ làm dữ liệu cột đó tụt xuống lệch so với 3 cột còn lại.
 function dnPriceLabelHTML(label) {
-  const raw = String(label || "");
+  const raw = String(label || "").trim();
+  let head = "", rest = "", tail = "";
   const i = raw.indexOf("(");
-  let head = "", rest = "";
-  if (i > 0) { head = raw.slice(0, i).trim(); rest = raw.slice(i).trim(); }
+  const close = raw.indexOf(")");
+  if (i === 0 && close > 0 && raw.slice(close + 1).trim()) {
+    // Dạng "(CMPT) FOB HOCHIMINH": ngoặc là nhãn, phần sau là điều kiện giao hàng
+    head = raw.slice(0, close + 1).trim();
+    tail = raw.slice(close + 1).trim();
+  }
+  else if (i > 0) { head = raw.slice(0, i).trim(); rest = raw.slice(i).trim(); }
   else if (i === 0) { rest = raw.trim(); }
   else { head = raw.trim(); }
   // Dòng 1: phần trước ngoặc (VD "CMPT") — cỡ chữ bình thường, ngang với "SHIPMENT OF (GOODS)"
@@ -1423,7 +1429,9 @@ function dnPriceLabelHTML(label) {
   const restHTML = rest
     ? `<div style="text-align:center;${head ? "font-size:0.82em;line-height:1.3" : ""}">${dnEsc(rest)}</div>`
     : "";
-  return headHTML + restHTML;
+  // Dòng 2 cỡ chữ bình thường cho dạng "(CMPT) FOB HOCHIMINH"
+  const tailHTML = tail ? `<div style="text-align:center">${dnEsc(tail)}</div>` : "";
+  return headHTML + restHTML + tailHTML;
 }
 
 // ====== 4 LOẠI INVOICE ======
@@ -1712,6 +1720,85 @@ function dnRenderInvoicePage(s, dn, priceLabel, totalCtns, opts) {
   </div>`;
 }
 
+function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
+  return `<div class="dn-page-wrap">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
+      <div style="font-weight:bold;font-style:italic;font-size:19px">TOSGAMEX</div>
+      <div style="text-align:center;flex:1">
+        <div style="font-weight:bold;font-size:13px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
+        <div style="font-size:10px;margin-top:2px;white-space:nowrap">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
+        <div style="font-size:10px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
+      </div>
+      <div style="width:66px"></div>
+    </div>
+    <div style="border-top:1px solid #000;margin:8px 0 12px"></div>
+    <div>${dnMessrsBlockHTML(dn, true)}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:6px">
+      <div style="text-align:right">DEBIT NOTE NO.: <b>${dnEsc(s.invoiceNo)}</b><br>DATE: <b>${dnDate(new Date())}</b></div>
+    </div>
+    <div style="text-align:center;font-weight:bold;font-size:18px;margin:12px 0 8px">DEBIT NOTE</div>
+    <div style="display:flex;justify-content:space-between;border-top:1px solid #000;border-bottom:1px solid #000;padding:4px 2px;margin-bottom:10px">
+      <div>INVOICE NO.: <b>${dnEsc(s.invoiceNo)}</b></div>
+      <div>DATE OF INVOICE: <b>${dnDate(s.invoiceDate)}</b></div>
+    </div>
+    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns, { kind:"khach" })}
+    <div style="margin-top:10px"><b>AMOUNT IN WORD:</b> ${dnWordsUSD(dnGoodsCells(s, priceLabel, dn.goodsDescription, { kind:"khach" }).totalAmt)}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:14px">
+      <div>Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
+      <div style="flex-shrink:0">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
+    </div>
+  </div>`;
+}
+
+function renderDebitNotePrint(s) {
+  const dn = s.debitNote || {};
+  const priceLabel = dn.priceTerm || "FOB";
+  const totalCtns = dnTotalCartons(s);
+  const adjustScript = `
+    function dnAutoFitPage(){
+      var TARGET_H = 950; // px ~ chiều cao 1 trang A4 trong khổ in, đã trừ lề + biên an toàn
+      var MIN_FONT = 7;
+      document.querySelectorAll('.dn-page-wrap').forEach(function(pageEl){
+        var table = pageEl.querySelector('.dn-g-table');
+        if (!table) return;
+        var fontSize = 11;
+        var guard = 0;
+        while (pageEl.scrollHeight > TARGET_H && fontSize > MIN_FONT && guard < 40) {
+          fontSize -= 0.5;
+          table.style.fontSize = fontSize + 'px';
+          guard++;
+        }
+      });
+    }
+    // Canh đều chiều cao khối nhãn của 4 cột: đo khối cao nhất rồi set cả 4 bằng đúng số đó,
+    // để dòng hàng đầu tiên của 4 cột luôn bắt đầu cùng vị trí (nhãn CMPT dài mấy dòng cũng không lệch)
+    function dnAlignSubHeaders(){
+      document.querySelectorAll('.dn-g-table').forEach(function(table){
+        var subs = table.querySelectorAll('.dn-sub');
+        if (!subs.length) return;
+        var i, maxH = 0;
+        for (i = 0; i < subs.length; i++) { subs[i].style.height = ''; }
+        for (i = 0; i < subs.length; i++) { if (subs[i].offsetHeight > maxH) maxH = subs[i].offsetHeight; }
+        for (i = 0; i < subs.length; i++) { subs[i].style.height = maxH + 'px'; }
+      });
+    }
+    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAlignSubHeaders(); }
+    if (document.readyState === 'complete') { dnRunLayoutFixups(); }
+    else { window.addEventListener('load', dnRunLayoutFixups); }
+  `;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Debit Note</title>
+    <style>${DN_PRINT_STYLE}</style></head><body>
+    <div class="noprint"><button onclick="window.print()">🖨 In / Lưu PDF</button></div>
+    ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns, { kind:"khach" })}
+    ${dnRenderDebitNotePage(s, dn, priceLabel, totalCtns)}
+    <script>${adjustScript}<\/script>
+    </body></html>`;
+  const w = window.open("", "_blank");
+  w.document.write(html);
+  w.document.close();
+  w.document.title = pdfFileName("Debit Note", s.invoiceNo);
+}
+
 // ====== XUẤT 4 LOẠI INVOICE (chỉ trang Commercial Invoice, không kèm Debit Note) ======
 const INV_KINDS = {
   khach:   { label:"INV khách hàng",  needDecl:false, fileTag:"INV khach hang" },
@@ -1887,7 +1974,7 @@ window.openDebitNote = async function(shipId) {
     includeStamp: existing.includeStamp != null ? existing.includeStamp : true,
   };
 
-  const priceOptions = ["(FOB)","(FCA)","CMPT (PROCESSING ON COMMISSION)"];
+  const priceOptions = ["(FOB)","(FCA)","CMPT (PROCESSING ON COMMISSION)","(CMPT) FOB HOCHIMINH"];
   const priceOptionsHTML = priceOptions.map(p =>
     `<option value="${p.replace(/"/g,"&quot;")}" ${def.priceTerm===p?"selected":""}>${p}</option>`
   ).join("") + (priceOptions.includes(def.priceTerm) ? "" : `<option value="${(def.priceTerm||"").replace(/"/g,"&quot;")}" selected>${def.priceTerm}</option>`);
@@ -1916,6 +2003,7 @@ window.openDebitNote = async function(shipId) {
         <select class="form-select" id="dn-priceterm">${priceOptionsHTML}</select>
       </div>
     </div>
+
     <div class="form-group" style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:10px">Shipping Mark trên Debit Note</div>
     <div style="display:flex;gap:14px;margin-bottom:6px">
       <div style="width:40%;display:flex;flex-direction:column;gap:8px">

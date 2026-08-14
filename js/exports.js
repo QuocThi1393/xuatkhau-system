@@ -395,11 +395,23 @@ window.toggleDocMenu = function(ev, shipId) {
          ${soon("CO Form D")}${soon("CO Form E")}
        </div>
      </div>`;
+  const invSub =
+    `<div class="doc-mi doc-has-sub">
+       <i class="ti ti-file-invoice"></i><span>Xuất Invoice</span>
+       <i class="ti ti-chevron-right doc-arrow"></i>
+       <div class="doc-sub">
+         <div class="doc-mi" onclick="closeDocMenu();openInvoice('${shipId}','khach')"><span>INV khách hàng</span></div>
+         <div class="doc-mi" onclick="closeDocMenu();openInvoice('${shipId}','ketoan')"><span>INV kế toán</span></div>
+         <div class="doc-mi" onclick="closeDocMenu();openInvoice('${shipId}','co')"><span>INV CO</span></div>
+         <div class="doc-mi" onclick="closeDocMenu();openInvoice('${shipId}','haiquan')"><span>INV Hải quan</span></div>
+       </div>
+     </div>`;
   menu.innerHTML =
     mi("mail", "Generate email", `openEmailModal('${shipId}')`) +
     mi("file-text", "In Packing List", `openPackingList('${shipId}')`) +
     (noVGM ? "" : mi("scale", "Xuất VGM", `openVGM('${shipId}')`)) +
     mi("file-description", "Xuất SI (Draft B/L)", `openSI('${shipId}')`) +
+    invSub +
     coSub +
     mi("receipt", "Xuất Debit Note", `openDebitNote('${shipId}')`);
   document.body.appendChild(menu);
@@ -1414,33 +1426,115 @@ function dnPriceLabelHTML(label) {
   return headHTML + restHTML;
 }
 
-function dnGoodsCells(s, priceLabel, goodsDescription) {
-  const orders = s.orders || [];
+// ====== 4 LOẠI INVOICE ======
+// khach : dòng hàng thường, giá bán
+// ketoan: dòng hàng thường + dòng mã khai báo in đậm ở trên nhóm, giá bán
+// co    : như ketoan nhưng giá khai báo, nhóm >=2 dòng thì có SUB TOTAL
+// haiquan: mỗi dòng LÀ 1 mã khai báo (gộp số lượng cả nhóm), giá khai báo, thêm dòng CMPT PRICE
+
+// Chuẩn hóa để so trùng: bỏ mọi khoảng trắng, không phân biệt hoa thường
+function dnNormCmp(t) { return String(t||"").replace(/\s+/g,"").toUpperCase(); }
+
+// Chuỗi hệ thống in ra ở cột DESCRIPTION cho 1 dòng hàng
+function dnLineDescText(o) {
+  return [o.contract||"", o.index||"", o.items||""].filter(Boolean).join("  ");
+}
+function dnLineKey(o) {
+  return `${String(o.index||"").trim()}|${String(o.items||"").trim()}`;
+}
+
+// Gom các dòng hàng thành nhóm theo mã khai báo (mã chỉ gõ ở dòng đầu nhóm, dòng sau kế thừa)
+function dnBuildGroups(s, decl) {
+  const groups = [];
+  (s.orders || []).forEach(o => {
+    const d = (decl && decl[dnLineKey(o)]) || null;
+    const code = d ? String(d.declCode||"").trim() : "";
+    if (code || !groups.length) {
+      groups.push({ code, price: d ? d.declPrice : "", lines: [] });
+    }
+    groups[groups.length-1].lines.push(o);
+  });
+  return groups;
+}
+
+function dnGoodsCells(s, priceLabel, goodsDescription, opts) {
+  const O = opts || {};
+  const kind = O.kind || "khach";
+  const decl = O.decl || null;
   const descLines = [], qtyLines = [], priceLines = [], amtLines = [];
   let totalQty = 0, totalAmt = 0;
-  orders.forEach(o => {
-    const qty = parseFloat(o.qty) || 0;
-    // Làm tròn đơn giá 2 số lẻ TRƯỚC khi nhân (đúng như hàm ROUND trong file Excel gốc),
-    // để trên chứng từ luôn đúng: đơn giá × số lượng = số tiền (khách tự tính lại không lệch)
-    const price = Math.round((parseFloat(o.unitPrice) || 0) * 100) / 100;
-    const amt = qty * price;
-    totalQty += qty; totalAmt += amt;
-    const idxTxt = [dnEsc(o.contract||""), dnEsc(o.index||""), dnEsc(o.items||"")].filter(Boolean).join("&nbsp;&nbsp;");
-    descLines.push(`<div>${idxTxt}</div>`);
-    qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
-    priceLines.push(`<div style="text-align:right">US$${price.toFixed(2)}</div>`);
-    amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
-  });
-  if (!orders.length) {
-    descLines.push(`<div style="color:#999">(chưa có đơn hàng)</div>`);
+
+  const pushBlank = n => { for (let i=0;i<n;i++){ qtyLines.push(`<div>&nbsp;</div>`); priceLines.push(`<div>&nbsp;</div>`); amtLines.push(`<div>&nbsp;</div>`); } };
+  const salePrice = o => Math.round((parseFloat(o.unitPrice)||0)*100)/100;
+
+  if (kind === "haiquan") {
+    dnBuildGroups(s, decl).forEach(g => {
+      const qty = g.lines.reduce((t,o)=> t + (parseFloat(o.qty)||0), 0);
+      const price = Math.round((parseFloat(g.price)||0)*100)/100;
+      const amt = qty * price;
+      totalQty += qty; totalAmt += amt;
+      descLines.push(`<div>${dnEsc(g.code || dnLineDescText(g.lines[0]||{}))}</div>`);
+      qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
+      priceLines.push(`<div style="text-align:right">US$${price.toFixed(2)}</div>`);
+      amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
+    });
+  } else if (kind === "ketoan" || kind === "co") {
+    dnBuildGroups(s, decl).forEach(g => {
+      const gPrice = Math.round((parseFloat(g.price)||0)*100)/100;
+      // RULE 18: nhóm chỉ 1 dòng và mã khai báo trùng chính dòng đó → không in dòng mã
+      const skipCode = g.lines.length === 1 && dnNormCmp(g.code) === dnNormCmp(dnLineDescText(g.lines[0]));
+      if (g.code && !skipCode) {
+        descLines.push(`<div style="font-weight:bold">${dnEsc(g.code)}</div>`);
+        pushBlank(1);
+      }
+      let subQty = 0, subAmt = 0;
+      g.lines.forEach(o => {
+        const qty = parseFloat(o.qty)||0;
+        const price = (kind === "co") ? gPrice : salePrice(o);
+        const amt = qty * price;
+        subQty += qty; subAmt += amt;
+        totalQty += qty; totalAmt += amt;
+        descLines.push(`<div>${dnEsc(dnLineDescText(o))}</div>`);
+        qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
+        priceLines.push(`<div style="text-align:right">US$${price.toFixed(2)}</div>`);
+        amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
+      });
+      // SUB TOTAL: chỉ INV CO, chỉ khi nhóm có từ 2 dòng hàng trở lên
+      if (kind === "co" && g.lines.length >= 2) {
+        descLines.push(`<div class="dn-sub-total">SUB TOTAL</div>`);
+        qtyLines.push(`<div class="dn-sub-total" style="text-align:right">${dnInt(subQty)}</div>`);
+        priceLines.push(`<div class="dn-sub-total">&nbsp;</div>`);
+        amtLines.push(`<div class="dn-sub-total" style="text-align:right">US$${dnMoney(subAmt)}</div>`);
+      }
+    });
+  } else {
+    (s.orders || []).forEach(o => {
+      const qty = parseFloat(o.qty)||0;
+      // Làm tròn đơn giá 2 số lẻ TRƯỚC khi nhân (đúng như hàm ROUND trong file Excel gốc),
+      // để trên chứng từ luôn đúng: đơn giá × số lượng = số tiền
+      const price = salePrice(o);
+      const amt = qty * price;
+      totalQty += qty; totalAmt += amt;
+      descLines.push(`<div>${dnEsc(dnLineDescText(o))}</div>`);
+      qtyLines.push(`<div style="text-align:right">${dnInt(qty)}</div>`);
+      priceLines.push(`<div style="text-align:right">US$${price.toFixed(2)}</div>`);
+      amtLines.push(`<div style="text-align:right">US$${dnMoney(amt)}</div>`);
+    });
   }
-  return {
-    descHTML: descLines.join(""),
-    qtyHTML: qtyLines.join(""),
-    priceHTML: priceLines.join(""),
-    amtHTML: amtLines.join(""),
-    totalQty, totalAmt
-  };
+
+  if (!descLines.length) descLines.push(`<div style="color:#999">(chưa có đơn hàng)</div>`);
+  return { descHTML:descLines.join(""), qtyHTML:qtyLines.join(""), priceHTML:priceLines.join(""), amtHTML:amtLines.join(""), totalQty, totalAmt };
+}
+
+// Tổng tiền theo GIÁ BÁN (dùng cho dòng CMPT PRICE của INV Hải quan)
+function dnSaleTotals(s) {
+  let q = 0, a = 0;
+  (s.orders||[]).forEach(o => {
+    const qty = parseFloat(o.qty)||0;
+    const p = Math.round((parseFloat(o.unitPrice)||0)*100)/100;
+    q += qty; a += qty*p;
+  });
+  return { qty:q, amt:a };
 }
 
 // Tìm document khách hàng theo tên, có kèm ID (để ghi mẫu mặc định trở lại đúng khách)
@@ -1465,8 +1559,23 @@ function dnMarksNosCell(dn, totalCtns) {
     <div class="dn-marks-total">TOTAL: ${dnInt(totalCtns)} CARTONS</div>`;
 }
 
-function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
-  const g = dnGoodsCells(s, priceLabel, dn.goodsDescription);
+function dnGoodsTableHTML(s, dn, priceLabel, totalCtns, opts) {
+  const O = opts || {};
+  const g = dnGoodsCells(s, priceLabel, dn.goodsDescription, O);
+  // Dòng CMPT PRICE: chỉ có ở INV Hải quan. Tổng tiền = tổng của INV khách hàng,
+  // đơn giá giữa = tổng đó chia tổng số lượng, lấy 8 số lẻ.
+  let cmptRow = "";
+  if (O.kind === "haiquan") {
+    const st = dnSaleTotals(s);
+    const unit = st.qty ? (st.amt / st.qty) : 0;
+    cmptRow = `<tr class="dn-cmptrow">
+      <td style="text-align:center;font-weight:bold">CMPT PRICE:</td>
+      <td></td>
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">${dnInt(st.qty)}</td>
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">${unit.toFixed(8)}</td>
+      <td style="text-align:right;font-weight:bold;white-space:nowrap">US$${dnMoney(st.amt)}</td>
+    </tr>`;
+  }
   // Khối nhãn của 4 cột bọc trong .dn-sub — script dnAlignSubHeaders() sẽ đo và canh đều chiều cao
   // 4 khối này sau khi trang tải xong, nên dòng hàng đầu tiên của 4 cột luôn bắt đầu cùng 1 vị trí,
   // bất kể nhãn "CMPT (PROCESSING ON COMMISSION)" tự xuống mấy dòng.
@@ -1509,6 +1618,7 @@ function dnGoodsTableHTML(s, dn, priceLabel, totalCtns) {
       <td></td>
       <td style="text-align:right;font-weight:bold;white-space:nowrap">US$${dnMoney(g.totalAmt)}</td>
     </tr>
+    ${cmptRow}
   </table>`;
 }
 
@@ -1541,6 +1651,8 @@ const DN_PRINT_STYLE = `
   .dn-g-table tr.dn-totrow td.dn-tot-marks { border-top:none; border-bottom:2.5px solid #000; }
   /* Chiều cao tối thiểu thân bảng: đo từ file mẫu thật (86mm / 99mm với 5 dòng hàng) */
   .dn-g-table td.dn-desc-cell { height:90mm; }
+  .dn-sub-total { font-weight:bold; font-style:italic; border-top:1px solid #000; border-bottom:1px solid #000; }
+  .dn-g-table tr.dn-cmptrow td { border-top:1px solid #000; border-bottom:2.5px solid #000; padding:2px 6px; }
   .lbl { display:inline-block; width:78px; vertical-align:top; }
   .pagebreak { page-break-after: always; }
   .noprint { text-align:center; padding:10px; }
@@ -1571,8 +1683,9 @@ function dnMessrsBlockHTML(dn, underline) {
 }
 
 // ---- TRANG 1: COMMERCIAL INVOICE ----
-function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
-  return `<div class="pagebreak dn-page-wrap">
+function dnRenderInvoicePage(s, dn, priceLabel, totalCtns, opts) {
+  const O = opts || {};
+  return `<div class="${O.noBreak ? "" : "pagebreak "}dn-page-wrap${O.noFit ? " dn-nofit" : ""}">
     ${dnLetterheadHTML()}
     <table class="dn-h-table">
       <tr>
@@ -1584,7 +1697,7 @@ function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
         </td>
       </tr>
       <tr>
-        <td style="width:64%">${dnMessrsBlockHTML(dn)}</td>
+        <td style="width:64%">${dnMessrsBlockHTML(O.dnHeader || dn)}</td>
         <td>INVOICE NO.<br><b>${dnEsc(s.invoiceNo)}</b><br><br>CONFIRMATION</td>
       </tr>
       <tr>
@@ -1594,64 +1707,27 @@ function dnRenderInvoicePage(s, dn, priceLabel, totalCtns) {
         <td colspan="2"><span class="lbl">PAYMENT BY</span><b>T/T REMITTANCE</b><br><span class="lbl">Date of issue</span><br><span class="lbl">Issuing bank</span></td>
       </tr>
     </table>
-    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
-    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
+    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns, O)}
+    <div style="margin-top:20px;text-align:right;min-height:100px">${dnSignatureHTML(O.noStamp ? {...dn, includeStamp:false} : dn, s._stampImageDataUrl)}</div>
   </div>`;
 }
 
-// ---- TRANG 2: DEBIT NOTE ----
-function dnRenderDebitNotePage(s, dn, priceLabel, totalCtns) {
-  return `<div class="dn-page-wrap">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">
-      <div style="font-weight:bold;font-style:italic;font-size:19px">TOSGAMEX</div>
-      <div style="text-align:center;flex:1">
-        <div style="font-weight:bold;font-size:13px">TOMIYA SUMMIT GARMENT EXPORT CO., LTD</div>
-        <div style="font-size:10px;margin-top:2px;white-space:nowrap">LOT B-1, LONG BINH TECHNO PARK (LOTECO) EPZ, LONG BINH WARD, DONG NAI CITY, VIETNAM</div>
-        <div style="font-size:10px">Tel: 84-251.3992537&nbsp;&nbsp;&nbsp;Fax: 84-251.3992540</div>
-      </div>
-      <div style="width:66px"></div>
-    </div>
-    <div style="border-top:1px solid #000;margin:8px 0 12px"></div>
-    <div>${dnMessrsBlockHTML(dn, true)}</div>
-    <div style="display:flex;justify-content:flex-end;margin-top:6px">
-      <div style="text-align:right">DEBIT NOTE NO.: <b>${dnEsc(s.invoiceNo)}</b><br>DATE: <b>${dnDate(new Date())}</b></div>
-    </div>
-    <div style="text-align:center;font-weight:bold;font-size:18px;margin:12px 0 8px">DEBIT NOTE</div>
-    <div style="display:flex;justify-content:space-between;border-top:1px solid #000;border-bottom:1px solid #000;padding:4px 2px;margin-bottom:10px">
-      <div>INVOICE NO.: <b>${dnEsc(s.invoiceNo)}</b></div>
-      <div>DATE OF INVOICE: <b>${dnDate(s.invoiceDate)}</b></div>
-    </div>
-    ${dnGoodsTableHTML(s, dn, priceLabel, totalCtns)}
-    <div style="margin-top:10px"><b>AMOUNT IN WORD:</b> ${dnWordsUSD(dnGoodsCells(s, priceLabel, dn.goodsDescription).totalAmt)}</div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:14px">
-      <div>Please kindly arrange to pay this amount for us to:<br>${dnNl2br(DN_BANK_TEXT)}</div>
-      <div style="flex-shrink:0">${dnSignatureHTML(dn, s._stampImageDataUrl)}</div>
-    </div>
-  </div>`;
-}
+// ====== XUẤT 4 LOẠI INVOICE (chỉ trang Commercial Invoice, không kèm Debit Note) ======
+const INV_KINDS = {
+  khach:   { label:"INV khách hàng",  needDecl:false, fileTag:"INV khach hang" },
+  ketoan:  { label:"INV kế toán",     needDecl:true,  fileTag:"INV ke toan" },
+  co:      { label:"INV CO",          needDecl:true,  fileTag:"INV CO",       needPrice:true },
+  haiquan: { label:"INV Hải quan",    needDecl:true,  fileTag:"INV Hai quan", needPrice:true, itochu:true },
+};
+// Khách giữ nguyên MESSRS ở INV Hải quan (không đổi sang hợp đồng ITOCHU)
+const HQ_KEEP_MESSRS = ["NOMURA"];
 
-function renderDebitNotePrint(s) {
+function renderInvoicePrint(s, kind, opts) {
+  const O = opts || {};
   const dn = s.debitNote || {};
   const priceLabel = dn.priceTerm || "FOB";
   const totalCtns = dnTotalCartons(s);
   const adjustScript = `
-    function dnAutoFitPage(){
-      var TARGET_H = 950; // px ~ chiều cao 1 trang A4 trong khổ in, đã trừ lề + biên an toàn
-      var MIN_FONT = 7;
-      document.querySelectorAll('.dn-page-wrap').forEach(function(pageEl){
-        var table = pageEl.querySelector('.dn-g-table');
-        if (!table) return;
-        var fontSize = 11;
-        var guard = 0;
-        while (pageEl.scrollHeight > TARGET_H && fontSize > MIN_FONT && guard < 40) {
-          fontSize -= 0.5;
-          table.style.fontSize = fontSize + 'px';
-          guard++;
-        }
-      });
-    }
-    // Canh đều chiều cao khối nhãn của 4 cột: đo khối cao nhất rồi set cả 4 bằng đúng số đó,
-    // để dòng hàng đầu tiên của 4 cột luôn bắt đầu cùng vị trí (nhãn CMPT dài mấy dòng cũng không lệch)
     function dnAlignSubHeaders(){
       document.querySelectorAll('.dn-g-table').forEach(function(table){
         var subs = table.querySelectorAll('.dn-sub');
@@ -1662,22 +1738,127 @@ function renderDebitNotePrint(s) {
         for (i = 0; i < subs.length; i++) { subs[i].style.height = maxH + 'px'; }
       });
     }
-    function dnRunLayoutFixups(){ dnAutoFitPage(); dnAlignSubHeaders(); }
-    if (document.readyState === 'complete') { dnRunLayoutFixups(); }
-    else { window.addEventListener('load', dnRunLayoutFixups); }
+    if (document.readyState === 'complete') { dnAlignSubHeaders(); }
+    else { window.addEventListener('load', dnAlignSubHeaders); }
   `;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Debit Note</title>
-    <style>${DN_PRINT_STYLE}</style></head><body>
+  const pageOpts = {
+    kind, decl: O.decl || null, dnHeader: O.dnHeader || null,
+    noStamp: !O.withStamp, noBreak: true, noFit: true,
+  };
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${INV_KINDS[kind].label}</title>
+    <style>${DN_PRINT_STYLE}
+    /* Các bản này cho bảng dài tràn sang trang sau, không co chữ, không ép chiều cao */
+    .dn-nofit .dn-g-table td.dn-desc-cell { height:auto; }
+    </style></head><body>
     <div class="noprint"><button onclick="window.print()">🖨 In / Lưu PDF</button></div>
-    ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns)}
-    ${dnRenderDebitNotePage(s, dn, priceLabel, totalCtns)}
+    ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns, pageOpts)}
     <script>${adjustScript}<\/script>
     </body></html>`;
   const w = window.open("", "_blank");
   w.document.write(html);
   w.document.close();
-  w.document.title = pdfFileName("Debit Note", s.invoiceNo);
+  w.document.title = pdfFileName(INV_KINDS[kind].fileTag, s.invoiceNo);
 }
+
+// Hộp hỏi con dấu trước khi xuất (tự dựng, không cần thêm modal vào index.html)
+function dnAskStamp(title) {
+  return new Promise(resolve => {
+    const bg = document.createElement("div");
+    bg.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:flex;align-items:center;justify-content:center";
+    bg.innerHTML = `<div style="background:var(--bg-card);border-radius:12px;padding:20px 22px;max-width:360px;font-size:13.5px;color:var(--text)">
+      <div style="font-weight:500;font-size:15px;margin-bottom:8px">${title}</div>
+      <div style="color:var(--text-muted);margin-bottom:18px">Có ghép con dấu và chữ ký vào file không?</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button class="btn btn-sm" data-v="cancel">Hủy</button>
+        <button class="btn btn-sm" data-v="no">Không dấu</button>
+        <button class="btn btn-sm btn-primary" data-v="yes">Có dấu + chữ ký</button>
+      </div></div>`;
+    bg.addEventListener("click", e => {
+      const v = e.target.getAttribute && e.target.getAttribute("data-v");
+      if (!v) { if (e.target === bg) { bg.remove(); resolve(null); } return; }
+      bg.remove();
+      resolve(v === "cancel" ? null : v === "yes");
+    });
+    document.body.appendChild(bg);
+  });
+}
+
+window.openInvoice = async function(shipId, kind) {
+  if (isGuest()) { showToast("Tài khoản Khách chỉ được xem, không xuất chứng từ."); return; }
+  const cfg = INV_KINDS[kind];
+  if (!cfg) return;
+  const s = shipments().find(x => x.id === shipId);
+  if (!s) return;
+
+  if (!s.invoiceNo || !s.invoiceDate) {
+    showToast("Lô hàng chưa có Số hóa đơn / Ngày hóa đơn — vào 'Sửa lô hàng' nhập trước."); return;
+  }
+  if (!s.debitNote || !s.debitNote.messrsText) {
+    showToast("Lô này chưa có thông tin chứng từ. Mở 'Xuất Debit Note' một lần để nhập MESSRS / Shipping Mark rồi quay lại."); return;
+  }
+  // 3 bản dùng mã khai báo: bắt buộc bước 6 (Tạo định mức) đã xong
+  if (cfg.needDecl && (s.checklist||{})[6] !== "done") {
+    showToast(`Chưa xong bước 6 (Tạo định mức) — chỉ xuất được INV khách hàng.`); return;
+  }
+
+  let decl = null;
+  if (cfg.needDecl) {
+    try {
+      const { doc: fdoc, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDoc(fdoc(db, "declarations", shipId));
+      if (snap.exists()) {
+        decl = {};
+        ((snap.data()||{}).lines || []).forEach(l => { if (l && l.k) decl[l.k] = l; });
+      }
+    } catch (e) { decl = null; }
+    const codes = decl ? Object.values(decl).filter(l => String(l.declCode||"").trim()) : [];
+    if (!codes.length) {
+      showToast("Lô này chưa có mã khai báo hải quan — vào trang Định mức nhập trước."); return;
+    }
+    if (cfg.needPrice) {
+      const groups = dnBuildGroups(s, decl);
+      const bad = groups.filter(g => !(parseFloat(g.price) > 0));
+      if (bad.length) {
+        showToast(`Còn ${bad.length} mã khai báo chưa có Giá khai báo — vào trang Định mức nhập trước.`); return;
+      }
+    }
+  }
+
+  // INV Hải quan: MESSRS = hợp đồng ITOCHU, CONSIGNEE = khách (trừ NOMURA giữ nguyên)
+  let dnHeader = null;
+  if (cfg.itochu) {
+    const custName = (siCustomerName(s) || "").toUpperCase();
+    const keep = HQ_KEEP_MESSRS.some(k => custName.includes(k));
+    if (!keep) {
+      let itochuText = "";
+      try {
+        const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+        const snap = await getDoc(d2(db, "settings", "debitNote"));
+        if (snap.exists()) itochuText = (snap.data() || {}).itochuText || "";
+      } catch (e) {}
+      if (!itochuText.trim()) {
+        showToast("Chưa có thông tin hợp đồng ITOCHU — vào Admin ▸ Thông tin chức vụ và con dấu để nhập."); return;
+      }
+      dnHeader = { ...s.debitNote, messrsText: itochuText, consigneeText: s.debitNote.messrsText || "" };
+    }
+  }
+
+  const ans = await dnAskStamp(cfg.label);
+  if (ans === null) return;
+
+  let stampUrl = "";
+  if (ans) {
+    try {
+      const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+      const snap = await getDoc(d2(db, "settings", "debitNote"));
+      if (snap.exists()) stampUrl = (snap.data() || {}).stampImageDataUrl || "";
+    } catch (e) {}
+    if (!stampUrl) { showToast("Chưa có ảnh con dấu — vào Admin ▸ Thông tin chức vụ và con dấu để thêm."); return; }
+  }
+  const sx = { ...s, _stampImageDataUrl: stampUrl,
+               debitNote: { ...(s.debitNote||{}), includeStamp: !!ans } };
+  renderInvoicePrint(sx, kind, { decl, dnHeader, withStamp: !!ans });
+};
 
 // ---- MODAL: mở form nhập liệu Debit Note ----
 window.openDebitNote = async function(shipId) {
@@ -1790,6 +1971,7 @@ window.saveDebitNoteAndExport = async function(shipId) {
         signerName: data.signerName || DN_SIGNER_FALLBACK.signerName,
         signerTitle: data.signerTitle || DN_SIGNER_FALLBACK.signerTitle,
         stampImageDataUrl: data.stampImageDataUrl || "",
+        itochuText: data.itochuText || "",
       };
     }
   } catch(e) { console.warn("Không đọc được cài đặt Người ký/Con dấu (Admin ▸ Thông tin chức vụ và con dấu):", e); }
@@ -1836,7 +2018,7 @@ window.saveDebitNoteAndExport = async function(shipId) {
 window.openDebitNoteSettings = async function() {
   if (!isAdmin()) { showToast("Chỉ Admin mới chỉnh được mục này."); return; }
 
-  let cur = { signerName: DN_SIGNER_FALLBACK.signerName, signerTitle: DN_SIGNER_FALLBACK.signerTitle, stampImageDataUrl: "" };
+  let cur = { signerName: DN_SIGNER_FALLBACK.signerName, signerTitle: DN_SIGNER_FALLBACK.signerTitle, stampImageDataUrl: "", itochuText: "" };
   try {
     const { doc: d2, getDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const snap = await getDoc(d2(db, "settings", "debitNote"));
@@ -1846,6 +2028,7 @@ window.openDebitNoteSettings = async function() {
         signerName: data.signerName || cur.signerName,
         signerTitle: data.signerTitle || cur.signerTitle,
         stampImageDataUrl: data.stampImageDataUrl || "",
+        itochuText: data.itochuText || "",
       };
     }
   } catch(e) {
@@ -1879,6 +2062,10 @@ window.openDebitNoteSettings = async function() {
         </div>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Hợp đồng ITOCHU (dùng cho MESSRS của INV Hải quan)</label>
+      <textarea class="form-textarea" id="dns-itochu" rows="4" placeholder="ITOCHU CORPORATION (YX SECTION)&#10;1-3, 4-Chome, Kyutaro-machi, chuo-ku, Osaka, Japan&#10;TEL. 06-6241-2691">${dnEsc(cur.itochuText)}</textarea>
+    </div>
     <div class="form-footer">
       <button type="button" class="btn" onclick="closeModalById('modal-debitnote-settings')">Hủy</button>
       <button type="button" class="btn btn-primary" onclick="saveDebitNoteSettings()"><i class="ti ti-device-floppy"></i> Lưu</button>
@@ -1906,7 +2093,8 @@ window.openDebitNoteSettings = async function() {
 window.saveDebitNoteSettings = async function() {
   const signerName = document.getElementById("dns-signer-name").value.trim() || DN_SIGNER_FALLBACK.signerName;
   const signerTitle = document.getElementById("dns-signer-title").value.trim() || DN_SIGNER_FALLBACK.signerTitle;
-  const payload = { signerName, signerTitle };
+  const payload = { signerName, signerTitle,
+    itochuText: (document.getElementById("dns-itochu")?.value || "").trim() };
   if (window.__dnNewStampDataUrl) payload.stampImageDataUrl = window.__dnNewStampDataUrl;
 
   try {

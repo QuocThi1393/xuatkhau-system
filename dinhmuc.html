@@ -36,6 +36,8 @@
   .dm-edit { background: #ffffff !important; color: #1a1a1a !important; }
   /* Ô nhập được nhưng đang bị khóa vì lô chưa đủ điều kiện */
   .dm-wait { background: #F1EFE8 !important; color: #b4b2a9 !important; }
+  /* Lô đã khai tờ khai — chốt sổ, không sửa mã/giá nữa */
+  .dm-tk   { background: #E4E2DA !important; color: #8a887f !important; }
   /* Dòng ngăn giữa các lô */
   .dm-sep  { background: #FAEEDA !important; color: #854F0B !important; font-weight: 600; }
   .dm-sep-num { background: #FAEEDA !important; color: #A32D2D !important; font-weight: 600; }
@@ -102,7 +104,7 @@ import { db } from "./js/firebase-config.js";
 import { isAdmin, isLoggedIn, canMakeNorm, onAuthChange, logout, nickname } from "./js/auth.js";
 import { initTopbar } from "./js/topbar.js";
 import { showToast } from "./js/utils.js";
-import { collection, getDocs, doc, writeBatch }
+import { collection, getDocs, doc, writeBatch, updateDoc }
   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 initTopbar("dinhmuc");
@@ -236,6 +238,7 @@ function rebuild() {
     const orders = s.orders || [];
     if (!orders.length) return;
     const elig = isEligible(s);
+    const locked = ((s.checklist || {})[8] === "done");   // đã khai tờ khai → chốt
     const dl = deadlineISO(s);
     const saved = declMap[s.id] || {};
     const savedLines = {};
@@ -245,7 +248,7 @@ function rebuild() {
     const totCtns = orders.reduce((t,o) => t + (num(o.ctns) || 0), 0);
 
     rows.push({
-      _t:"sep", _sid:s.id, _elig:elig, _dl:dl,
+      _t:"sep", _sid:s.id, _elig:elig, _lockTK:locked, _dl:dl,
       date: ddmm(shipDateOf(s)),
       cust: orders[0]?.customer || "",
       contract: s.container || "",
@@ -260,7 +263,7 @@ function rebuild() {
       const k = lineKey(o);
       const sv = savedLines[k] || {};
       rows.push({
-        _t:"line", _sid:s.id, _key:k, _first:(i===0), _elig:elig, _dl:dl,
+        _t:"line", _sid:s.id, _key:k, _first:(i===0), _elig:elig, _lockTK:locked, _dl:dl,
         date: i===0 ? ddmm(shipDateOf(s)) : "",
         cust: i===0 ? (o.customer || "") : "",
         contract: o.contract || "",
@@ -373,12 +376,13 @@ function renderGrid() {
 
       let editable = false;
       if (key === "invName1" || key === "invName2") editable = admin;
-      else if (key === "declCode" || key === "declPrice") editable = canNorm && r._elig;
+      else if (key === "declCode" || key === "declPrice") editable = canNorm && r._elig && !r._lockTK;
       else if (key === "note") editable = canNorm;
 
       p.readOnly = !editable;
       if (EDITABLE.includes(key)) {
         if (editable) p.className = "dm-edit";
+        else if ((key === "declCode" || key === "declPrice") && r._lockTK) p.className = "dm-tk";
         else if ((key === "declCode" || key === "declPrice") && !r._elig) p.className = "dm-wait";
         else p.className = "dm-ro";
       } else {
@@ -423,6 +427,7 @@ function sepStatusRenderer(inst, td, row) {
   const r = rows[row];
   td.className = "dm-sep";
   if (!r) { td.innerHTML = ""; return; }
+  if (r._lockTK) { td.innerHTML = "Đã khai tờ khai — chốt"; td.title = "Lô đã tick bước 8 (Tờ khai hải quan). Mã và giá khai báo không sửa được nữa."; return; }
   if (!r._elig) { td.innerHTML = "Thiếu HS / C/O / giá"; td.title = "Lô chưa đủ điều kiện: phải có HS code, C/O form và đơn giá ở mọi dòng hàng"; return; }
   if (shipmentDone(r._sid)) { td.innerHTML = "Đã tạo định mức"; return; }
   td.innerHTML = "Thiếu mã / giá KB";
@@ -437,6 +442,7 @@ function codeRenderer(inst, td, row, col, prop, value) {
     td.innerHTML = "&#8627; " + r._eff;
     td.classList.add("dm-inh");
   }
+  if (r._lockTK) td.title = "Đã khai tờ khai — không sửa được";
   if (r._warn === "dup") {
     td.classList.add("dm-bad");
     td.title = "Mã này đã được khai ở một nhóm khác trong cùng lô. Nếu 2 nhóm dùng chung mã thì để trống dòng dưới.";
@@ -515,6 +521,7 @@ async function save() {
     const batch = writeBatch(db);
     const who = nickname() || "";
     const stamp = new Date().toISOString();
+    const tickJobs = [];   // cập nhật bước 6 sau khi lưu declarations xong
     dirty.forEach(sid => {
       const s = allShipments.find(x => x.id === sid);
       const lines = rows.filter(r => r._t === "line" && r._sid === sid).map(r => {
@@ -528,11 +535,24 @@ async function save() {
           note: String(r.note || "").trim(),
         };
       }).filter(l => l.declCode || l.declPrice !== "" || l.invName1 || l.invName2 || l.note);
+      // ===== Tự tick bước 6 (Tạo định mức) =====
+      // Chỉ GỠ tick nếu chính hệ thống đã tick trước đó (autoTicked6), để không bao giờ
+      // gỡ mất cái tick do admin tự bấm. Lô đã khai tờ khai thì không chạm vào.
+      const ck = (s && s.checklist) || {};
+      const wasAuto = !!(declMap[sid] || {}).autoTicked6;
+      const done = shipmentDone(sid);
+      let autoTicked6 = wasAuto;
+      if (ck[8] !== "done") {
+        if (done && ck[6] !== "done")            { tickJobs.push([sid, "done"]);    autoTicked6 = true; }
+        else if (!done && ck[6] === "done" && wasAuto) { tickJobs.push([sid, "pending"]); autoTicked6 = false; }
+      }
+
       const payload = {
         shipmentId: sid,
         invoiceNo: s?.invoiceNo || null,
         stuffingDate: s?.stuffingDate || null,
         lines,
+        autoTicked6,
         updatedAt: stamp,
         updatedBy: who,
       };
@@ -540,9 +560,23 @@ async function save() {
       declMap[sid] = payload;
     });
     await batch.commit();
+
+    // Ghi bước 6 bằng đường dẫn có dấu chấm → chỉ chạm đúng 1 ô trong checklist,
+    // không viết lại cả document nên không đè mất thay đổi của người khác.
+    let tickErr = 0;
+    for (const [sid, val] of tickJobs) {
+      try {
+        await updateDoc(doc(db, "shipments", sid), { "checklist.6": val });
+        const sh = allShipments.find(x => x.id === sid);
+        if (sh) { sh.checklist = { ...(sh.checklist || {}), 6: val }; }
+      } catch (e) { tickErr++; }
+    }
+
     dirty.clear();
-    updateHeader();
-    showToast("Đã lưu!");
+    rebuild();
+    showToast(tickErr
+      ? `Đã lưu, nhưng ${tickErr} lô không cập nhật được bước 6 (kiểm tra lại Firestore Rules).`
+      : (tickJobs.length ? `Đã lưu · cập nhật bước 6 cho ${tickJobs.length} lô.` : "Đã lưu!"));
   } catch (e) {
     alert("Lưu thất bại: " + (e.message || e) + "\n\nDữ liệu trên bảng vẫn còn, anh thử Lưu lại.");
   } finally {

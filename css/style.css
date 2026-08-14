@@ -408,18 +408,19 @@ a { text-decoration: none; color: inherit; }
 /* Phần 3: container / hình thức xuất */
 .ch-cont-list { display: flex; flex-direction: column; gap: 3px; max-height: 76px; overflow-y: auto; }
 .ch-cont-line { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
-.ch-cont-type { font-size: 11px; font-weight: 500; background: var(--blue-bg); color: var(--blue-text); padding: 1px 7px; border-radius: var(--radius-md); flex-shrink: 0; }
-.ch-cont-type.t40 { background: var(--green-bg); color: var(--green-text); }
+.ch-cont-type { font-size: 11px; font-weight: 500; background: var(--blue-bg); color: var(--blue-text); border: 0.5px solid var(--blue-border); padding: 1px 7px; border-radius: var(--radius-md); flex-shrink: 0; }
+.ch-cont-type.t40 { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
 .ch-cont-no   { font-size: 12px; font-weight: 500; color: var(--text); }
 .ch-cont-seal { font-size: 11px; color: var(--text-muted); }
 .ch-cont-more { font-size: 10.5px; color: var(--text-hint); }
-.ch-mode-chip { display: inline-block; font-size: 13px; font-weight: 500; letter-spacing: 1px; padding: 3px 12px; border-radius: var(--radius-md); }
-.ch-mode-chip.blue   { background: var(--blue-bg);  color: var(--blue-text); }
-.ch-mode-chip.teal   { background: var(--green-bg); color: #0F6E56; }
-.ch-mode-chip.amber  { background: var(--amber-bg); color: var(--amber-text); }
-.ch-mode-chip.purple { background: #EEEDFE;         color: #534AB7; }
-.ch-mode-chip.gray   { background: var(--bg-secondary); color: var(--text-muted); }
-[data-theme="dark"] .ch-mode-chip.purple { background: #26215C; color: #AFA9EC; }
+.ch-mode-chip { display: inline-block; font-size: 20px; font-weight: 500; letter-spacing: 2px;
+  padding: 5px 20px; border-radius: var(--radius-md); border: 1px solid; line-height: 1.15; }
+.ch-mode-chip.blue   { background: var(--blue-bg);  color: var(--blue-text);  border-color: var(--blue-border); }
+.ch-mode-chip.teal   { background: var(--green-bg); color: #0F6E56;           border-color: var(--green-border); }
+.ch-mode-chip.amber  { background: var(--amber-bg); color: var(--amber-text); border-color: var(--amber-border); }
+.ch-mode-chip.purple { background: #EEEDFE;         color: #534AB7;           border-color: #AFA9EC; }
+.ch-mode-chip.gray   { background: var(--bg-secondary); color: var(--text-muted); border-color: var(--border-md); }
+[data-theme="dark"] .ch-mode-chip.purple { background: #26215C; color: #AFA9EC; border-color: #534AB7; }
 
 /* Phần 4: tiến độ */
 .ch-status-top { display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
@@ -441,6 +442,10 @@ a { text-decoration: none; color: inherit; }
 .doc-mi { display: flex; align-items: center; gap: 9px; padding: 7px 13px; cursor: pointer; color: var(--text); }
 .doc-mi:hover { background: var(--bg-secondary); }
 .doc-mi i { font-size: 15px; color: var(--text-muted); }
+.doc-sep { font-size: 10.5px; font-weight: 500; color: var(--text-hint); padding: 7px 13px 3px;
+  margin-top: 3px; border-top: 0.5px solid var(--border); }
+.doc-mi-soon, .doc-mi-soon i { color: var(--text-hint); }
+.doc-soon { margin-left: auto; font-size: 10px; color: var(--text-hint); }
 .chevron.open  { transform: rotate(180deg); }
 
 /* Màn hình hẹp: xếp dọc, đổi viền trái thành viền trên */

@@ -1833,10 +1833,7 @@ function renderInvoicePrint(s, kind, opts) {
     noStamp: !O.withStamp, noBreak: true, noFit: true,
   };
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${INV_KINDS[kind].label}</title>
-    <style>${DN_PRINT_STYLE}
-    /* Các bản này cho bảng dài tràn sang trang sau, không co chữ, không ép chiều cao */
-    .dn-nofit .dn-g-table td.dn-desc-cell { height:auto; }
-    </style></head><body>
+    <style>${DN_PRINT_STYLE}</style></head><body>
     <div class="noprint"><button onclick="window.print()">🖨 In / Lưu PDF</button></div>
     ${dnRenderInvoicePage(s, dn, priceLabel, totalCtns, pageOpts)}
     <script>${adjustScript}<\/script>

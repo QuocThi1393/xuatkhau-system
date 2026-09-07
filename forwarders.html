@@ -58,6 +58,26 @@
         <label class="form-label">Thông tin Forwarder (tên + địa chỉ + SĐT) — nhập tay</label>
         <textarea class="form-input" id="ff-info" rows="3" placeholder="VD: SITC VIETNAM CO., LTD&#10;123 Nguyen Van A, Q1, HCM&#10;Tel: 028 1234 5678"></textarea>
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Tên Công Ty theo hóa đơn</label>
+          <input class="form-input" id="ff-invname" placeholder="Tên pháp nhân ghi trên hóa đơn">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Mã số thuế</label>
+          <input class="form-input" id="ff-taxcode" placeholder="0300123456">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Ngân Hàng Thanh Toán</label>
+          <input class="form-input" id="ff-bank" placeholder="VD: Vietcombank — CN Tân Bình">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Số Tài Khoản</label>
+          <input class="form-input" id="ff-account" placeholder="0071000123456">
+        </div>
+      </div>
       <div class="form-group">
         <label class="form-label">Liên kết khách hàng (chọn nhiều)</label>
         <div id="ff-customers" style="display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:0.5px solid var(--border-md);border-radius:var(--radius-md);max-height:160px;overflow-y:auto"></div>
@@ -139,6 +159,10 @@ document.getElementById("form-fwd").addEventListener("submit", async e => {
     mailBooking: document.getElementById("ff-mailbooking").value.trim(),
     mailDoc: document.getElementById("ff-maildoc").value.trim(),
     info: document.getElementById("ff-info").value.trim(),
+    invoiceName: document.getElementById("ff-invname").value.trim(),
+    taxCode: document.getElementById("ff-taxcode").value.trim(),
+    bankName: document.getElementById("ff-bank").value.trim(),
+    bankAccount: document.getElementById("ff-account").value.trim(),
     customers: linked,
   };
   try {
@@ -165,7 +189,7 @@ function renderList() {
     card.innerHTML = `
       <div style="padding:14px 16px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div style="font-size:15px;font-weight:500">${f.name}</div>
+          <div style="font-size:15px;font-weight:500">${f.name}${f.taxCode?`<span class="badge" style="margin-left:8px;font-size:11px;font-weight:400;color:var(--text-muted)">MST: ${f.taxCode}</span>`:""}</div>
           ${admin?`<div style="display:flex;gap:6px">
             <button class="btn btn-sm" onclick="editFwd('${f.id}')"><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm btn-danger" onclick="deleteFwd('${f.id}')"><i class="ti ti-trash"></i></button>
@@ -194,6 +218,10 @@ window.editFwd = function(id) {
   document.getElementById("ff-mailbooking").value = f.mailBooking||"";
   document.getElementById("ff-maildoc").value = f.mailDoc||"";
   document.getElementById("ff-info").value = f.info||"";
+  document.getElementById("ff-invname").value = f.invoiceName||"";
+  document.getElementById("ff-taxcode").value = f.taxCode||"";
+  document.getElementById("ff-bank").value = f.bankName||"";
+  document.getElementById("ff-account").value = f.bankAccount||"";
   renderCustomerCheckboxes(f.customers||[]);
   openModal("modal-fwd");
 };

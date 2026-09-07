@@ -530,15 +530,15 @@ window.openCODraft = async function(shipId, type) {
   if (type === "AJ") {
     document.getElementById("co-draft-body").innerHTML = `
       <div class="form-group">
-        <label class="form-label">1. Goods consigned from (Shipper)</label>
+        <label class="form-label">1. Goods Consigned from (Shipper)</label>
         <textarea class="form-textarea" id="cod-shipper" rows="3">${shipperDef}</textarea>
       </div>
       <div class="form-group">
-        <label class="form-label">2. Goods consigned to (Consignee)</label>
+        <label class="form-label">2. Goods Consigned to (Consignee)</label>
         <textarea class="form-textarea" id="cod-consignee" rows="3">${consigneeText}</textarea>
       </div>
       <div class="form-row-3">
-        <div class="form-group"><label class="form-label">Shipment date</label><input class="form-input" id="cod-depdate" value="${coFmtDepDate(s.etd)}"></div>
+        <div class="form-group"><label class="form-label">Departure Date</label><input class="form-input" id="cod-depdate" value="${coFmtDepDate(s.etd)}"></div>
         <div class="form-group"><label class="form-label">Vessel</label><input class="form-input" id="cod-vessel" value="${(s.vessel||"").replace(/"/g,"&quot;")}"></div>
         <div class="form-group"><label class="form-label">Port of Discharge</label><input class="form-input" id="cod-pod" value="${fullPort(s.port)}, JAPAN"></div>
       </div>
@@ -548,7 +548,14 @@ window.openCODraft = async function(shipId, type) {
           <input class="form-input" id="cod-goods" value="${goodsDescription}">
         </div>
         <div class="form-group">
-          <label class="form-label">Box 6 hiện</label>
+          <label class="form-label">7. Number and kind of packages — hiện cột nào</label>
+          <div style="display:flex;gap:16px;padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-aj-contract" checked> Contract</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-aj-items" checked> Items</label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">6. Marks and numbers on packages</label>
           <div style="display:flex;gap:16px;padding-top:8px">
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-ctns" checked> Số thùng (CTNS)</label>
             <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="checkbox" id="cod-shipmark"> Shipping Mark</label>
@@ -638,6 +645,8 @@ window.confirmExportCO = function() {
       goodsDescription: document.getElementById("cod-goods").value,
       showCtns: document.getElementById("cod-ctns").checked,
       showShipMark: document.getElementById("cod-shipmark").checked,
+      showContract: document.getElementById("cod-aj-contract").checked,
+      showItems: document.getElementById("cod-aj-items").checked,
       thirdCountry: document.getElementById("cod-thirdcountry").checked,
       backToBack: document.getElementById("cod-backtoback").checked,
       retro: document.getElementById("cod-retro").checked,
@@ -840,6 +849,18 @@ function renderCOPrintAJ(s, groups, ov) {
   const certNo = coFmtCertNo(s.etd);
   const chk = (b) => b ? "&#9746;" : "&#9633;";
 
+  // Box 7: HS code luôn hiện; Contract và Items bật/tắt theo ô tick trong hộp thoại.
+  // Cột thứ 3 lấy THẲNG Items (trước đây lấy Index, trống mới thay bằng Items).
+  const ajPackCols = [ov.showContract && "contract", ov.showItems && "items"].filter(Boolean);
+  function ajPackCell(o) {
+    const cells = [`<td style="width:55px;padding:1px 2px">${o.hsCode||""}</td>`];
+    ajPackCols.forEach(k => {
+      const v = k === "contract" ? (o.contract||"") : (o.items||"");
+      cells.push(`<td style="${k==="contract" ? "width:65px;" : ""}padding:1px 2px">${v}</td>`);
+    });
+    return `<table style="width:100%"><tr>${cells.join("")}</tr></table>`;
+  }
+
   const marksParts = [];
   if (ov.showCtns) marksParts.push(`${Math.round(totalCtns).toLocaleString()} CTNS`);
   if (ov.showShipMark) marksParts.push((s.shipMark||"").replace(/\n/g,"<br>"));
@@ -854,7 +875,7 @@ function renderCOPrintAJ(s, groups, ov) {
     const itemRows = pageOrders.map((o,i) => `<tr style="font-size:9px;height:18px">
       <td style="border-right:1px solid #000;text-align:center">${startNum+i+1}</td>
       <td style="border-right:1px solid #000;padding:2px 4px;background:${o._color||"transparent"}">
-        <table style="width:100%"><tr><td style="width:55px;padding:1px 2px">${o.hsCode||""}</td><td style="width:65px;padding:1px 2px">${o.contract||""}</td><td style="padding:1px 2px">${o.index||o.items||""}</td></tr></table>
+        ${ajPackCell(o)}
       </td>
       <td style="border-right:1px solid #000;text-align:center">CTC</td>
       <td style="border-right:1px solid #000;text-align:right;padding:2px 4px">${Math.round(parseFloat(o.qty)||0).toLocaleString()} PCS</td>

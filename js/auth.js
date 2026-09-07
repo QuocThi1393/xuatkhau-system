@@ -14,16 +14,17 @@ const ADMIN_EMAIL = "nguyenquocthitpiuh@gmail.com";
 
 // Mỗi vai trò = một tập quyền. Thêm vai trò mới sau này chỉ cần thêm 1 dòng ở đây.
 const ROLE_PERMS = {
-  admin:      { view:true, addDelete:true,  manageMaster:true,  manageUsers:true,  editCols:"all",                   canNorm:true  },
+  admin:      { view:true, addDelete:true,  manageMaster:true,  manageUsers:true,  editCols:"all",                   canNorm:true, canPay:true },
   price:      { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["unitPrice"],           canNorm:false },
   dimension:  { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:["dimension","tareCtn"], canNorm:false },
   taodinhmuc: { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[],                      canNorm:true  },
+  thanhtoan:  { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[],                      canPay:true   },
   viewer:     { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[],                      canNorm:false },
   guest:      { view:true, addDelete:false, manageMaster:false, manageUsers:false, editCols:[],                      canNorm:false },
 };
 export const ROLE_LABELS = {
   admin:"Admin (toàn quyền)", price:"Sửa giá", dimension:"Sửa Dimension",
-  taodinhmuc:"Tạo định mức", viewer:"Chỉ xem", guest:"Khách (chỉ xem, không xuất)"
+  taodinhmuc:"Tạo định mức", thanhtoan:"Thanh toán", viewer:"Chỉ xem", guest:"Khách (chỉ xem, không xuất)"
 };
 
 let _user = null, _role = null, _nick = "", _resolved = false;
@@ -61,6 +62,8 @@ export function isAdmin() { return _role === "admin"; }
 export function isGuest() { return _role === "guest"; }
 // Được vào trang Tạo định mức (nhập mã khai báo HQ + giá khai báo)
 export function canMakeNorm() { return !!perms().canNorm; }
+// Được vào trang Thanh toán và đổi tình trạng thanh toán
+export function canPay() { return !!perms().canPay; }
 // Có được sửa ít nhất 1 cột không (để hiện nút "Chỉnh sửa Excel")
 export function canEditAnyCol() {
   const p = perms();

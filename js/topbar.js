@@ -1,5 +1,5 @@
 // ====== KHUNG GIAO DIỆN DESKTOP: TOPBAR + SIDEBAR + WHEEL NGÀY + NÚT CẢNH BÁO ======
-import { isAdmin, isGuest, isLoggedIn, nickname, onAuthChange, perms, canMakeNorm } from "./auth.js";
+import { isAdmin, isGuest, isLoggedIn, nickname, onAuthChange, perms, canMakeNorm, canPay } from "./auth.js";
 import { toggleTheme, themeIcon } from "./utils.js";
 
 const GREETINGS = [
@@ -81,6 +81,7 @@ export function initTopbar(active) {
         <a class="s-item ${active==="lc"?"s-active":""}" id="nav-lc" href="lc.html"><i class="ti ti-credit-card"></i> LC</a>
         <a class="s-item ${active==="forwarders"?"s-active":""}" id="nav-forwarders" href="forwarders.html"><i class="ti ti-truck-delivery"></i> Forwarder</a>
         <a class="s-item ${active==="dinhmuc"?"s-active":""}" id="nav-dinhmuc" href="dinhmuc.html" style="display:none"><i class="ti ti-file-invoice"></i> Định mức</a>
+        <a class="s-item ${active==="thanhtoan"?"s-active":""}" id="nav-thanhtoan" href="thanhtoan.html" style="display:none"><i class="ti ti-cash"></i> Thanh toán</a>
         <div class="s-label">TIỆN ÍCH</div>
         <button class="s-item" id="tb-side-cal"><i class="ti ti-calendar"></i> Về lịch</button>
         <button class="s-item" id="tb-side-import" style="display:none"><i class="ti ti-upload"></i> Import kế hoạch</button>
@@ -296,6 +297,8 @@ export function initTopbar(active) {
     if (im) im.style.display = (on && perms().addDelete) ? "" : "none";
     const dm = document.getElementById("nav-dinhmuc");
     if (dm) dm.style.display = (on && canMakeNorm()) ? "" : "none";
+    const tt = document.getElementById("nav-thanhtoan");
+    if (tt) tt.style.display = (on && (isAdmin() || canPay())) ? "" : "none";
     document.getElementById("admin-indicator").style.display = (on && isAdmin()) ? "flex" : "none";
     const g = document.getElementById("user-greeting");
     if (on) { g.style.display = ""; g.textContent = `${pickGreeting()} ${nickname() || ""}!`; }

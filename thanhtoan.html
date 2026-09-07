@@ -117,7 +117,8 @@ const PLACE_FEE = {
   "Cát Lái": 50000, "Cát Lái hàng lẻ": 100000, "Transimex": 50000,
   "Đồng Nai": 50000, "SAGAWA Nhơn Trạch": 100000, "Sân Bay": 50000, "Khác": null,
 };
-const NANG_HA_PLACE = "Cát Lái";          // chỉ địa điểm này mới phát sinh dòng nâng hạ
+const NANG_HA_PLACE = "Cát Lái";
+const NH_COLS = ["nhDate","nhName","nhInv","nhAmount","nhLookup","nhLink"];          // chỉ địa điểm này mới phát sinh dòng nâng hạ
 const ROW_LIMIT = 60;                      // 60 dòng gần nhất
 const DEFAULTS = {
   payerName: "CTY TOMIYA", payerTax: "3600606574",
@@ -337,8 +338,7 @@ function renderGrid() {
       if (tab === "2") {
         if (key === "feeClear") editable = admin && !locked && r.place === "Khác";
         // Khối nâng hạ chỉ mở khi hạ cont ở Cát Lái
-        if (["nhDate","nhName","nhInv","nhAmount","nhLookup","nhLink"].includes(key))
-          editable = admin && r.place === NANG_HA_PLACE;
+        if (NH_COLS.includes(key)) editable = admin && r.place === NANG_HA_PLACE;
       }
       if (tab === "3" && key !== "noCO" && r.noCO) editable = false;
 
@@ -379,6 +379,10 @@ function renderGrid() {
           if (S(newV) === NANG_HA_PLACE) {
             if (!S(r.nhName)) r.nhName = cfg.nhName;
             if (!S(r.nhLink)) r.nhLink = cfg.nhLink;
+          } else {
+            // Chọn nhầm Cát Lái rồi đổi lại: phải xóa sạch khối nâng hạ,
+            // nếu không chữ cũ nằm lại và bị ghi vào database khi bấm Lưu.
+            NH_COLS.forEach(k => { r[k] = ""; });
           }
         }
         if (prop === "billNo" || prop === "invNo") r._content = transferText(r);
@@ -496,10 +500,14 @@ function rowPayload(r) {
   if (tab === "1") return { ...base, paidDate:S(r.paidDate), company:S(r.company), bank:S(r.bank),
     account:S(r.account), taxCode:S(r.taxCode), invNo:S(r.invNo), billNo:S(r.billNo),
     amount:MONEY(r.amount), lookup:S(r.lookup), link:S(r.link), note:S(r.note), status:r.status };
-  if (tab === "2") return { ...base, place:S(r.place), feeClear:MONEY(r.feeClear), feeLoad:MONEY(r.feeLoad),
-    feeOther:MONEY(r.feeOther), cashIn:MONEY(r.cashIn), note:S(r.note),
-    nhDate:S(r.nhDate), nhName:S(r.nhName), nhInv:S(r.nhInv), nhAmount:MONEY(r.nhAmount),
-    nhLookup:S(r.nhLookup), nhLink:S(r.nhLink) };
+  if (tab === "2") {
+    const nh = S(r.place) === NANG_HA_PLACE;
+    return { ...base, place:S(r.place), feeClear:MONEY(r.feeClear), feeLoad:MONEY(r.feeLoad),
+      feeOther:MONEY(r.feeOther), cashIn:MONEY(r.cashIn), note:S(r.note),
+      nhDate:  nh ? S(r.nhDate)   : "", nhName:  nh ? S(r.nhName)   : "",
+      nhInv:   nh ? S(r.nhInv)    : "", nhAmount:nh ? MONEY(r.nhAmount) : "",
+      nhLookup:nh ? S(r.nhLookup) : "", nhLink:  nh ? S(r.nhLink)   : "" };
+  }
   return { ...base, coForm:S(r.coForm), noCO:!!r.noCO, coFee:MONEY(r.coFee), coNumber:S(r.coNumber),
     receipt:S(r.receipt), lookup:S(r.lookup), link:S(r.link) };
 }

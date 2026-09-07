@@ -122,7 +122,7 @@ const ROW_LIMIT = 60;                      // 60 dòng gần nhất
 const DEFAULTS = {
   payerName: "CTY TOMIYA", payerTax: "3600606574",
   nhName: "PHÍ NÂNG HẠ CÁT LÁI", nhLink: "https://snp-tt78.vnpt-invoice.com.vn",
-  coFee: 30000, coLink: "https://0106196017.vnpt-invoice.com.vn",
+  coFee: 30000, coLink: "https://0106196017.vnpt-invoice.com.vn/",
   startDate: "2026-08-20",   // chỉ hiện lô xuất từ ngày này trở đi; đổi trong Cài đặt
 };
 const STATUS = {
@@ -236,9 +236,12 @@ function mkRow(id, base) {
       nhLookup:f("nhLookup"), nhLink:f("nhLink"),
     });
   } else {
+    const savedFee = (d.coFee === 0 || !!d.coFee);   // đã lưu rồi thì giữ nguyên, kể cả số 0
     Object.assign(r, {
-      noCO: !!d.noCO, coFee:f("coFee"), coNumber:f("coNumber"),
-      receipt:f("receipt"), lookup:f("lookup"), link:f("link"),
+      noCO: !!d.noCO,
+      coFee: savedFee ? d.coFee : (d.noCO ? 0 : cfg.coFee),
+      coNumber:f("coNumber"), receipt:f("receipt"), lookup:f("lookup"),
+      link: f("link") || cfg.coLink,
     });
   }
   return r;
@@ -379,7 +382,7 @@ function renderGrid() {
           }
         }
         if (prop === "billNo" || prop === "invNo") r._content = transferText(r);
-        if (prop === "noCO" && newV === false && !S(r.coFee)) r.coFee = cfg.coFee;
+        if (prop === "noCO") r.coFee = newV ? 0 : cfg.coFee;
         dirty.add(r._id); touched = true;
       });
       if (touched) { hot.render(); updateHeader(); }

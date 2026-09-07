@@ -140,6 +140,10 @@ const dirty = new Set();    // docId có thay đổi chưa lưu
 
 /* ================= TIỆN ÍCH ================= */
 const S = v => String(v == null ? "" : v).trim();
+// Ô tiền: bỏ mọi ký tự không phải chữ số (dấu chấm, dấu phẩy, chữ "đ", khoảng trắng...)
+// để dán thẳng "18.210.906" hay "7,921,584" từ PDF/Excel vào đều nhận được.
+const MONEY = v => { const t = String(v == null ? "" : v).replace(/[^0-9-]/g, ""); return (t === "" || t === "-") ? "" : parseInt(t, 10); };
+const MONEY_COLS = { "1":["amount"], "2":["feeClear","feeLoad","feeOther","cashIn","nhAmount"], "3":["coFee"] };
 const N = v => { const n = parseFloat(S(v).replace(/[, ]/g,"")); return isNaN(n) ? null : n; };
 const ddmm = iso => { const p = S(iso).split("-"); return p.length===3 ? `${p[2]}-${p[1]}` : S(iso); };
 const todayISO = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
@@ -250,7 +254,7 @@ const COLS = {
     { data:"_content", title:"Nội dung chuyển khoản", width:250, readOnly:true },
     { data:"invNo",    title:"Số hóa đơn",   width: 78 },
     { data:"billNo",   title:"Số bill",      width:124 },
-    { data:"amount",   title:"Số tiền",      width: 86, type:"numeric", className:"htRight" },
+    { data:"amount",   title:"Số tiền",      width: 86, className:"htRight" },
     { data:"tkhq",     title:"Số tờ khai",   width:104, readOnly:true },
     { data:"lookup",   title:"Mã tra cứu",   width:116 },
     { data:"link",     title:"Đường link",   width:150 },
@@ -263,16 +267,16 @@ const COLS = {
     { data:"invoiceNo",title:"Số INV",       width:110, readOnly:true },
     { data:"tkhq",     title:"Số tờ khai",   width:104, readOnly:true },
     { data:"place",    title:"Địa điểm",     width:120, type:"dropdown", source:PLACES },
-    { data:"feeClear", title:"Phí thanh lý", width: 84, type:"numeric", className:"htRight", readOnly:true },
-    { data:"feeLoad",  title:"Phí bốc xếp",  width: 80, type:"numeric", className:"htRight" },
-    { data:"feeOther", title:"Phí khác",     width: 76, type:"numeric", className:"htRight" },
-    { data:"cashIn",   title:"Thêm tiền mặt",width: 90, type:"numeric", className:"htRight" },
+    { data:"feeClear", title:"Phí thanh lý", width: 84, className:"htRight", readOnly:true },
+    { data:"feeLoad",  title:"Phí bốc xếp",  width: 80, className:"htRight" },
+    { data:"feeOther", title:"Phí khác",     width: 76, className:"htRight" },
+    { data:"cashIn",   title:"Thêm tiền mặt",width: 90, className:"htRight" },
     { data:"note",     title:"Ghi chú",      width:118 },
     { data:"_gap",     title:"",             width: 12, readOnly:true },
     { data:"nhDate",   title:"Ngày TT",      width: 78 },
     { data:"nhName",   title:"Tên chi phí",  width:176 },
     { data:"nhInv",    title:"Số hóa đơn",   width: 86 },
-    { data:"nhAmount", title:"Số tiền",      width: 80, type:"numeric", className:"htRight" },
+    { data:"nhAmount", title:"Số tiền",      width: 80, className:"htRight" },
     { data:"nhLookup", title:"Mã tra cứu",   width:118 },
     { data:"nhLink",   title:"Đường link",   width:150 },
   ],
@@ -281,7 +285,7 @@ const COLS = {
     { data:"invoiceNo",title:"Số INV",       width:116, readOnly:true },
     { data:"coForm",   title:"Form",         width: 58, readOnly:true },
     { data:"noCO",     title:"Không làm CO", width: 80, type:"checkbox", className:"htCenter" },
-    { data:"coFee",    title:"Phí CO",       width: 72, type:"numeric", className:"htRight" },
+    { data:"coFee",    title:"Phí CO",       width: 72, className:"htRight" },
     { data:"coNumber", title:"Số C/O",       width:136 },
     { data:"receipt",  title:"Số biên lai",  width: 86 },
     { data:"lookup",   title:"Mã tra cứu",   width:164 },
@@ -339,10 +343,17 @@ function renderGrid() {
                   + (STATUS[r.status]?.cls ? " " + STATUS[r.status].cls : "")
                   + (r._unlockAt && !r._seen.includes(currentUser()?.uid) ? " tt-unlk" : "")
                   + (COLS[tab][col]?.className ? " " + COLS[tab][col].className : "");
+      if ((MONEY_COLS[tab] || []).includes(key)) p.renderer = moneyRenderer;
       if (key === "_status")  p.renderer = statusRenderer;
       if (key === "_content") p.renderer = contentRenderer;
       if (key === "_stt")     p.renderer = sttRenderer;
       return p;
+    },
+
+    beforeChange(changes) {
+      if (!changes) return;
+      const money = MONEY_COLS[tab] || [];
+      changes.forEach(c => { if (money.includes(c[1])) c[3] = MONEY(c[3]); });
     },
 
     afterChange(changes, source) {
@@ -380,6 +391,12 @@ function renderGrid() {
   });
 }
 
+function moneyRenderer(inst, td, row, col, prop, value) {
+  Handsontable.renderers.TextRenderer.apply(this, arguments);
+  const n = MONEY(value);
+  td.innerText = n === "" ? "" : n.toLocaleString("en-US");
+  td.style.textAlign = "right";
+}
 function sttRenderer(inst, td, row) { td.className = "tt-ro"; td.innerText = row + 1; }
 function contentRenderer(inst, td, row) {
   const r = rows[row]; td.className = "tt-ro";
@@ -458,12 +475,12 @@ function rowPayload(r) {
                  updatedAt:new Date().toISOString(), updatedBy:nickname()||"" };
   if (tab === "1") return { ...base, paidDate:S(r.paidDate), company:S(r.company), bank:S(r.bank),
     account:S(r.account), taxCode:S(r.taxCode), invNo:S(r.invNo), billNo:S(r.billNo),
-    amount:N(r.amount) ?? "", lookup:S(r.lookup), link:S(r.link), note:S(r.note), status:r.status };
-  if (tab === "2") return { ...base, place:S(r.place), feeClear:N(r.feeClear) ?? "", feeLoad:N(r.feeLoad) ?? "",
-    feeOther:N(r.feeOther) ?? "", cashIn:N(r.cashIn) ?? "", note:S(r.note),
-    nhDate:S(r.nhDate), nhName:S(r.nhName), nhInv:S(r.nhInv), nhAmount:N(r.nhAmount) ?? "",
+    amount:MONEY(r.amount), lookup:S(r.lookup), link:S(r.link), note:S(r.note), status:r.status };
+  if (tab === "2") return { ...base, place:S(r.place), feeClear:MONEY(r.feeClear), feeLoad:MONEY(r.feeLoad),
+    feeOther:MONEY(r.feeOther), cashIn:MONEY(r.cashIn), note:S(r.note),
+    nhDate:S(r.nhDate), nhName:S(r.nhName), nhInv:S(r.nhInv), nhAmount:MONEY(r.nhAmount),
     nhLookup:S(r.nhLookup), nhLink:S(r.nhLink) };
-  return { ...base, coForm:S(r.coForm), noCO:!!r.noCO, coFee:N(r.coFee) ?? "", coNumber:S(r.coNumber),
+  return { ...base, coForm:S(r.coForm), noCO:!!r.noCO, coFee:MONEY(r.coFee), coNumber:S(r.coNumber),
     receipt:S(r.receipt), lookup:S(r.lookup), link:S(r.link) };
 }
 

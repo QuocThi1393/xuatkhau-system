@@ -227,6 +227,7 @@ function mkRow(id, base) {
       taxCode:f("taxCode"), invNo:f("invNo"), billNo:f("billNo"), amount:f("amount"),
       lookup:f("lookup"), link:f("link"), note:f("note"),
     });
+    r._content = transferText(r);
   } else if (tab === "2") {
     Object.assign(r, {
       place:f("place"), feeClear:f("feeClear"), feeLoad:f("feeLoad"), feeOther:f("feeOther"),
@@ -377,6 +378,7 @@ function renderGrid() {
             if (!S(r.nhLink)) r.nhLink = cfg.nhLink;
           }
         }
+        if (prop === "billNo" || prop === "invNo") r._content = transferText(r);
         if (prop === "noCO" && newV === false && !S(r.coFee)) r.coFee = cfg.coFee;
         dirty.add(r._id); touched = true;
       });
@@ -384,11 +386,23 @@ function renderGrid() {
     },
 
     afterOnCellMouseDown(ev, coords) {
-      if (COLS[tab][coords.col]?.data === "_status" && rows[coords.row]) {
-        openStatusMenu(ev, rows[coords.row]);
-      }
+      const k = COLS[tab][coords.col]?.data;
+      if (k === "_status" && rows[coords.row]) openStatusMenu(ev, rows[coords.row]);
+      if (k === "_content" && rows[coords.row]) copyText(transferText(rows[coords.row]));
     },
   });
+}
+
+async function copyText(t) {
+  if (!S(t)) return;
+  try { await navigator.clipboard.writeText(t); showToast("Đã copy nội dung chuyển khoản"); return; }
+  catch (e) {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t; ta.style.cssText = "position:fixed;left:-9999px";
+    document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+    showToast("Đã copy nội dung chuyển khoản");
+  } catch (e) { alert("Không copy được. Nội dung:\n\n" + t); }
 }
 
 function moneyRenderer(inst, td, row, col, prop, value) {
@@ -400,7 +414,10 @@ function moneyRenderer(inst, td, row, col, prop, value) {
 function sttRenderer(inst, td, row) { td.className = "tt-ro"; td.innerText = row + 1; }
 function contentRenderer(inst, td, row) {
   const r = rows[row]; td.className = "tt-ro";
-  td.innerText = r ? transferText(r) : "";
+  const t = r ? transferText(r) : "";
+  td.innerText = t;
+  td.title = t + "\n\n(bấm vào ô này để copy)";
+  td.style.cursor = "copy";
 }
 function statusRenderer(inst, td, row) {
   const r = rows[row]; if (!r) return;

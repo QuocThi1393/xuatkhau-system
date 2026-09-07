@@ -374,7 +374,7 @@ function renderGrid() {
 
     afterOnCellMouseDown(ev, coords) {
       if (COLS[tab][coords.col]?.data === "_status" && rows[coords.row]) {
-        ev.stopPropagation(); openStatusMenu(ev, rows[coords.row]);
+        openStatusMenu(ev, rows[coords.row]);
       }
     },
   });
@@ -427,8 +427,8 @@ function openStatusMenu(ev, r) {
     const it = items[+el.dataset.i]; if (!it || !it.ok) return;
     m.remove(); applyStatus(r, it.to);
   });
-  setTimeout(() => document.addEventListener("click", function once(e){
-    if (!m.contains(e.target)) { m.remove(); document.removeEventListener("click", once); }
+  setTimeout(() => document.addEventListener("mousedown", function once(e){
+    if (!m.contains(e.target)) { m.remove(); document.removeEventListener("mousedown", once); }
   }), 0);
 }
 
